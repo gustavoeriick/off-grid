@@ -124,6 +124,30 @@ Terminais:
 
 Limite: no máximo 3.000 triângulos por peça e geometria compartilhada entre peças do mesmo item.
 
+## 2.1 Catálogo por tipo de equipamento (pedido do Gustavo em 14/11/2026)
+
+O painel do catálogo mostra tipos de equipamento, não anúncios. Um cartão por tipo ("Placa solar de 585 W", "Bateria de lítio 24 V 100 Ah", "Inversor híbrido 3.000 W 24 V"), e as marcas e os anúncios do Mercado Livre ficam no detalhe do cartão.
+
+`gruposDoCatalogo(catalogo)`, em `src/catalogo/grupos.ts`, junta os itens em tipos:
+
+| Categoria | Itens do mesmo tipo quando têm iguais |
+|---|---|
+| Placa | Potência (`wp`), com tolerância de 4% |
+| Bateria | Química, tensão e capacidade (`ah`), com tolerância de 4% |
+| Inversor | Espécie (híbrido com MPPT, híbrido com PWM, sem entrada solar, estação portátil), onda, tensão de bateria, tensão de saída e potência |
+| Controlador | MPPT ou PWM e corrente de carga |
+| Proteção | Tipo e corrente |
+| Cabo | Uso, seção e cobre ou alucobre |
+| Aparelho, tomada, acessório | Cada item é um tipo |
+
+- Tolerância de 4%: com os itens em ordem crescente, um item entra no grupo se o valor dele passa no máximo 4% do primeiro do grupo. Assim 150 W e 155 W são um tipo; 550, 585 e 610 W são três.
+- **Modelo de referência** do tipo: o item de menor preço sem `naoRecomendado`; se todos têm a marca, o de menor preço. É ele que é arrastado para a cena e que dá os números do cartão.
+- **Cartão:** nome do tipo, montado dos dados (sem marca); as características principais do modelo de referência; "a partir de R$ X" (ou só o preço, com um modelo); "N modelos no mercado"; os avisos do modelo de referência. Aparelhos continuam sem preço.
+- **Detalhe**, ao abrir o cartão: a lista dos modelos, cada um com marca e nome, preço, faixa, data da coleta, link "ver anúncio", `obs` e `naoRecomendado`. Escolher um modelo na lista faz dele o que será arrastado.
+- **Peça já na cena:** o painel do item selecionado mostra o modelo atual, com o link do anúncio, e uma lista para trocar por outro modelo do mesmo tipo (`acoes.trocarModelo`), sem perder o lugar nem os cabos.
+- Os cartões ficam em ordem crescente de potência ou capacidade. O filtro por linha continua valendo: um tipo aparece se algum modelo dele é da linha escolhida.
+- A variedade de potências depende da pesquisa. A parte E de `pesquisa/prompt-coleta.md` pede os tamanhos que faltam (placas de 280 a 450 W e 700 W, baterias de 50 e 200 Ah, inversores de 1.500 a 8.000 W, controladores de 10 a 100 A, mais disjuntores e fusíveis). Enquanto ela não é coletada, o catálogo mostra só os tipos que já têm preço: não se inventa equipamento sem anúncio.
+
 ## 3. Arraste, seleção e cabos (tarefas 2.2 a 2.4)
 
 Valem as seções 6, 7 e 8 de cena-e-interface.md, com estes acréscimos:

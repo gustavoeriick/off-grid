@@ -449,6 +449,19 @@ export const acoes = {
     });
   },
 
+  /** Troca o modelo de uma peça por outro item da mesma categoria, mantendo o lugar e os cabos. Devolve falso se a troca não é possível. */
+  trocarModelo(uid: string, itemId: string): boolean {
+    const atual = itemDe(estado.projeto, uid);
+    const novo = CATALOGO.get(itemId);
+    if (!atual || !novo || atual.categoria !== novo.categoria) return false;
+    const ids = (item: Item): string => terminaisDe(item).map((t) => t.id).sort().join(",");
+    if (ids(atual) !== ids(novo)) return false;
+    mudar(["dispositivos", "cabos"], undefined, (p) => {
+      p.dispositivos = p.dispositivos.map((d) => (d.uid === uid ? { ...d, itemId, uso: null } : d));
+    });
+    return true;
+  },
+
   definirLigado(uid: string, ligado: boolean): void {
     mudar(['dispositivos'], undefined, (p) => {
       p.dispositivos = p.dispositivos.map((d) => (d.uid === uid ? { ...d, ligado } : d));

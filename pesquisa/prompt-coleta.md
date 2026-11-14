@@ -8,7 +8,7 @@ Como usar:
 2. Salve a resposta em `pesquisa/precos-mercado-livre-AAAA-MM-DD.md`, com a data da coleta.
 3. Rode o importador (tarefa 1.1 do plano) para atualizar o catálogo.
 
-A coleta de 14/11/2026 cobriu as partes A, B e C. A parte D é complementar e ainda não foi coletada; ela pode rodar sozinha, colando o início do prompt até "PARTE A" e depois só a parte D e o formato.
+A coleta de 14/11/2026 cobriu as partes A, B, C e D. A parte E, pedida pelo Gustavo em 14/11/2026, amplia a variedade de potências e capacidades do catálogo e ainda não foi coletada; ela pode rodar sozinha, colando o início do prompt até "PARTE A" e depois só a parte E e o formato.
 
 Se o site mostrar uma verificação de segurança, peça para continuar em ritmo mais lento. Foi o que resolveu na primeira coleta.
 
@@ -84,6 +84,28 @@ D5. Linha de 48 V. Buscas: inversor hibrido off grid 48v 127v 5000w | inversor h
     OBRIGATÓRIO: nos inversores, os mesmos de A3; nas baterias, os mesmos de A1.
 D6. Acabamento. Buscas: tomada de sobrepor 2p+t 10a | terminal olhal 35mm | caixa de sobrepor para disjuntor din
     OBRIGATÓRIO: quantidade no anúncio.
+
+PARTE E - variedade de potências e capacidades (até 2 anúncios por busca; o objetivo é ter um preço de referência para cada tamanho, não comparar marcas)
+E1. Painel solar, tamanhos intermediários. Buscas: painel solar 280w | painel solar 330w | painel solar 400w | painel solar 450w | painel solar 700w
+    OBRIGATÓRIO: marca e modelo; confirma que é 1 unidade; potência (W); Voc, Vmp, Isc e Imp, se constarem; medidas (largura e altura); frete grátis ou não.
+E2. Bateria LiFePO4, outras capacidades. Buscas: bateria lifepo4 12v 50ah | bateria lifepo4 12v 200ah | bateria lifepo4 24v 50ah | bateria lifepo4 24v 200ah | bateria lifepo4 48v 50ah | bateria lifepo4 48v 200ah
+    OBRIGATÓRIO: tem BMS embutido? corrente máxima de descarga (A); corrente máxima de carga (A); o anúncio diz que aceita ligação em paralelo? ciclos; medidas; garantia.
+E3. Bateria estacionária de chumbo, outras capacidades. Buscas: bateria estacionaria 12v 45ah | bateria estacionaria 12v 150ah | bateria estacionaria 12v 240ah
+    OBRIGATÓRIO: marca e modelo; capacidade (Ah) e em que regime (C20, C100); medidas; garantia.
+E4. Inversor híbrido off-grid com MPPT, outras potências, saída 110, 120 ou 127 V. Buscas: inversor hibrido off grid 12v 127v 1500w | inversor hibrido off grid 24v 127v 1500w | inversor hibrido off grid 24v 127v 2000w | inversor hibrido off grid 24v 127v 4000w | inversor hibrido off grid 24v 127v 5000w | inversor hibrido off grid 48v 127v 3000w | inversor hibrido off grid 48v 127v 8000w
+    OBRIGATÓRIO: os mesmos de A3, mais potência de pico (W) e medidas.
+E5. Inversor senoidal puro sem carregador, saída 110 ou 127 V. Buscas: inversor senoidal pura 300w 12v 127v | inversor senoidal pura 1500w 12v 127v | inversor senoidal pura 2000w 12v 127v | inversor senoidal pura 2000w 24v 127v | inversor senoidal pura 3000w 24v 127v
+    OBRIGATÓRIO: marca e modelo; tensão de entrada e de saída; potência contínua e de pico (W); consumo sem carga (W); confirma "senoidal pura" na ficha, não só no título.
+E6. Controlador de carga MPPT, outras correntes. Buscas: controlador de carga mppt 10a | controlador de carga mppt 20a | controlador de carga mppt 60a | controlador de carga mppt 100a
+    OBRIGATÓRIO: marca e modelo; corrente (A); tensões de bateria aceitas; tensão máxima de entrada das placas (Voc máx); potência máxima de placas por tensão de bateria; confirma MPPT na ficha (muitos anúncios chamam PWM de MPPT).
+E7. Controlador de carga PWM, outras correntes. Buscas: controlador de carga pwm 10a | controlador de carga pwm 60a
+    OBRIGATÓRIO: corrente (A); tensões de bateria aceitas; tensão máxima de entrada.
+E8. Disjuntores e fusíveis, outras correntes. Buscas: disjuntor cc 2p 16a | disjuntor cc 2p 20a | disjuntor cc 2p 63a | disjuntor 10a din | disjuntor 20a din | disjuntor 25a din | disjuntor 32a din | fusivel anl 60a | fusivel anl 200a | fusivel anl 250a | dps ca 275v
+    OBRIGATÓRIO: corrente (A); tensão máxima (V) e se é corrente contínua ou alternada; número de polos; marca.
+E9. Quadro maior. Buscas: quadro de distribuicao sobrepor 12 disjuntores din | quadro de distribuicao sobrepor 16 disjuntores din
+    OBRIGATÓRIO: número de disjuntores; medidas (largura, altura, profundidade); com ou sem barramento.
+E10. Estação de energia portátil, outros tamanhos. Buscas: estacao de energia portatil 300wh | estacao de energia portatil 2000wh
+    OBRIGATÓRIO: capacidade (Wh); potência de saída (W) e de pico; tensão de saída; entrada solar (W, faixa de tensão em V, corrente em A); química da bateria.
 
 FORMATO DA RESPOSTA
 Entregue tudo em um único bloco de código, em Markdown:
