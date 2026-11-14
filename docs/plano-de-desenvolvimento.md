@@ -1,6 +1,6 @@
 # Plano de desenvolvimento do simulador off-grid 3D
 
-**Estado:** plano e especificação aprovados pelo Gustavo em 14/11/2026. Fase 0 concluída. A próxima é a fase 1.
+**Estado:** plano e especificação aprovados pelo Gustavo em 14/11/2026. Fases 0 e 1 concluídas. A próxima é a fase 2, que espera a aprovação do Gustavo.
 
 **Como usar este documento:** ele é a memória do projeto. Cada fase começa em uma sessão nova do Claude Code, que lê este plano e a especificação e não depende de conversas anteriores. Quem coordena uma fase marca aqui as tarefas concluídas.
 
@@ -103,6 +103,16 @@ Trilho B, a casa em 3D:
 **Revisão:** `revisor` (Opus) nos dois trilhos; `revisor` com Fable confere o núcleo contra a especificação.
 
 | 1.15 | Refazer a casa com fidelidade: telha colonial com relevo, paredes com portas e janelas, piso, varanda com madeiramento, quartinho com porta, terreno, céu e iluminação mais realistas, mantendo as marcações de superfície e de sombra | `cena3d` (Fable) | As capturas mostram uma casa reconhecível como sobrado brasileiro de telha colonial; os critérios das tarefas 1.10 a 1.12 continuam valendo |
+
+**Fase 1 concluída em 14/11/2026:** tarefas 1.1 a 1.15 entregues, revisadas e gravadas no ramo `dev`; 312 testes passam. As revisões acrescentaram regras ao consultor (ver `especificacao/consultor.md`).
+
+Pendências que a revisão deixou para a fase 2:
+
+- Limitar no formulário a varanda cujo telhado desce abaixo de 2 m (hoje, com inclinação e profundidade altas, ele entra no chão) e avisar quando o quartinho cruza a casa ou a varanda. Entra na tarefa 2.7.
+- `sem-disjuntor-na-saida` escolher um disjuntor por cabo: pede mudança no tipo `Acao`.
+- Acabamento da cena: rufo no encontro do telhado com a varanda em casa térrea; fresta de 6 cm no topo das paredes do quartinho; mapa de sombra de ±18 m não cobre o quartinho nos extremos; `destruir()` não libera materiais e texturas.
+- Esconder os equipamentos junto com a superfície escondida; o raio de arraste mira só `superficies()`; o raio de sombra filtra por `userData.sombra`.
+- Medir o tempo de quadro em vídeo integrado: só foi medido em placa dedicada (1,2 ms).
 
 **O que o Gustavo vê:** o relatório do plano dele em texto, e a casa 3D que gira, com sol e sombra ao longo do dia.
 

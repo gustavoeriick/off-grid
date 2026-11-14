@@ -1,102 +1,117 @@
 // Casa paramétrica. Especificação: docs/especificacao/cena-e-interface.md, seção 3.
 // Coordenadas da casa: origem no centro da planta, no chão; frente em +Z; +X à direita de quem olha a frente.
+//
+// O plano de cada água da especificação é a crista das telhas (ver telhado.ts). O madeiramento fica abaixo dele,
+// e por isso as paredes do último andar param um pouco abaixo de `hTopo`: o que falta até o telhado
+// (respaldo e oitões) faz parte do telhado e some com ele nos modos de visão.
 
 import * as THREE from 'three';
 import type { ModoVisao } from '../estado';
 import type { CasaConfig, LadoCasa } from '../nucleo/tipos';
+import { Construtor, esconder, type Marca, marcarSolido } from './malha';
+import { cor, mat } from './materiais';
+import { type Abertura, criarParede } from './paredes';
+import { CAIBRO, criarAgua, criarCumeeira, FUNDO_RIPA } from './telhado';
 
 const ESPESSURA_PAREDE = 0.15;
+const ESPESSURA_INTERNA = 0.12;
+const PISO = 0.05;
+const LAJE = 0.12;
+const FORRO = 0.08;
+const BARRADO = 0.6;
+const CALCADA = 0.8;
+const CAIBRO_QUARTINHO = 0.06;
 
-const COR = {
-  parede: '#f2efe6',
-  telha: '#b5532d',
-  pisoTerreo: '#cfc8b8',
-  pisoSuperior: '#b08d62',
-  pilar: '#e8e2d2',
-  quartinho: '#e6dfcf',
+const GIRO_DA_FACHADA: Record<LadoCasa, number> = {
+  frente: 0,
+  fundos: Math.PI,
+  direita: Math.PI / 2,
+  esquerda: -Math.PI / 2,
 };
 
-const mat = {
-  parede: new THREE.MeshStandardMaterial({ color: COR.parede, roughness: 0.9 }),
-  telha: new THREE.MeshStandardMaterial({ color: COR.telha, roughness: 0.8, side: THREE.DoubleSide }),
-  pisoTerreo: new THREE.MeshStandardMaterial({ color: COR.pisoTerreo, roughness: 0.9 }),
-  pisoSuperior: new THREE.MeshStandardMaterial({ color: COR.pisoSuperior, roughness: 0.8 }),
-  pilar: new THREE.MeshStandardMaterial({ color: COR.pilar, roughness: 0.9 }),
-  quartinho: new THREE.MeshStandardMaterial({ color: COR.quartinho, roughness: 0.9 }),
-  oitao: new THREE.MeshStandardMaterial({ color: COR.parede, roughness: 0.9, side: THREE.DoubleSide }),
-};
-
-type Tipo = 'telhado' | 'parede' | 'piso';
-
-interface Marca {
-  id: string;
-  tipo: Tipo;
-}
-
-function marcar(m: THREE.Mesh, superficie?: Marca): THREE.Mesh {
-  m.castShadow = true;
-  m.receiveShadow = true;
-  m.userData.sombra = true;
-  if (superficie) m.userData.superficie = superficie;
+function solido(c: Construtor, material: THREE.Material | THREE.Material[], nome: string, superficie?: Marca): THREE.Mesh {
+  const m = marcarSolido(c.malha(material), superficie);
+  m.name = nome;
   return m;
 }
 
-function caixa(
-  l: number,
-  a: number,
-  p: number,
-  material: THREE.Material,
-  x: number,
-  y: number,
-  z: number,
-  superficie?: Marca,
-): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(l, a, p), material);
-  m.position.set(x, y, z);
-  return marcar(m, superficie);
+/** Malha que só recebe sombra: calçada, caminho, detalhes rentes ao chão. */
+function rasteiro(c: Construtor, material: THREE.Material | THREE.Material[], nome: string): THREE.Mesh {
+  const m = c.malha(material);
+  m.name = nome;
+  m.receiveShadow = true;
+  return m;
 }
 
-/**
- * Lâmina inclinada que desce da linha (z0, y0) até (z1, y1), com a face de cima passando por essa reta.
- * Largura em X; espessura `esp` para baixo.
- */
-function agua(
-  largura: number,
-  z0: number,
-  y0: number,
-  z1: number,
-  y1: number,
-  esp: number,
-  material: THREE.Material,
-  superficie: Marca,
-): THREE.Mesh {
-  const dz = z1 - z0;
-  const dy = y1 - y0;
-  const comp = Math.hypot(dz, dy);
-  const m = new THREE.Mesh(new THREE.BoxGeometry(largura, esp, comp), material);
-  // Rotação em X: o eixo local Z vira (0, −sen φ, cos φ). Para dz < 0 o eixo é invertido, o que dá o mesmo segmento.
-  m.rotation.x = dz >= 0 ? Math.atan2(-dy, dz) : Math.atan2(dy, -dz);
-  // Normal da face de cima, depois de girar.
-  const normal = new THREE.Vector3(0, 1, 0).applyEuler(m.rotation);
-  m.position.set(0, (y0 + y1) / 2, (z0 + z1) / 2).addScaledVector(normal, -esp / 2);
-  return marcar(m, superficie);
+// ---------------------------------------------------------------- Vãos das fachadas
+
+/** Portas e janelas de uma fachada, distribuídas em vãos iguais ao longo do comprimento. */
+function vaosDaFachada(lado: LadoCasa, andar: number, comp: number, altura: number, entrada: LadoCasa): Abertura[] {
+  const piso = andar === 0 ? PISO : 0;
+  const n = THREE.MathUtils.clamp(Math.round(comp / 2.7), 1, 6);
+  const vao = comp / n;
+  const larguraJanela = Math.min(1.2, vao - 0.9);
+  const peitoril = piso + 1.0;
+  const alturaJanela = Math.min(1.15, altura - peitoril - 0.3);
+  const larguraPorta = Math.min(0.9, vao - 0.5);
+  const alturaPorta = Math.min(piso + 2.1, altura - 0.2);
+
+  let iPorta = -1;
+  if (andar === 0 && larguraPorta >= 0.6 && alturaPorta >= 1.6) {
+    // A porta de entrada fica sob a varanda (ou na frente, sem varanda); a da cozinha, nos fundos, do lado do quartinho.
+    if (lado === entrada) iPorta = Math.floor(n / 2);
+    else if (lado === 'fundos') iPorta = 0;
+  }
+  const lista: Abertura[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = -comp / 2 + (i + 0.5) * vao;
+    if (i === iPorta) lista.push({ tipo: 'porta', x, largura: larguraPorta, y: 0, altura: alturaPorta });
+    else if (larguraJanela >= 0.5 && alturaJanela >= 0.45) {
+      lista.push({ tipo: 'janela', x, largura: larguraJanela, y: peitoril, altura: alturaJanela });
+    }
+  }
+  return lista;
 }
 
-function oitao(casa: CasaConfig, lado: 1 | -1, hTopo: number, cumeeira: number): THREE.Mesh {
-  const meia = casa.profundidade / 2;
+// ---------------------------------------------------------------- Escada
+
+interface Escada {
+  degraus: number;
+  espelho: number;
+  pisada: number;
+  x0: number;
+  x1: number;
+  /** Onde a escada começa (embaixo) e onde chega (em cima), em Z. Ela sobe da frente para os fundos. */
+  zPe: number;
+  zTopo: number;
+  buraco: { x0: number; x1: number; z0: number; z1: number };
+}
+
+/** Escada reta encostada na parede da direita. Nula quando a casa é térrea ou pequena demais. */
+function medidasDaEscada(casa: CasaConfig): Escada | null {
+  if (casa.andares !== 2) return null;
   const t = ESPESSURA_PAREDE;
-  const forma = new THREE.Shape();
-  forma.moveTo(-meia, 0);
-  forma.lineTo(meia, 0);
-  forma.lineTo(0, cumeeira - hTopo - 0.05); // um pouco abaixo da face do telhado, para não brigar com ela
-  forma.closePath();
-  const geo = new THREE.ExtrudeGeometry(forma, { depth: t, bevelEnabled: false });
-  // Forma em (z, y) com extrusão em x; ordem dos eixos: (u, v, w) -> (z, y, -x).
-  geo.rotateY(-Math.PI / 2);
-  const m = new THREE.Mesh(geo, mat.oitao);
-  m.position.set(lado * (casa.largura / 2) + (lado === -1 ? t : 0), hTopo, 0);
-  return marcar(m);
+  const n = Math.max(2, Math.round(casa.peDireito / 0.175));
+  const pisada = 0.26;
+  const lance = (n - 1) * pisada;
+  if (casa.profundidade - 2 * t < lance + 1.7 || casa.largura < 5.5) return null;
+  const x1 = casa.largura / 2 - t - 0.02;
+  const x0 = x1 - 0.85;
+  const zPe = casa.profundidade / 2 - t - 0.95;
+  const zTopo = zPe - lance;
+  return {
+    degraus: n,
+    espelho: casa.peDireito / n,
+    pisada,
+    x0,
+    x1,
+    zPe,
+    zTopo,
+    buraco: { x0: x0 - 0.06, x1: casa.largura / 2 - t, z0: zTopo, z1: zTopo + lance * 0.8 },
+  };
 }
+
+// ---------------------------------------------------------------- Varanda
 
 function construirVaranda(casa: CasaConfig): THREE.Group {
   const v = casa.varanda!;
@@ -107,8 +122,7 @@ function construirVaranda(casa: CasaConfig): THREE.Group {
   const g = new THREE.Group();
   g.name = `varanda-${lado}`;
   // Quadro local: o "fora" é +Z, o comprimento da fachada é X.
-  const giro = { frente: 0, fundos: Math.PI, direita: Math.PI / 2, esquerda: -Math.PI / 2 }[lado];
-  g.rotation.y = giro;
+  g.rotation.y = GIRO_DA_FACHADA[lado];
   g.position.set(
     lado === 'direita' ? recuo : lado === 'esquerda' ? -recuo : 0,
     0,
@@ -117,23 +131,51 @@ function construirVaranda(casa: CasaConfig): THREE.Group {
 
   const prof = v.profundidade;
   const s = v.inclinacaoPct / 100;
+  const k = Math.hypot(1, s);
   const yParede = casa.andares === 2 ? casa.peDireito + 0.25 : casa.peDireito - 0.1;
-  const yFora = yParede - prof * s;
-  const esp = 0.07;
+  const meia = comp / 2;
 
-  g.add(caixa(comp, 0.05, prof, mat.pisoTerreo, 0, 0.025, prof / 2, { id: 'piso-varanda', tipo: 'piso' }));
-  g.add(agua(comp, 0, yParede, prof, yFora, esp, mat.telha, { id: 'telhado-varanda', tipo: 'telhado' }));
+  const piso = new Construtor();
+  piso.caixa(-meia, 0, 0.002, meia, PISO, prof, 1, { py: 0 });
+  g.add(solido(piso, [mat.pisoVaranda, mat.cimento], 'piso-varanda', { id: 'piso-varanda', tipo: 'piso' }));
 
-  const alturaPilar = yFora - esp - 0.05;
+  const agua = criarAgua({
+    largura: comp,
+    comprimento: prof * k,
+    superficie: { id: 'telhado-varanda', tipo: 'telhado' },
+    caibro: CAIBRO,
+    semente: 303,
+    // Em casa térrea, na frente ou nos fundos, a água principal termina logo acima e cobre o encontro.
+    rufo: casa.andares === 2 || ehLateral,
+  });
+  agua.position.set(0, yParede, 0);
+  agua.rotation.x = Math.atan(s);
+  g.add(agua);
+
+  // Madeiramento de apoio: uma viga sobre os pilares, na borda de fora, e uma peça presa à parede.
+  const pilha = (FUNDO_RIPA + CAIBRO) * k;
+  const zPilar = prof - 0.06;
+  const yViga = yParede - zPilar * s - pilha - 0.004;
+  const alturaViga = 0.14;
+  const apoio = new Construtor();
+  apoio.caixa(-meia, yViga - alturaViga, zPilar - 0.04, meia, yViga, zPilar + 0.04, 1);
+  apoio.caixa(-meia, yParede - pilha - 0.1, 0, meia, yParede - pilha, 0.045, 1);
+  const alturaPilar = yViga - alturaViga - PISO;
   if (alturaPilar > 0.3) {
-    const xs = [-comp / 2 + 0.06, comp / 2 - 0.06];
+    const xs = [-meia + 0.06, meia - 0.06];
     if (comp > 5) xs.push(0);
     for (const x of xs) {
-      g.add(caixa(0.12, alturaPilar, 0.12, mat.pilar, x, 0.05 + alturaPilar / 2, prof - 0.06));
+      apoio.caixa(x - 0.06, PISO, zPilar - 0.06, x + 0.06, yViga - alturaViga, zPilar + 0.06, 0);
+      // Sapata e capitel discretos.
+      apoio.caixa(x - 0.09, PISO, zPilar - 0.09, x + 0.09, PISO + 0.1, zPilar + 0.09, 0);
+      apoio.caixa(x - 0.08, yViga - alturaViga - 0.05, zPilar - 0.08, x + 0.08, yViga - alturaViga, zPilar + 0.08, 0);
     }
   }
+  g.add(solido(apoio, [mat.pilar, mat.madeira], 'apoio-varanda'));
   return g;
 }
+
+// ---------------------------------------------------------------- Quartinho
 
 function construirQuartinho(casa: CasaConfig): THREE.Group {
   const q = casa.quartinho;
@@ -144,30 +186,168 @@ function construirQuartinho(casa: CasaConfig): THREE.Group {
   const e = 0.1;
   const l = q.largura;
   const p = q.profundidade;
-  g.add(caixa(l, 0.05, p, mat.pisoTerreo, 0, 0.025, 0, { id: 'piso-quartinho', tipo: 'piso' }));
-  g.add(caixa(l, q.altura, e, mat.quartinho, 0, q.altura / 2, -p / 2 + e / 2, { id: 'parede-quartinho-fundo', tipo: 'parede' }));
-  g.add(caixa(e, q.altura, p - e, mat.quartinho, -l / 2 + e / 2, q.altura / 2, e / 2, { id: 'parede-quartinho-esquerda', tipo: 'parede' }));
-  g.add(caixa(e, q.altura, p - e, mat.quartinho, l / 2 - e / 2, q.altura / 2, e / 2, { id: 'parede-quartinho-direita', tipo: 'parede' }));
-  // Uma água de 15%, caindo para os fundos (−Z), beiral de 0,2.
   const b = 0.2;
+  const s = 0.15;
+  const k = Math.hypot(1, s);
   const zFundo = -p / 2 - b;
   const zFrente = p / 2 + b;
-  const yFundo = q.altura;
-  const yFrente = yFundo + (zFrente - zFundo) * 0.15;
-  g.add(agua(l + 2 * b, zFrente, yFrente, zFundo, yFundo, 0.08, mat.telha, { id: 'telhado-quartinho', tipo: 'telhado' }));
+  const yFrente = q.altura + (zFrente - zFundo) * s;
+  /** Altura da face de baixo dos caibros: as paredes sobem até aí. */
+  const yApoio = (z: number): number => q.altura + (z - zFundo) * s - (FUNDO_RIPA + CAIBRO_QUARTINHO) * k;
+
+  const piso = new Construtor();
+  piso.caixa(-l / 2, 0, -p / 2, l / 2, PISO, p / 2, 0);
+  g.add(solido(piso, mat.cimento, 'piso-quartinho', { id: 'piso-quartinho', tipo: 'piso' }));
+
+  const fundo = new Construtor();
+  fundo.caixa(-l / 2, 0, -p / 2, l / 2, yApoio(-p / 2), -p / 2 + e, 0);
+  g.add(solido(fundo, mat.quartinho, 'parede-quartinho-fundo', { id: 'parede-quartinho-fundo', tipo: 'parede' }));
+
+  // Laterais: o topo acompanha a queda do telhado.
+  const z0 = -p / 2 + e;
+  const z1 = p / 2;
+  const h0 = yApoio(z0);
+  const h1 = yApoio(z1);
+  for (const [nome, xa, xb] of [
+    ['esquerda', -l / 2, -l / 2 + e],
+    ['direita', l / 2 - e, l / 2],
+  ] as const) {
+    const c = new Construtor();
+    c.quad([xa, 0, z0], [xa, 0, z1], [xa, h1, z1], [xa, h0, z0]);
+    c.quad([xb, 0, z1], [xb, 0, z0], [xb, h0, z0], [xb, h1, z1]);
+    c.quad([xa, h1, z1], [xb, h1, z1], [xb, h0, z0], [xa, h0, z0]);
+    c.quad([xa, 0, z1], [xb, 0, z1], [xb, h1, z1], [xa, h1, z1]);
+    const id = `parede-quartinho-${nome}`;
+    g.add(solido(c, mat.quartinho, id, { id, tipo: 'parede' }));
+  }
+
+  // Frente: ombreiras estreitas e verga, com a porta larga de duas folhas aberta.
+  const ombreira = THREE.MathUtils.clamp(l * 0.12, 0.15, 0.3);
+  const yVerga = yApoio(p / 2 - e);
+  const alturaPorta = Math.min(2.05, yVerga - 0.18);
+  const xPorta = l / 2 - ombreira;
+  if (alturaPorta > 1.2 && xPorta > 0.3) {
+    const frente = new Construtor();
+    frente.caixa(-l / 2 + e, 0, p / 2 - e, -xPorta, yVerga, p / 2, 0);
+    frente.caixa(xPorta, 0, p / 2 - e, l / 2 - e, yVerga, p / 2, 0);
+    frente.caixa(-xPorta, alturaPorta, p / 2 - e, xPorta, yVerga, p / 2, 0);
+    g.add(solido(frente, mat.quartinho, 'frente-quartinho'));
+
+    const abertura = THREE.MathUtils.degToRad(150);
+    for (const lado of [-1, 1] as const) {
+      const folha = new Construtor();
+      const lf = xPorta - 0.01;
+      const hf = alturaPorta - 0.03;
+      folha.caixa(0, PISO + 0.01, -0.017, lf, hf, 0.017, 0);
+      // Travessas, do lado de fora da folha fechada.
+      for (const y of [PISO + 0.2, (PISO + hf) / 2, hf - 0.2]) folha.caixa(0.03, y - 0.05, 0.017, lf - 0.03, y + 0.05, 0.035, 1);
+      const m = marcarSolido(folha.malhaColorida(mat.madeiraCores, [cor.porta, cor.esquadria]));
+      m.name = 'folha-quartinho';
+      const pivo = new THREE.Group();
+      pivo.name = 'porta-quartinho';
+      pivo.position.set(lado * xPorta, 0, p / 2 + 0.02);
+      // A folha nasce ao longo de +X. À esquerda gira −φ; à direita, π + φ: as duas abrem para fora.
+      pivo.rotation.y = lado === -1 ? -abertura : Math.PI + abertura;
+      pivo.add(m);
+      g.add(pivo);
+    }
+  }
+
+  // Prateleira na parede da esquerda, com uma caixa de ferramentas e uma lata.
+  if (p > 1.3 && h0 > 1.9 && l > 1.4) {
+    const xa = -l / 2 + e;
+    const za = -p / 2 + e + 0.12;
+    const zb = Math.min(za + 1.3, p / 2 - 0.5);
+    const y = 1.62;
+    const c = new Construtor();
+    c.caixa(xa, y, za, xa + 0.28, y + 0.03, zb, 0);
+    for (const z of [za + 0.12, zb - 0.12]) {
+      c.caixa(xa, y - 0.2, z - 0.015, xa + 0.03, y, z + 0.015, 0);
+      c.caixa(xa, y - 0.03, z - 0.015, xa + 0.24, y, z + 0.015, 0);
+    }
+    c.caixa(xa + 0.04, y + 0.03, za + 0.1, xa + 0.24, y + 0.19, za + 0.52, 1);
+    c.caixa(xa + 0.11, y + 0.19, za + 0.2, xa + 0.17, y + 0.215, za + 0.42, 3);
+    if (zb - za > 0.95) c.caixa(xa + 0.06, y + 0.03, za + 0.68, xa + 0.22, y + 0.21, za + 0.84, 2);
+    const m = marcarSolido(c.malhaColorida(mat.lisoCores, [cor.madeira, cor.caixaDeFerramentas, cor.lata, cor.metal]));
+    m.name = 'prateleira-quartinho';
+    g.add(m);
+  }
+
+  // Uma água de 15%, caindo para os fundos (−Z), com beiral de 0,2.
+  const agua = criarAgua({
+    largura: l + 2 * b,
+    comprimento: (zFrente - zFundo) * k,
+    superficie: { id: 'telhado-quartinho', tipo: 'telhado' },
+    caibro: CAIBRO_QUARTINHO,
+    semente: 404,
+  });
+  agua.position.set(0, yFrente, zFrente);
+  agua.rotation.order = 'YXZ';
+  agua.rotation.set(Math.atan(s), Math.PI, 0);
+  g.add(agua);
+
+  // Calçadinha na frente da porta.
+  const soleira = new Construtor();
+  soleira.caixa(-l / 2, 0, p / 2, l / 2, 0.04, p / 2 + 1, 0);
+  g.add(rasteiro(soleira, mat.calcada, 'calcada-quartinho'));
   return g;
 }
 
+// ---------------------------------------------------------------- Calçada e caminho
+
+function construirCalcada(casa: CasaConfig): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'calcada';
+  const v = casa.varanda;
+  const prof = v ? v.profundidade : 0;
+  const x0 = -casa.largura / 2 - (v?.lado === 'esquerda' ? prof : 0);
+  const x1 = casa.largura / 2 + (v?.lado === 'direita' ? prof : 0);
+  const z0 = -casa.profundidade / 2 - (v?.lado === 'fundos' ? prof : 0);
+  const z1 = casa.profundidade / 2 + (v?.lado === 'frente' ? prof : 0);
+  const c = new Construtor();
+  const h = 0.04;
+  c.caixa(x0 - CALCADA, 0, z1, x1 + CALCADA, h, z1 + CALCADA, 0);
+  c.caixa(x0 - CALCADA, 0, z0 - CALCADA, x1 + CALCADA, h, z0, 0);
+  c.caixa(x0 - CALCADA, 0, z0, x0, h, z1, 0);
+  c.caixa(x1, 0, z0, x1 + CALCADA, h, z1, 0);
+  g.add(rasteiro(c, mat.calcada, 'calcada-casa'));
+
+  // Caminho reto da calçada até a frente do quartinho.
+  const q = casa.quartinho;
+  const giro = THREE.MathUtils.degToRad(q.giro);
+  const d = q.profundidade / 2 + 0.5;
+  const alvo = new THREE.Vector2(q.x + Math.sin(giro) * d, q.z + Math.cos(giro) * d);
+  const origem = new THREE.Vector2(
+    THREE.MathUtils.clamp(alvo.x, x0 - CALCADA, x1 + CALCADA),
+    THREE.MathUtils.clamp(alvo.y, z0 - CALCADA, z1 + CALCADA),
+  );
+  const dist = origem.distanceTo(alvo);
+  if (dist > 0.3) {
+    const caminho = new Construtor();
+    caminho.caixa(-0.4, 0, -0.2, 0.4, h - 0.005, dist, 0);
+    const m = rasteiro(caminho, mat.calcada, 'caminho-quartinho');
+    m.position.set(origem.x, 0, origem.y);
+    m.rotation.y = Math.atan2(alvo.x - origem.x, alvo.y - origem.y);
+    g.add(m);
+  }
+  return g;
+}
+
+// ---------------------------------------------------------------- Casa
+
 export interface CasaCena {
-  /** Grupo que gira com a orientação. Equipamentos e cabos entram aqui como filhos. */
+  /** Grupo que gira com a orientação. Equipamentos e cabos entram aqui como filhos diretos e sobrevivem à reconstrução. */
   grupo: THREE.Group;
   /** Refaz a estrutura a partir da configuração e aplica a rotação. */
   reconstruir(casa: CasaConfig): void;
   aplicarVisao(modo: ModoVisao): void;
+  /** Malhas de encaixe (`userData.superficie`) que o modo de visão atual não esconde. */
+  superficies(): THREE.Mesh[];
 }
 
 function liberar(obj: THREE.Object3D): void {
   obj.traverse((o) => {
+    if (o instanceof THREE.InstancedMesh) o.dispose();
     if (o instanceof THREE.Mesh) o.geometry.dispose();
   });
 }
@@ -180,63 +360,259 @@ export function criarCasa(): CasaCena {
   let telhado = new THREE.Group();
   let superior = new THREE.Group();
   let modo: ModoVisao = 'completa';
+  let medidas = '';
+  let encaixes: THREE.Mesh[] | null = null;
 
   function aplicarVisao(novo: ModoVisao): void {
     modo = novo;
-    telhado.visible = modo === 'completa';
-    superior.visible = modo !== 'terreo';
+    // Primeiro o andar de cima, que contém o telhado; depois o telhado, que vale por último.
+    esconder(superior, modo === 'terreo');
+    esconder(telhado, modo !== 'completa');
+    encaixes = null;
+  }
+
+  function superficies(): THREE.Mesh[] {
+    if (!encaixes) {
+      const lista: THREE.Mesh[] = [];
+      estrutura.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.userData.superficie && !o.userData.escondido) lista.push(o);
+      });
+      encaixes = lista;
+    }
+    return encaixes;
+  }
+
+  function construir(casa: CasaConfig): void {
+    const { largura: W, profundidade: D, peDireito: pd, andares } = casa;
+    const t = ESPESSURA_PAREDE;
+    const hTopo = andares * pd;
+    const s = casa.inclinacaoTelhadoPct / 100;
+    const k = Math.hypot(1, s);
+    const cume = hTopo + (D / 2) * s;
+    /** Quanto a face de baixo das ripas fica abaixo do plano da água, na vertical. */
+    const cRipa = FUNDO_RIPA * k;
+    /** Topo das paredes do último andar: abaixo dos caibros. */
+    const yT = hTopo - (FUNDO_RIPA + CAIBRO) * k - 0.02;
+    const entrada: LadoCasa = casa.varanda?.lado ?? 'frente';
+    const escada = medidasDaEscada(casa);
+    const divide = W >= 6 && D >= 6;
+
+    superior = new THREE.Group();
+    superior.name = 'andar-superior';
+    telhado = new THREE.Group();
+    telhado.name = 'telhado';
+
+    // ---- Piso do térreo.
+    const pisoTerreo = new Construtor();
+    pisoTerreo.caixa(-W / 2 + 0.004, 0, -D / 2 + 0.004, W / 2 - 0.004, PISO, D / 2 - 0.004, 1, { py: 0 });
+    estrutura.add(solido(pisoTerreo, [mat.pisoTerreo, mat.cimento], 'piso-terreo', { id: 'piso-terreo', tipo: 'piso' }));
+
+    // ---- Paredes de fora, andar por andar.
+    for (let i = 0; i < andares; i++) {
+      const andar = i === 0 ? estrutura : superior;
+      const altura = (i === andares - 1 ? yT : (i + 1) * pd) - i * pd;
+      for (const lado of ['frente', 'fundos', 'esquerda', 'direita'] as const) {
+        const lateral = lado === 'esquerda' || lado === 'direita';
+        const comp = lateral ? D - 2 * t : W;
+        const parede = criarParede({
+          comprimento: comp,
+          altura,
+          espessura: t,
+          aberturas: vaosDaFachada(lado, i, comp, altura, entrada),
+          superficie: { id: `parede-${lado}-${i}`, tipo: 'parede' },
+          barrado: i === 0 ? BARRADO : 0,
+          piso: i === 0 ? PISO : 0,
+        });
+        parede.rotation.y = GIRO_DA_FACHADA[lado];
+        parede.position.set(
+          lado === 'direita' ? W / 2 : lado === 'esquerda' ? -W / 2 : 0,
+          i * pd,
+          lado === 'frente' ? D / 2 : lado === 'fundos' ? -D / 2 : 0,
+        );
+        andar.add(parede);
+      }
+    }
+
+    // ---- Piso de cima, com o vão da escada.
+    const xa = -W / 2 + t;
+    const xb = W / 2 - t;
+    const za = -D / 2 + t;
+    const zb = D / 2 - t;
+    if (andares === 2) {
+      const laje = new Construtor();
+      const y0 = pd - LAJE;
+      if (escada) {
+        const b = escada.buraco;
+        laje.caixa(xa, y0, za, b.x0, pd, zb, 1, { py: 0 });
+        laje.caixa(b.x0, y0, za, xb, pd, b.z0, 1, { py: 0, nx: null });
+        laje.caixa(b.x0, y0, b.z1, xb, pd, zb, 1, { py: 0, nx: null });
+      } else {
+        laje.caixa(xa, y0, za, xb, pd, zb, 1, { py: 0 });
+      }
+      superior.add(solido(laje, [mat.pisoSuperior, mat.teto], 'piso-superior', { id: 'piso-superior', tipo: 'piso' }));
+    }
+
+    // ---- Escada de alvenaria e a mureta em volta do vão.
+    if (escada) {
+      const c = new Construtor();
+      for (let i = 0; i < escada.degraus - 1; i++) {
+        const z1 = escada.zPe - i * escada.pisada;
+        c.caixa(escada.x0, PISO, z1 - escada.pisada, escada.x1, (i + 1) * escada.espelho, z1, 0, { ny: null });
+      }
+      estrutura.add(solido(c, mat.degrau, 'escada'));
+      const b = escada.buraco;
+      const mureta = new Construtor();
+      mureta.caixa(b.x0 - 0.08, pd, b.z0, b.x0, pd + 0.9, b.z1 + 0.08, 0);
+      mureta.caixa(b.x0, pd, b.z1, xb, pd + 0.9, b.z1 + 0.08, 0);
+      const m = marcarSolido(mureta.malhaColorida(mat.reboco, [cor.dentro]));
+      m.name = 'mureta-escada';
+      superior.add(m);
+    }
+
+    // ---- Divisão simples dos cômodos. As posições deixam livres os lugares dos aparelhos do cenário inicial.
+    if (divide) {
+      const ei = ESPESSURA_INTERNA;
+      const interna = (
+        id: string,
+        comp: number,
+        altura: number,
+        xPorta: number,
+        x: number,
+        y: number,
+        z: number,
+        giro: number,
+        pai: THREE.Group,
+      ): void => {
+        if (comp < 1.6 || altura < 1.5) return;
+        const alturaVao = Math.min(2.1, altura - 0.25);
+        const parede = criarParede({
+          comprimento: comp,
+          altura,
+          espessura: ei,
+          aberturas: [{ tipo: 'vao', x: THREE.MathUtils.clamp(xPorta, -comp / 2 + 0.6, comp / 2 - 0.6), largura: 0.85, y: 0, altura: alturaVao }],
+          superficie: { id, tipo: 'parede' },
+          interna: true,
+        });
+        parede.position.set(x, y, z);
+        parede.rotation.y = giro;
+        pai.add(parede);
+      };
+      // Térreo: cozinha nos fundos, sala na frente. A parede para antes da escada.
+      const xFim = escada ? escada.x0 - 0.15 : xb;
+      const alturaTerreo = (andares === 2 ? pd - LAJE : yT - FORRO) - PISO;
+      interna('parede-interna-terreo', xFim - xa, alturaTerreo, 0.12 * (xFim - xa), (xa + xFim) / 2, PISO, -0.12 * D + ei, 0, estrutura);
+      if (andares === 2) {
+        // Em cima: um quarto na frente e dois cômodos nos fundos.
+        const alturaSuperior = yT - FORRO - pd;
+        const zB = 0.06 * D;
+        const xC = 0.08 * W;
+        const xFimB = escada ? escada.buraco.x0 - 0.08 : xb;
+        const meioB = (xa + xFimB) / 2;
+        interna('parede-interna-superior-frente', xFimB - xa, alturaSuperior, (xC + xFimB) / 2 - meioB, meioB, pd, zB, 0, superior);
+        const zFimC = zB - ei;
+        const meioC = (za + zFimC) / 2;
+        // Girada 90°: o X local da parede aponta para −Z da casa.
+        interna('parede-interna-superior-meio', zFimC - za, alturaSuperior, meioC - (zFimC - 0.75), xC, pd, meioC, Math.PI / 2, superior);
+      }
+    }
+
+    // ---- Telhado principal: duas águas com a cumeeira paralela à frente.
+    // Em casa térrea, do lado da varanda não há beiral: o telhado da varanda nasce logo abaixo dessa borda.
+    const semBeiral = (lado: LadoCasa): boolean => andares === 1 && casa.varanda?.lado === lado;
+    const bFrente = semBeiral('frente') ? 0 : casa.beiral;
+    const bFundos = semBeiral('fundos') ? 0 : casa.beiral;
+    const bEsquerda = semBeiral('esquerda') ? 0 : casa.beiral;
+    const bDireita = semBeiral('direita') ? 0 : casa.beiral;
+    const larguraTelhado = W + bEsquerda + bDireita;
+    const xTelhado = (bDireita - bEsquerda) / 2;
+    const inclinacao = Math.atan(s);
+
+    const aguaFrente = criarAgua({
+      largura: larguraTelhado,
+      comprimento: (D / 2 + bFrente) * k,
+      superficie: { id: 'telhado-frente', tipo: 'telhado' },
+      caibro: CAIBRO,
+      semente: 101,
+    });
+    aguaFrente.position.set(xTelhado, cume, 0);
+    aguaFrente.rotation.x = inclinacao;
+    const aguaFundos = criarAgua({
+      largura: larguraTelhado,
+      comprimento: (D / 2 + bFundos) * k,
+      superficie: { id: 'telhado-fundos', tipo: 'telhado' },
+      caibro: CAIBRO,
+      semente: 202,
+    });
+    aguaFundos.position.set(xTelhado, cume, 0);
+    aguaFundos.rotation.order = 'YXZ';
+    aguaFundos.rotation.set(inclinacao, Math.PI, 0);
+    const cumeeira = criarCumeeira(larguraTelhado, 505);
+    cumeeira.position.set(xTelhado, cume, 0);
+    telhado.add(aguaFrente, aguaFundos, cumeeira);
+
+    // Alvenaria que some com o telhado: oitões, respaldo e forro, em uma malha só.
+    const alvenaria = new Construtor();
+    const yBeira = hTopo - cRipa;
+    const yCume = cume - cRipa;
+    // Oitões: fecham as laterais do topo das paredes até a face de baixo das ripas.
+    for (const lado of [1, -1] as const) {
+      for (const [x, paraFora] of [
+        [(lado * W) / 2, true],
+        [lado * (W / 2 - t), false],
+      ] as const) {
+        // A face olha para +X quando é a de fora do lado direito ou a de dentro do lado esquerdo.
+        if ((lado === 1) === paraFora) {
+          alvenaria.quad([x, yT, D / 2], [x, yT, -D / 2], [x, yBeira, -D / 2], [x, yBeira, D / 2]);
+          alvenaria.tri([x, yBeira, D / 2], [x, yBeira, -D / 2], [x, yCume, 0]);
+        } else {
+          alvenaria.quad([x, yT, -D / 2], [x, yT, D / 2], [x, yBeira, D / 2], [x, yBeira, -D / 2]);
+          alvenaria.tri([x, yBeira, -D / 2], [x, yBeira, D / 2], [x, yCume, 0]);
+        }
+      }
+    }
+    // Respaldo: o que falta das paredes da frente e dos fundos até o telhado.
+    for (const sg of [1, -1] as const) {
+      const zo = (sg * D) / 2;
+      const zi = sg * (D / 2 - t);
+      const yi = yBeira + t * s;
+      type P = [number, number, number];
+      const face = (a: P, b: P, c: P, d: P): void => {
+        if (sg === 1) alvenaria.quad(a, b, c, d);
+        else alvenaria.quad(d, c, b, a);
+      };
+      face([xa, yT, zo], [xb, yT, zo], [xb, yBeira, zo], [xa, yBeira, zo]);
+      face([xb, yT, zi], [xa, yT, zi], [xa, yi, zi], [xb, yi, zi]);
+      face([xa, yBeira, zo], [xb, yBeira, zo], [xb, yi, zi], [xa, yi, zi]);
+    }
+    // Forro do último andar.
+    alvenaria.caixa(xa, yT - FORRO, za, xb, yT, zb, 1);
+    const malhaAlvenaria = marcarSolido(alvenaria.malhaColorida(mat.reboco, [cor.parede, cor.teto]));
+    malhaAlvenaria.name = 'oitoes-respaldo-forro';
+    telhado.add(malhaAlvenaria);
+
+    superior.add(telhado);
+    estrutura.add(superior);
+
+    if (casa.varanda) estrutura.add(construirVaranda(casa));
+    estrutura.add(construirQuartinho(casa));
+    estrutura.add(construirCalcada(casa));
   }
 
   function reconstruir(casa: CasaConfig): void {
+    grupo.rotation.y = Math.PI - THREE.MathUtils.degToRad(casa.orientacaoGraus);
+    // Girar a casa não muda a estrutura: só refaz quando alguma medida muda.
+    const novas = JSON.stringify({ ...casa, orientacaoGraus: 0 });
+    if (novas === medidas) return;
+    medidas = novas;
+
     grupo.remove(estrutura);
     liberar(estrutura);
     estrutura = new THREE.Group();
     estrutura.name = 'estrutura';
     grupo.add(estrutura);
-    grupo.rotation.y = Math.PI - THREE.MathUtils.degToRad(casa.orientacaoGraus);
-
-    const { largura: W, profundidade: D, peDireito: pd, andares } = casa;
-    const t = ESPESSURA_PAREDE;
-    const hTopo = andares * pd;
-    const s = casa.inclinacaoTelhadoPct / 100;
-    const beiral = casa.beiral;
-
-    estrutura.add(caixa(W, 0.05, D, mat.pisoTerreo, 0, 0.025, 0, { id: 'piso-terreo', tipo: 'piso' }));
-
-    superior = new THREE.Group();
-    superior.name = 'andar-superior';
-    for (let i = 0; i < andares; i++) {
-      const andar = i === 0 ? estrutura : superior;
-      const yc = i * pd + pd / 2;
-      const idp = (n: string) => ({ id: `parede-${n}-${i}`, tipo: 'parede' as const });
-      andar.add(caixa(W, pd, t, mat.parede, 0, yc, D / 2 - t / 2, idp('frente')));
-      andar.add(caixa(W, pd, t, mat.parede, 0, yc, -D / 2 + t / 2, idp('fundos')));
-      andar.add(caixa(t, pd, D - 2 * t, mat.parede, -W / 2 + t / 2, yc, 0, idp('esquerda')));
-      andar.add(caixa(t, pd, D - 2 * t, mat.parede, W / 2 - t / 2, yc, 0, idp('direita')));
-    }
-    if (andares === 2) {
-      superior.add(
-        caixa(W - 2 * t, 0.12, D - 2 * t, mat.pisoSuperior, 0, pd - 0.06, 0, { id: 'piso-superior', tipo: 'piso' }),
-      );
-    }
-    estrutura.add(superior);
-
-    telhado = new THREE.Group();
-    telhado.name = 'telhado';
-    const cumeeira = hTopo + (D / 2) * s;
-    const yBeiral = hTopo - beiral * s;
-    const larguraTelhado = W + 2 * beiral;
-    telhado.add(agua(larguraTelhado, 0, cumeeira, D / 2 + beiral, yBeiral, 0.08, mat.telha, { id: 'telhado-frente', tipo: 'telhado' }));
-    telhado.add(agua(larguraTelhado, 0, cumeeira, -D / 2 - beiral, yBeiral, 0.08, mat.telha, { id: 'telhado-fundos', tipo: 'telhado' }));
-    telhado.add(oitao(casa, 1, hTopo, cumeeira));
-    telhado.add(oitao(casa, -1, hTopo, cumeeira));
-    estrutura.add(telhado);
-
-    if (casa.varanda) estrutura.add(construirVaranda(casa));
-    estrutura.add(construirQuartinho(casa));
-
+    construir(casa);
     aplicarVisao(modo);
   }
 
-  return { grupo, reconstruir, aplicarVisao };
+  return { grupo, reconstruir, aplicarVisao, superficies };
 }

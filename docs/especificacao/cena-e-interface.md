@@ -18,8 +18,8 @@ Sobre a cena ficam os mostradores (sol, consumo, bateria, rede), o painel do ite
 ## 2. Cena base
 
 - **Câmera.** Perspectiva de 45°, começando em (−14, 11, −16) e olhando para (0, 2,5, 0): com a orientação inicial, é a vista da frente da casa, com a varanda e o quartinho à mostra. Órbita com o botão esquerdo, deslocamento com o direito, zoom na roda. Distância de 4 a 60 m. A câmera não desce abaixo do chão.
-- **Chão.** Plano de 80 × 80 m, gramado (`#7fae6b`).
-- **Rosa dos ventos.** Letras N, L, S e O a 12 m do centro e uma seta para o norte. Fica presa ao mundo: não gira com a casa.
+- **Chão.** Plano de 80 × 80 m, gramado (`#7fae6b`) com textura e manchas, e o mesmo verde liso até o horizonte. Calçada de 0,8 m em volta da casa e da varanda e caminho até o quartinho. Plano distante da câmera em 2000.
+- **Rosa dos ventos.** Anel com marcas, letras N, L, S e O em discos a 12 m do centro e uma seta para o norte. Fica presa ao mundo: não gira com a casa.
 - **Luz.** Uma luz direcional (o sol), com sombra, e uma luz de hemisfério para o ambiente.
 
 ## 3. Casa
@@ -32,17 +32,27 @@ Geometria, em coordenadas da casa:
 
 - **Paredes.** Espessura de 0,15. Em cada andar, quatro paredes formando a caixa, com o lado de fora no limite da planta.
 - **Pisos.** Laje do térreo de y = 0 a 0,05 (`piso-terreo`). Com 2 andares, laje superior de y = pé-direito − 0,12 a pé-direito (`piso-superior`).
-- **Telhado principal.** Duas águas, com a cumeeira paralela à frente. Com `hTopo = andares × peDireito` e `s = inclinacao / 100`: a cumeeira fica em z = 0 e y = `hTopo + (profundidade / 2) × s`; cada água desce até z = ±(profundidade / 2 + beiral) e y = `hTopo − beiral × s`, e vai de x = −(largura / 2 + beiral) a +(largura / 2 + beiral). Espessura de 0,08. Superfícies `telhado-frente` e `telhado-fundos`.
+- **Telhado principal.** Duas águas, com a cumeeira paralela à frente. Com `hTopo = andares × peDireito` e `s = inclinacao / 100`: a cumeeira fica em z = 0 e y = `hTopo + (profundidade / 2) × s`; cada água desce até z = ±(profundidade / 2 + beiral) e y = `hTopo − beiral × s`, e vai de x = −(largura / 2 + beiral) a +(largura / 2 + beiral). O plano descrito é o da crista das telhas, e é nele que fica a malha de encaixe. A pilha de telha, ripa e caibro ocupa 0,19 m abaixo dele, medidos na normal. Superfícies `telhado-frente` e `telhado-fundos`. Em casa térrea, do lado da varanda o telhado principal perde o beiral (com varanda lateral, as duas águas perdem o beiral desse lado em X), para as duas pilhas não se atravessarem.
 - **Oitões.** Triângulos que fecham as laterais entre `hTopo` e o telhado.
-- **Varanda.** Encostada na fachada do lado escolhido, na largura inteira da fachada. O telhado encontra a parede em y = `peDireito + 0,25` com 2 andares, ou `peDireito − 0,10` com 1 andar, e desce para fora com a inclinação da varanda. Espessura de 0,07. Superfície `telhado-varanda`. Pilares de 0,12 × 0,12 na borda de fora, nas duas pontas e, se a fachada passar de 5 m, um no meio. Piso `piso-varanda`.
+- **Varanda.** Encostada na fachada do lado escolhido, na largura inteira da fachada. O telhado encontra a parede em y = `peDireito + 0,25` com 2 andares, ou `peDireito − 0,10` com 1 andar, e desce para fora com a inclinação da varanda. Superfície `telhado-varanda`. Pilares de 0,12 × 0,12 na borda de fora, nas duas pontas e, se a fachada passar de 5 m, um no meio. Piso `piso-varanda`.
 - **Quartinho.** Piso (`piso-quartinho`), parede dos fundos (`parede-quartinho-fundo`) e duas laterais, com 0,10 de espessura. A frente é aberta e, com giro 0, fica voltada para +Z. Telhado de uma água, com 15% de inclinação caindo para os fundos e beiral de 0,2 (`telhado-quartinho`).
+
+Detalhes da casa fiel (tarefa 1.15):
+
+- **Telhas.** Capas e canais de telha colonial em malhas instanciadas, cumeeira com telhas próprias, ripas, caibros e testeira à vista sob o beiral e sob a varanda, rufo onde a varanda encosta na parede. O relevo é só desenho: não é superfície de encaixe e não entra na sombra.
+- **Encaixe e sombra do telhado.** Cada água tem uma malha plana invisível com `userData.superficie` (`userData.soEncaixe`) e, logo abaixo, uma laje invisível que tapa o sol (`userData.sombra` e `userData.soSombra`).
+- **Paredes.** As do último andar param em `hTopo − 0,19 × √(1 + s²) − 0,02`; o respaldo, os oitões e o forro pertencem ao telhado e somem com ele. Barrado de 0,6 m por fora e rodapé por dentro. A malha da parede, com os vãos recortados, é a superfície de encaixe: não se encaixa equipamento sobre janela ou porta.
+- **Portas e janelas.** Vãos distribuídos a cada 2,7 m, mais ou menos. Janelas com caixilho, vidro e peitoril; a porta de entrada fica sob a varanda (na frente, se não houver varanda) e a da cozinha nos fundos, do lado do quartinho. O vidro deixa o sol passar, na tela e no cálculo.
+- **Interior.** Cerâmica no térreo, tábuas em cima, forro. Escada na parede da direita, com vão no `piso-superior` e mureta; some em casa térrea ou pequena. Três paredes internas com passagem, que são superfícies de parede: `parede-interna-terreo`, `parede-interna-superior-frente` e `parede-interna-superior-meio`. Casa menor que 6 × 6 fica sem divisão. O editor de cômodos da fase 2 substitui essa divisão fixa.
+- **Quartinho.** As paredes sobem até a face de baixo dos caibros (a dos fundos fica com cerca de 2,16 m). A frente tem ombreiras, verga e porta de duas folhas aberta.
 
 Cores: paredes `#f2efe6`, telha `#b5532d`, piso do térreo `#cfc8b8`, piso superior `#b08d62`, pilares `#e8e2d2`, quartinho `#e6dfcf`.
 
 Marcações nas malhas:
 
 - `userData.superficie = { id, tipo }`, com `tipo` em `telhado`, `parede` ou `piso`, em toda malha que aceita equipamento.
-- `userData.sombra = true` em toda malha sólida da casa, da varanda e do quartinho. Essas malhas tapam o sol no cálculo mesmo quando o modo de visão as esconde.
+- `userData.sombra = true` em toda malha sólida da casa, da varanda e do quartinho. Essas malhas tapam o sol no cálculo mesmo quando o modo de visão as esconde. Telhas, madeiramento, vidros, calçada e caminho não têm essa marca.
+- `userData.escondido = true` no que o modo de visão esconde. O escondido vai para a camada 1 (só sombra): a luz ainda o enxerga e projeta a sombra dele, e um `Raycaster` comum, que só vê a camada 0, não o alcança. O raio do cálculo de sombra (seção 9) usa `raycaster.layers.enableAll()`.
 
 Modos de visão:
 
@@ -58,9 +68,9 @@ O telhado da varanda e o quartinho ficam sempre visíveis. O que está escondido
 
 A cada mudança de tempo, a posição vem de `posicaoSol` e `direcaoSol`.
 
-- A luz direcional fica a 50 m na direção do sol. Mapa de sombra de 2048, cobrindo ±18 m em volta da casa. Intensidade de 3,5 × `máx(0; sen(elevação))`.
-- A luz de hemisfério vai de 0,12 à noite a 2,2 de dia, para as paredes em sombra continuarem claras (cerca de `#aeb0a1` ao meio-dia).
-- A cor do fundo vai de `#0b1026` (noite) a `#9fd0f5` (dia), conforme a elevação entre −6° e +6°.
+- A luz direcional fica a 50 m na direção do sol. Mapa de sombra de 2048, cobrindo ±18 m em volta da casa. Intensidade de 3,5 × a transmissão do ar para a elevação do sol (massa de ar de Kasten e Young), zero abaixo do horizonte. Vale só para o desenho; o cálculo de geração não usa esse número. Com o seno, a sombra da manhã quase sumia no gramado.
+- A luz de hemisfério vai de 0,85 azulado à noite, para a casa continuar legível, a 2,2 de dia, para as paredes em sombra continuarem claras (cerca de `#aeb0a1` ao meio-dia).
+- O fundo é um domo com gradiente, de `#070c22` e `#141c3d` (noite) a `#3f86d8` no alto e `#b4daf6` no horizonte (dia), conforme a elevação entre −6° e +6°, com clarão do lado do sol, estrelas à noite e neblina no horizonte. A cor do sol e do ambiente esquenta perto do horizonte. Tons de saída `NeutralToneMapping`, exposição 1.
 - Uma esfera representa o sol a 45 m, e uma linha mostra o arco do sol no dia.
 
 ## 5. Equipamentos
@@ -215,9 +225,14 @@ Para o roteiro conduzir o simulador com o ponteiro de verdade, o aplicativo exp�
 | `telaDe(uid)` | Posição na tela, em pixels, do centro de um dispositivo |
 | `telaDoTerminal(uid, terminal)` | Posição na tela de um terminal |
 | `telaDoCartao(itemId)` | Posição na tela do cartão de um item no catálogo |
+| `posicionarCamera(posicao, alvo)` | Põe a câmera em uma vista fixa, para as capturas |
+| `superficies()` | Ids das superfícies de encaixe à vista no modo de visão atual |
+| `medirQuadros(n, comSombra)` | Tempo médio de quadro, para conferir o desempenho |
 
 ## 15. Desempenho e estilo
 
 - 60 quadros por segundo com 12 placas e 40 cabos em vídeo integrado. A sombra das placas é recalculada no máximo a cada 100 ms de tempo real.
+- O mapa de sombra só é refeito quando algo muda (`pedirQuadro()`); mover a câmera não o refaz. Quem mexe em equipamento ou cabo chama `pedirQuadro()`.
+- Modo econômico: se os quadros em movimento saem a menos de 25 por segundo, a cena desenha com metade da nitidez e refaz a sombra a cada 200 ms; ao parar, sai um quadro nítido.
 - Painéis claros, cantos de 8 px, fonte do sistema. Textos curtos, sem jargão que não esteja explicado.
 - A cena busca fidelidade visual: materiais, relevo e proporções reais. O limite é manter os 60 quadros por segundo.
