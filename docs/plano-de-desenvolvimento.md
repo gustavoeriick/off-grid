@@ -27,12 +27,12 @@ O princípio: o modelo mais caro decide e confere; os mais baratos constroem con
 
 | Modelo | Preço por milhão de tokens (entrada / saída) | Papel neste projeto |
 |---|---|---|
-| Fable 5.2 | US$ 8 / US$ 40 | Escreve a especificação (física, regras do consultor, casos de teste) e faz as revisões de aprovação. Não escreve código de rotina. |
-| Opus 5.5 | US$ 4 / US$ 20 | Coordena as fases 1 a 3, faz as tarefas difíceis (arraste em 3D, cabos, topologia do circuito) e revisa entregas. |
-| Sonnet 5.5 | US$ 2 / US$ 10 | Escreve a maior parte do código: cálculo a partir da especificação, casa 3D, painéis, catálogo, testes. |
+| Fable 5.2 | US$ 8 / US$ 40 | Escreve a especificação (física, regras do consultor, casos de teste), faz as revisões de aprovação e constrói toda a parte 3D e a simulação na tela: casa, placas, quadro de energia, equipamentos, arraste e cabos. |
+| Opus 5.5 | US$ 4 / US$ 20 | Coordena as fases 1 a 3, faz a topologia do circuito e revisa entregas. |
+| Sonnet 5.5 | US$ 2 / US$ 10 | Escreve o cálculo a partir da especificação, os painéis, o catálogo e os testes. |
 | Haiku 5.5 | US$ 0,10 / US$ 0,50 | Roda verificações (tipos, testes, build, capturas de tela) e tarefas mecânicas. |
 
-Os preços são os da API da Anthropic e servem aqui como régua de custo relativo. Conta aproximada: se 10% dos tokens ficam no Fable, 15% no Opus, 70% no Sonnet e 5% no Haiku, o custo fica perto de um terço do que seria com tudo no Fable.
+Os preços são os da API da Anthropic e servem aqui como régua de custo relativo. Conta aproximada: com o 3D no Fable, cerca de 45% dos tokens ficam nele, 10% no Opus, 40% no Sonnet e 5% no Haiku, e o custo fica perto de 60% do que seria com tudo no Fable. Em 15/11/2026 o Gustavo decidiu pagar essa diferença para ter a cena o mais fiel possível.
 
 Regras:
 
@@ -48,7 +48,7 @@ Os agentes ficam definidos em `.claude/agents/` (criados na fase 0). O coordenad
 |---|---|---|---|
 | `nucleo` | Sonnet | Cálculo puro e testes, a partir da especificação | `src/nucleo/` |
 | `catalogo` | Sonnet | Importa pesquisas de preço e cura o catálogo | `src/catalogo/`, `scripts/`, `pesquisa/` |
-| `cena3d` | Sonnet (Opus em arraste e cabos) | Casa, sol, modelos 3D, interação | `src/cena/` |
+| `cena3d` | Fable | Casa, sol, modelos 3D fiéis, quadro de energia, interação | `src/cena/` |
 | `interface` | Sonnet | Painéis, barra de tempo, textos | `src/ui/`, `index.html`, `src/estilo.css` |
 | `revisor` | Opus (Fable nas aprovações) | Confere a entrega contra a especificação; só lê e roda testes | nada |
 | `verificador` | Haiku | Roda tipos, testes, build e o roteiro de capturas; relata com evidência | nada |
@@ -94,13 +94,15 @@ Trilho B, a casa em 3D:
 
 | Nº | Tarefa | Agente (modelo) | Pronto quando |
 |---|---|---|---|
-| 1.10 | Cena base: câmera em órbita, chão, rosa dos ventos, luz | `cena3d` (Sonnet) | A cena abre sem erro no console |
-| 1.11 | Casa paramétrica e modos de visão (completa, sem telhado, só térreo) | `cena3d` (Sonnet) | Sobrado e térrea, varanda nos quatro lados, quartinho; capturas dos três modos |
-| 1.12 | Sol por data e hora, sombra visual, arco do dia | `cena3d` (Sonnet) | Ao meio-dia de 21/06 no Rio a sombra aponta para o sul |
+| 1.10 | Cena base: câmera em órbita, chão, rosa dos ventos, luz | `cena3d` (Fable) | A cena abre sem erro no console |
+| 1.11 | Casa paramétrica e modos de visão (completa, sem telhado, só térreo) | `cena3d` (Fable) | Sobrado e térrea, varanda nos quatro lados, quartinho; capturas dos três modos |
+| 1.12 | Sol por data e hora, sombra visual, arco do dia | `cena3d` (Fable) | Ao meio-dia de 21/06 no Rio a sombra aponta para o sul |
 | 1.13 | Barra de tempo e controles: data, hora, velocidade, clima, rotação, formulário da casa | `interface` (Sonnet) | Mudar cada controle muda a cena |
 | 1.14 | Roteiro de verificação visual (`scripts/verificar.mjs`) | `interface` (Sonnet) escreve, `verificador` (Haiku) roda | Abre o app sem interface gráfica, tira capturas e falha se houver erro no console |
 
 **Revisão:** `revisor` (Opus) nos dois trilhos; `revisor` com Fable confere o núcleo contra a especificação.
+
+| 1.15 | Refazer a casa com fidelidade: telha colonial com relevo, paredes com portas e janelas, piso, varanda com madeiramento, quartinho com porta, terreno, céu e iluminação mais realistas, mantendo as marcações de superfície e de sombra | `cena3d` (Fable) | As capturas mostram uma casa reconhecível como sobrado brasileiro de telha colonial; os critérios das tarefas 1.10 a 1.12 continuam valendo |
 
 **O que o Gustavo vê:** o relatório do plano dele em texto, e a casa 3D que gira, com sol e sombra ao longo do dia.
 
@@ -110,10 +112,10 @@ Coordenação: Opus 5.5. É a fase de maior risco técnico.
 
 | Nº | Tarefa | Agente (modelo) | Pronto quando |
 |---|---|---|---|
-| 2.1 | Modelos 3D dos equipamentos e aparelhos, com terminais | `cena3d` (Sonnet) | Cada categoria do catálogo tem forma e terminais; captura de cada uma |
-| 2.2 | Catálogo lateral e arraste para a cena: fantasma, superfícies válidas, soltar | `cena3d` (Opus) | Placa só encaixa em telhado, inversor em parede, bateria e aparelho em piso |
-| 2.3 | Selecionar, mover, girar, apagar; painel do item selecionado | `cena3d` (Opus) e `interface` (Sonnet) | O roteiro de verificação move e apaga um item |
-| 2.4 | Puxar cabos entre terminais: elástico, encaixe, cores, compatibilidade; bitola e proteção no cabo | `cena3d` (Opus) | O roteiro liga placa, inversor e bateria; CA não liga em CC |
+| 2.1 | Modelos 3D fiéis dos equipamentos e aparelhos, com terminais, e o quadro de energia | `cena3d` (Fable) | Cada categoria do catálogo tem forma e terminais; captura de cada uma |
+| 2.2 | Catálogo lateral e arraste para a cena: fantasma, superfícies válidas, soltar | `cena3d` (Fable) | Placa só encaixa em telhado, inversor em parede, bateria e aparelho em piso |
+| 2.3 | Selecionar, mover, girar, apagar; painel do item selecionado | `cena3d` (Fable) e `interface` (Sonnet) | O roteiro de verificação move e apaga um item |
+| 2.4 | Puxar cabos entre terminais: elástico, encaixe, cores, compatibilidade; bitola e proteção no cabo | `cena3d` (Fable) | O roteiro liga placa, inversor e bateria; CA não liga em CC |
 | 2.5 | Salvar, abrir e exportar o projeto; cenário inicial "plano no papel" | `interface` (Sonnet) | Recarregar a página mantém a montagem |
 
 **Revisão:** `revisor` (Opus).
@@ -126,7 +128,7 @@ Coordenação: Opus 5.5.
 
 | Nº | Tarefa | Agente (modelo) | Pronto quando |
 |---|---|---|---|
-| 3.1 | Sombra por raios nas placas e céu visível, ligando a cena ao núcleo | `cena3d` (Opus) | Com a casa de teste da especificação, a perda anual por lado da varanda fica a até 5 pontos da referência (clima típico: Norte 14%, Leste e Oeste 23%, Sul 31%) |
+| 3.1 | Sombra por raios nas placas e céu visível, ligando a cena ao núcleo | `cena3d` (Fable) | Com a casa de teste da especificação, a perda anual por lado da varanda fica a até 5 pontos da referência (clima típico: Norte 14%, Leste e Oeste 23%, Sul 31%) |
 | 3.2 | Laço de simulação: tempo acelerado, geração, consumo, bateria, queda de luz | coordenador (Opus) | No cenário do plano a bateria esvazia no horário previsto pelo núcleo |
 | 3.3 | Painel do consultor com ações de um clique: fusível, bitola, mais bateria, mais placa, desligar aparelho | `interface` (Sonnet) | Cada ação muda a montagem e a sugestão some |
 | 3.4 | Painel de orçamento, com link e data de cada preço | `interface` (Sonnet) | Total igual ao do núcleo |
@@ -170,7 +172,8 @@ Produto:
 - No lado das placas e baterias, positivo e negativo são cabos separados. Nas tomadas, um cabo por aparelho.
 - Fusível, disjuntor e DPS são instalados em um cabo, arrastando a peça para cima dele.
 - Os cabos grudam nos terminais; não há desenho livre de trajeto.
-- Os modelos 3D começam simples: formas básicas com rótulo.
+- Os modelos 3D são fiéis: a casa com telha colonial, esquadrias e acabamento reconhecíveis; as placas, o inversor, as baterias e os aparelhos com proporções, cores e detalhes dos produtos do catálogo. Decisão do Gustavo em 15/11/2026, no lugar das formas básicas previstas antes.
+- A cena tem um quadro de energia: uma caixa na parede, com trilho, onde ficam os disjuntores, o DPS e o fusível. As proteções instaladas em um cabo aparecem no quadro.
 - O cenário inicial é o plano do Gustavo "como está no papel", para o consultor mostrar o que precisa mudar.
 
 Técnica:

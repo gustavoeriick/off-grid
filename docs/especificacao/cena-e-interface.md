@@ -65,7 +65,7 @@ A cada mudança de tempo, a posição vem de `posicaoSol` e `direcaoSol`.
 
 ## 5. Equipamentos
 
-Formas simples, com as medidas de `dimensoes` do catálogo (largura, altura, profundidade). A placa usa `largura × altura × 0,035`. A origem da malha fica no centro da caixa.
+Modelos fiéis aos produtos, com as medidas de `dimensoes` do catálogo (largura, altura, profundidade). A descrição abaixo é o mínimo; o detalhamento de cada modelo e do quadro de energia entra na especificação no início da fase 2. A placa usa `largura × altura × 0,035`. A origem da malha fica no centro da caixa.
 
 | Peça | Forma | Encaixa em |
 |---|---|---|
@@ -205,3 +205,4 @@ Para o roteiro conduzir o simulador com o ponteiro de verdade, o aplicativo exp�
 
 - 60 quadros por segundo com 12 placas e 40 cabos em vídeo integrado. A sombra das placas é recalculada no máximo a cada 100 ms de tempo real.
 - Painéis claros, cantos de 8 px, fonte do sistema. Textos curtos, sem jargão que não esteja explicado.
+- A cena busca fidelidade visual: materiais, relevo e proporções reais. O limite é manter os 60 quadros por segundo.
