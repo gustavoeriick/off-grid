@@ -13,6 +13,7 @@
 | [Consultor](especificacao/consultor.md) | Regras, textos e ações das sugestões | `nucleo`, `interface` |
 | [Catálogo](especificacao/catalogo.md) | Importador, itens escolhidos, valores típicos | `catalogo` |
 | [Cena e interface](especificacao/cena-e-interface.md) | Casa 3D, equipamentos, arraste, cabos, painéis | `cena3d`, `interface` |
+| [Fase 2](especificacao/fase-2.md) | Modelos fiéis, quadro de energia, cômodos, várias varandas, edição da casa com o mouse | `cena3d`, `interface`, `nucleo` |
 | [Casos de teste](especificacao/casos-de-teste.md) | Números esperados de cada tarefa | Todos, `revisor` |
 
 ## 1. Convenções

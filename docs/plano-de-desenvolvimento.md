@@ -1,6 +1,6 @@
 # Plano de desenvolvimento do simulador off-grid 3D
 
-**Estado:** plano e especificação aprovados pelo Gustavo em 14/11/2026. Fases 0 e 1 concluídas. A próxima é a fase 2, que espera a aprovação do Gustavo.
+**Estado:** plano e especificação aprovados pelo Gustavo em 14/11/2026. Fases 0 e 1 concluídas. Fase 1 aprovada pelo Gustavo em 14/11/2026, que autorizou a fase 2. A fase 2 começa pela aprovação de [especificacao/fase-2.md](especificacao/fase-2.md), que traz a ordem das tarefas (2.0, 2.7a, 2.1 a 2.4, 2.6, 2.7b, 2.5).
 
 **Como usar este documento:** ele é a memória do projeto. Cada fase começa em uma sessão nova do Claude Code, que lê este plano e a especificação e não depende de conversas anteriores. Quem coordena uma fase marca aqui as tarefas concluídas.
 
