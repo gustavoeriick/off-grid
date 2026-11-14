@@ -1,7 +1,8 @@
 // Correntes de projeto e queda de tensão nos cabos. Especificação: docs/especificacao/nucleo.md, seção 9. Tarefa 1.6.
 
 import type { Aparelho, Catalogo, Controlador, Inversor, Placa, TipoCabo } from '../catalogo/tipos';
-import { infoBanco } from './eletrica';
+import { montarRedes } from './circuito';
+import { infoBanco, LIMITE_CARREGADOR_REDE_A } from './eletrica';
 import type { AnaliseCircuito, Cabo, Projeto, QuedaDeTensao } from './tipos';
 
 /** Resistividade, em ohm·mm²/m. */
@@ -9,8 +10,6 @@ const RHO_COBRE = 0.019;
 const RHO_ALUCOBRE = 0.0304;
 /** Margem sobre a corrente de curto-circuito das placas. */
 const MARGEM_ISC = 1.25;
-/** Maior corrente de carregador de rede que o simulador considera, em A. */
-const LIMITE_CARREGADOR_REDE_A = 20;
 
 const LIMITE_PLACAS = 0.03;
 const LIMITE_BATERIA = 0.02;
@@ -34,22 +33,6 @@ interface Calculo {
 }
 
 const chave = (disp: string, terminal: string): string => `${disp}:${terminal}`;
-
-/** Redes elétricas: terminais ligados por cabos, direta ou indiretamente. */
-function montarRedes(projeto: Projeto): (disp: string, terminal: string) => string {
-  const pai = new Map<string, string>();
-  const raiz = (k: string): string => {
-    let r = k;
-    for (let p = pai.get(r); p !== undefined && p !== r; p = pai.get(r)) r = p;
-    return r;
-  };
-  for (const c of projeto.cabos) {
-    const ra = raiz(chave(c.de.disp, c.de.terminal));
-    const rb = raiz(chave(c.para.disp, c.para.terminal));
-    if (ra !== rb) pai.set(ra, rb);
-  }
-  return (disp, terminal) => raiz(chave(disp, terminal));
-}
 
 function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito): Calculo {
   const correntes = new Map<string, number>(projeto.cabos.map((c) => [c.uid, 0]));
@@ -183,6 +166,31 @@ export function correntesDeProjeto(projeto: Projeto, catalogo: Catalogo, analise
   return calcular(projeto, catalogo, analise).correntes;
 }
 
+/** Cabos de um terminal até o sorvedouro da rede, pela árvore do cálculo das correntes. */
+function caminhoNaArvore(arvore: Map<string, Elo>): (disp: string, terminal: string) => Cabo[] {
+  return (disp, terminal) => {
+    const cabos: Cabo[] = [];
+    let no = chave(disp, terminal);
+    for (let elo = arvore.get(no); elo !== undefined; elo = arvore.get(no)) {
+      cabos.push(elo.cabo);
+      no = elo.de;
+    }
+    return cabos;
+  };
+}
+
+/**
+ * Caminho de cabos de cada terminal até o sorvedouro da rede dele, pela mesma árvore de `correntesDeProjeto`.
+ * Ex.: do `pos` da primeira bateria de um ramo até `inversor.batPos`. Vazio para terminal fora dos circuitos.
+ */
+export function caminhosAteOSorvedouro(
+  projeto: Projeto,
+  catalogo: Catalogo,
+  analise: AnaliseCircuito,
+): (disp: string, terminal: string) => Cabo[] {
+  return caminhoNaArvore(calcular(projeto, catalogo, analise).arvore);
+}
+
 /** Queda de tensão de cada circuito: placas, bateria e cada aparelho. */
 export function quedasDeTensao(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito): QuedaDeTensao[] {
   const sistema = analise.sistema;
@@ -197,15 +205,7 @@ export function quedasDeTensao(projeto: Projeto, catalogo: Catalogo, analise: An
   const dispositivo = (uid: string) => projeto.dispositivos.find((d) => d.uid === uid);
 
   /** Cabos do terminal até o sorvedouro da rede. */
-  const caminho = (disp: string, terminal: string): Cabo[] => {
-    const cabos: Cabo[] = [];
-    let no = chave(disp, terminal);
-    for (let elo = arvore.get(no); elo !== undefined; elo = arvore.get(no)) {
-      cabos.push(elo.cabo);
-      no = elo.de;
-    }
-    return cabos;
-  };
+  const caminho = caminhoNaArvore(arvore);
   /** Queda, em volts, ao longo dos cabos, com `fator` sobre a corrente de cada um. */
   const queda = (cabos: Cabo[], fator: number): number =>
     cabos.reduce((s, c) => s + (correntes.get(c.uid) ?? 0) * fator * resistencia(tipoDe(c), c.comprimento), 0);

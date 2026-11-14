@@ -177,10 +177,13 @@ describe('quedasDeTensao', () => {
     expect(q.fracao).toBeCloseTo(0.0116, 4);
   });
 
-  it('2 em série com a emenda do "plano corrigido" (1,5 m): a emenda soma 0,05 V', () => {
+  it('"plano corrigido", os mesmos cabos mais a emenda de 1,5 m: 1,08 V e 1,23%', () => {
     const q = dosPlacas(cenarioPlanoCorrigido());
-    // 13,35 A x 0,019 x (12 + 12 + 1,5) m / 6 mm²
-    expect(q.volts).toBeCloseTo((13.35 * 0.019 * 25.5) / 6, 3);
+    // Corrente de trabalho imp = 13,35 A em c1, c2 e c12, todos de cabo-solar-6:
+    // 13,35 A × 0,019 × (12 + 12 + 1,5) m / 6 mm² = 1,078 V; sobre 2 × 43,83 = 87,66 V dá 1,230%.
+    // Tolerância da especificação: 0,5% do valor esperado.
+    expect(Math.abs(q.volts - 1.08)).toBeLessThanOrEqual(1.08 * 0.005);
+    expect(Math.abs(q.fracao - 0.0123)).toBeLessThanOrEqual(0.0123 * 0.005);
     expect(q.cabos).toEqual(['c1', 'c2', 'c12']);
   });
 

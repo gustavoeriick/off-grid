@@ -163,6 +163,21 @@ Velocidades: pausa, 1, 10 e 60 minutos por segundo. O botão "Queda de luz" liga
 - **Barra de tempo.** Data, hora (0 a 24 h), velocidade, botão "Queda de luz", clima, rotação da casa (0 a 359°, com as letras N, L, S, O) e o botão "Casa", que abre o formulário de `CasaConfig`.
 - **Mostradores.** Sol (W), consumo (W), bateria (% e barra) e rede (ligada ou em queda).
 
+Limites do formulário da casa (mínimo, máximo, passo). Valor digitado fora da faixa é cortado para o limite mais próximo.
+
+| Campo | Mín | Máx | Passo |
+|---|---|---|---|
+| Largura e profundidade da casa (m) | 4 | 20 | 0,5 |
+| Andares | 1 | 2 | lista |
+| Pé-direito (m) | 2,2 | 4 | 0,1 |
+| Inclinação do telhado e da varanda (%) | 10 | 100 | 1 |
+| Beiral (m) | 0 | 1,5 | 0,1 |
+| Varanda, profundidade (m) | 1 | 6 | 0,5 |
+| Quartinho, posição x e z (m) | −15 | 15 | 0,5 |
+| Quartinho, largura e profundidade (m) | 1 | 6 | 0,1 |
+| Quartinho, altura (m) | 2 | 3,5 | 0,1 |
+| Quartinho, giro (°) | −180 | 180 | 5 |
+
 ## 13. Salvar e cenário inicial
 
 - O projeto é salvo em `localStorage['offgrid.projeto.v1']`, 500 ms depois de cada mudança.

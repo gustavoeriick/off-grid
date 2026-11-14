@@ -2,7 +2,7 @@
 // Especificação: docs/especificacao/nucleo.md, seção 10. Tarefa 1.7.
 
 import type { Catalogo, Inversor } from '../catalogo/tipos';
-import { infoBanco, saidaArranjo, estadoPlaca } from './eletrica';
+import { FATOR_TENSAO_CARGA, infoBanco, saidaArranjo, estadoPlaca } from './eletrica';
 import { irradianciaNasPlacas, irradianciaNoPlano, irradiancia, localPorId } from './irradiancia';
 import { direcaoSol } from './sol';
 import type { AmbientePlacas, AnaliseCircuito, EstadoPlaca, Estimativas, Projeto } from './tipos';
@@ -65,9 +65,10 @@ export function estimar(
   const inversor = itemInversor && itemInversor.categoria === 'inversor' ? (itemInversor as Inversor) : null;
   const banco = infoBanco(sistema, projeto, catalogo);
 
-  // Geração: o que o arranjo entrega, sem olhar a bateria.
+  // Geração: o que o arranjo entrega, sem olhar a bateria. Sem banco, a tensão de carga vem da tensão de bateria do inversor.
+  const tensaoCarga = banco ? banco.tensaoCarga : inversor ? inversor.tensaoBateria * FATOR_TENSAO_CARGA : null;
   let geracaoWh = 0;
-  if (banco && sistema.entradaSolar && sistema.fileiras.length > 0) {
+  if (tensaoCarga !== null && sistema.entradaSolar && sistema.fileiras.length > 0) {
     const m0 = meiaNoiteLocal(local.fuso, msUtc);
     for (let i = 0; i < PASSOS_POR_DIA; i++) {
       const condicoes = irradianciaNasPlacas(projeto, catalogo, local, m0 + (i + 0.5) * PASSO_MS, ambiente);
@@ -80,7 +81,7 @@ export function estimar(
           return [estadoPlaca(item, c.g, c.tAmb)];
         }),
       );
-      geracaoWh += saidaArranjo(fileiras, sistema.entradaSolar, banco.tensaoCarga).p * PASSO_H;
+      geracaoWh += saidaArranjo(fileiras, sistema.entradaSolar, tensaoCarga).p * PASSO_H;
     }
   }
 

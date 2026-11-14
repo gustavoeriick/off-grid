@@ -217,7 +217,7 @@ Queda de tensão, com a corrente de trabalho:
 |---|---|
 | 1 placa, `cabo-solar-6`, 12 m + 12 m | 1,01 V, 2,31% |
 | 2 em série, `cabo-solar-6`, 12 m + 12 m, sem contar a emenda | 1,01 V, 1,16% |
-| "Plano corrigido" (os mesmos cabos mais a emenda de 1,5 m) | 1,06 V, 1,21% |
+| "Plano corrigido" (os mesmos cabos mais a emenda de 1,5 m) | 1,08 V, 1,23% |
 | 3 em paralelo em um só par de `cabo-solar-6`, 12 m + 12 m | 3,04 V, 6,94% |
 | O mesmo com `cabo-solar-10` | 1,83 V, 4,17% |
 | Bateria, `cabo-bat-35`, 1 m + 1 m | 0,14 V, 0,54% |

@@ -68,7 +68,8 @@ describe('calcularOrcamento: plano corrigido', () => {
       ['inv-anenji-3kw-24v-127', 1, 2309.0, 2309.0],
       ['bat-alfx-24v-100', 1, 3750.0, 3750.0],
       ['cabo-solar-6', 25.5, 8.5, 216.75],
-      ['cabo-bat-35', 2, CATALOGO.get('cabo-bat-35')!.preco, 2 * CATALOGO.get('cabo-bat-35')!.preco],
+      // 76,49 por metro: pesquisa/precos-mercado-livre-2026-11-14.md, anúncio MLB4849524870.
+      ['cabo-bat-35', 2, 76.49, 152.98],
       ['cabo-ca-2p5', 77, 8.82, 679.14],
       ['prot-disjuntor-cc-32', 1, 47.9, 47.9],
       ['prot-dps-cc-600', 1, 63.3, 63.3],

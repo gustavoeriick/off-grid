@@ -341,6 +341,15 @@ describe('passoSimulacao: plano corrigido com sol', () => {
     expect(s.estado.soc).toBeGreaterThan(0.5);
   });
 
+  it('com sol e o inversor cortado, nada é atendido e a origem é nenhuma', () => {
+    // soc 0,10 < 0,15: o inversor segue cortado; o sol só carrega a bateria.
+    const s = passoSimulacao(projeto, CATALOGO, analise, { soc: 0.1, cortado: true, emRede: false }, entrada({ placas: sol }));
+    expect(s.cargaPedidaW).toBeGreaterThan(0);
+    expect(s.cargaAtendidaW).toBe(0);
+    expect(s.bateriaW).toBeGreaterThan(0);
+    expect(s.origem).toBe('nenhuma');
+  });
+
   it('religamento: cortado volta a falso quando o soc chega a 0,15', () => {
     const semCarga = cenarioPlanoCorrigido();
     for (const d of semCarga.dispositivos) if (d.uid.startsWith('ap-')) d.ligado = false;

@@ -63,6 +63,16 @@ describe('estimar com o ambiente sem sombra', () => {
     expect(estimarProjeto(projeto, AMBIENTE, MS_21_JUN).autonomiaHoras).toBeNull();
   });
 
+  it('sem bateria a geração aparece, com a tensão de carga do inversor (24 × 1,17 = 28,08 V)', () => {
+    // Com a bateria de 24 V a tensão de carga também é 28,08 V: a geração é a mesma do "plano corrigido", 3,91 kWh.
+    const projeto = cenarioPlanoCorrigido();
+    projeto.dispositivos = projeto.dispositivos.filter((d) => d.uid !== 'bateria1');
+    projeto.cabos = projeto.cabos.filter((c) => c.de.disp !== 'bateria1');
+    const e = estimarProjeto(projeto, AMBIENTE, MS_21_JUN);
+    perto(e.geracaoDiaKwh, 3.91, 3.91 * 0.02);
+    perto(e.geracaoDiaKwh, estimarProjeto(cenarioPlanoCorrigido(), AMBIENTE, MS_21_JUN).geracaoDiaKwh, 1e-9);
+  });
+
   it('projeto vazio estima zero', () => {
     const projeto = cenarioPlanoCorrigido();
     projeto.dispositivos = [];

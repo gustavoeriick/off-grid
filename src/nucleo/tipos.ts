@@ -231,7 +231,7 @@ export type CodigoProblema =
   | 'sem-inversor' | 'varios-inversores'
   | 'sem-bateria' | 'curto-bateria' | 'bateria-invertida' | 'bateria-solta' | 'ramos-desiguais' | 'baterias-misturadas'
   | 'curto-placas' | 'placa-invertida' | 'placa-solta' | 'fileiras-desiguais' | 'placas-misturadas'
-  | 'saida-na-rede';
+  | 'saida-na-rede' | 'peca-repetida' | 'placas-no-banco';
 
 export interface ProblemaCircuito {
   codigo: CodigoProblema;

@@ -34,12 +34,15 @@ Nos textos, o que está entre chaves é calculado. Os números seguem as conven�
 | `fileiras-desiguais` | erro | Problema `fileiras-desiguais` | Fileiras com número diferente de placas | Fileiras em paralelo precisam ter a mesma quantidade de placas. A fileira menor derruba a tensão das outras. |
 | `placas-misturadas` | alerta | Problema `placas-misturadas` | Placas de modelos diferentes | Em série, a placa de menor corrente limita as outras. Use o mesmo modelo no arranjo. |
 | `saida-na-rede` | erro | Problema `saida-na-rede` | A saída do inversor está ligada na rede da casa | Nunca ligue a saída do inversor em uma tomada da rede. Na queda de luz você manda energia para a rua, onde pode haver alguém trabalhando no fio, e quando a luz volta as duas fontes se chocam. A saída vai só para os aparelhos. |
+| `peca-repetida` | erro | Problema `peca-repetida` | Série e paralelo misturados | Esta peça está em dois caminhos ao mesmo tempo. Monte cada série completa, com a mesma quantidade de peças, e só então junte as séries em paralelo pelas pontas. Os números da tela contam só o primeiro caminho. |
+| `placas-no-banco` | erro | Problema `placas-no-banco` | Placas e bateria ligadas direto | O circuito das placas e o da bateria só se encontram dentro do inversor ou do controlador de carga. Ligados direto, a placa sobrecarrega a bateria ou a bateria descarrega na entrada das placas. Placa vai em PV+ e PV−; bateria vai em BAT+ e BAT−. |
 
 ## 3. Regras de compatibilidade
 
 | Regra | Nível | Quando | Título | Texto | Ação |
 |---|---|---|---|---|---|
 | `tensao-do-banco` | erro | Tensão do banco diferente de `inversor.tensaoBateria` | Bateria de {12} V em inversor de {24} V | Banco menor: "O inversor precisa de {24} V. Ligue {2} baterias de {12} V em série, o negativo de uma no positivo da outra, ou troque por uma bateria de {24} V." Banco maior: "A tensão do banco é maior que a do inversor e pode queimá-lo. Refaça a ligação." | |
+| `tensao-do-controlador` | erro | Controlador com `batPos` em `P` e `batNeg` em `N` cujo `tensoesBateria` não inclui a tensão nominal do banco | Controlador de {12/24} V em banco de {48} V | Este controlador não foi feito para a tensão deste banco e queima. Use um controlador que aceite {48} V. | Ver controladores |
 | `tensao-de-saida` | erro | `inversor.saidaV` diferente de `projeto.tensaoRede` | Inversor de {220} V em casa de {127} V | Inversor de 220 V: "Aparelho de 127 V queima em 220 V. Use um inversor com saída de 110 a 127 V." Inversor de 127 V em casa de 220 V: "Aparelho de 220 V não funciona direito em 127 V. Use um inversor com saída de 220 V." | Ver inversores |
 | `aparelho-tensao` | erro | Aparelho ligado na saída, não bivolt, com tensão diferente de `inversor.saidaV` | {Geladeira} é de {127} V e o inversor entrega {220} V | Ligar um aparelho na tensão errada queima o aparelho ou o deixa sem força. | |
 | `onda-modificada` | alerta | Inversor de onda modificada com carga ligada que é eletrônica ou tem motor | Inversor de onda modificada com {PC de trabalho} | Onda modificada esquenta motores e pode travar ou danificar fontes de computador e nobreaks. Para esses aparelhos use inversor de onda senoidal pura. | Ver inversores |
@@ -48,12 +51,14 @@ Nos textos, o que está entre chaves é calculado. Os números seguem as conven�
 
 ## 4. Regras das placas e da entrada solar
 
-Só valem quando há fileira completa. `n` é o número de placas por fileira e `f` o número de fileiras.
+Só valem quando há fileira completa, menos `placa-na-sombra`, que vale para qualquer placa do projeto: o aviso é útil antes de puxar o cabo. `n` é o número de placas por fileira e `f` o número de fileiras.
+
+Com placas de modelos diferentes, `vocFrio`, `vmpQuente` e `n × vmp` de uma fileira são a soma dos valores de cada placa dela, e as regras usam a pior fileira (a maior para os limites de cima, a menor para a tensão mínima). Sem banco, `tensaoCarga` é `inversor.tensaoBateria × 1,17`.
 
 | Regra | Nível | Quando | Título | Texto | Ação |
 |---|---|---|---|---|---|
 | `placas-abaixo-da-tensao` | erro | MPPT: `vmpQuente(placa, n) < máx(vMin; tensaoCarga + 2)`. PWM: `vmpQuente(placa, n) < tensaoCarga + 1` | As placas não alcançam a tensão mínima da entrada | "{Uma placa entrega} cerca de {37,9} V no calor, e esta entrada só trabalha a partir de {60} V. Com {2} placas em série a tensão sobe para {75,8} V." Se o número necessário de placas passar de `vocMax`: "Esta entrada não combina com esta placa. Escolha outro inversor ou controlador." | Acrescentar placa em série, ou ver inversores |
-| `placas-acima-do-limite` | erro | `vocFrio(placa, n) > vocMax` | Tensão das placas acima do limite da entrada | Em manhã fria esta fileira chega a {162,4} V e a entrada aguenta {150} V. Isso queima o equipamento. Use menos placas em série. | |
+| `placas-acima-do-limite` | erro | `vocFrio(placa, n) > vocMax` | Tensão das placas acima do limite da entrada | Em manhã fria esta fileira chega a {162,3} V e a entrada aguenta {150} V. Isso queima o equipamento. Use menos placas em série. | |
 | `placas-acima-da-faixa` | alerta | `n × vmp > vMax`, sem a regra anterior | Tensão das placas acima da faixa de trabalho | A fileira trabalha em {131,5} V e a entrada aproveita até {115} V. Parte da geração se perde. Use menos placas em série. | |
 | `corrente-das-placas` | erro | `correnteEntradaMaxA` definida e `f × isc` maior que ela | Corrente das placas acima do que a entrada aceita | {2} fileiras em paralelo somam {28,4} A e a entrada aceita {18} A. Ligue as placas em série: a corrente fica a de uma placa e a tensão soma. | |
 | `potencia-das-placas` | alerta | Soma de `wp` maior que `potenciaMaxW` | Placas além da potência da entrada | São {4.680} W de placas para uma entrada de {4.000} W. Funciona, mas o que passar disso é desperdiçado. | |
@@ -70,18 +75,24 @@ Só valem quando há fileira completa. `n` é o número de placas por fileira e 
 | `sobrecarga` | erro | Soma de `potenciaW` das cargas ligadas maior que `inversor.potenciaW` | Aparelhos demais para o inversor | O que está ligado soma {5.960} W e o inversor entrega {3.000} W. Ele desarma. Desligue algo ou use um inversor maior. | Desligar o aparelho de maior potência |
 | `pico-de-partida` | alerta | Para alguma carga ligada com motor: soma de `potenciaW` das outras mais o `picoW` dela é maior que `inversor.picoW` | O inversor pode não aguentar a partida de {Geladeira} | Motor puxa várias vezes a potência normal no instante em que liga. Aqui a partida chega a {1.275} W e o inversor aguenta {1.000} W de pico. | |
 | `corrente-da-bateria` | alerta | `(soma de potenciaW / rendimento + consumoVazioW) / tensaoRef` maior que `descargaMaxA` do banco | A bateria desliga com esta carga | Os aparelhos ligados puxam {112,4} A da bateria, e a proteção interna dela corta em {100} A. Acrescente uma bateria em paralelo ou desligue algo. | Acrescentar bateria |
+
 | `rede-desligada` | dica | Inversor com `carregadorRedeA` e `redeLigada` falso | O inversor não está ligado na rede | Com a entrada CA ligada na rede, o inversor mantém a bateria cheia e passa a energia direto para os aparelhos. Na queda de luz ele assume sozinho. | |
 | `carga-acima-da-bateria` | dica | `correnteCargaA` das placas (se há fileira) mais `mín(carregadorRedeA; 20)` (se a rede está ligada) maior que `cargaMaxA` do banco | Limite a corrente de carga no inversor | As placas e a rede juntas podem carregar a {120} A e esta bateria aceita {50} A. Ajuste o limite de carga no menu do inversor. | |
+Em `corrente-da-bateria` e em `autonomia-curta`, quando cada ramo tem mais de uma bateria em série, o texto troca "uma bateria em paralelo" e "mais uma bateria igual em paralelo" por "mais um ramo igual, de {2} baterias em série, em paralelo", e a sugestão sai sem ação: a ação `mais-bateria` só existe para ramos de uma bateria. Com placas de modelos diferentes, `corrente-das-placas` soma a maior `isc` de cada fileira.
+
+No problema `peca-repetida`, as peças que ficaram só no caminho descartado entram nos alvos e não geram `bateria-solta` nem `placa-solta`. Em `tensao-da-protecao` contam todas as proteções instaladas, inclusive o DPS.
 
 ## 6. Regras de proteção e de cabos
 
 Circuitos: `bateria` (cabos das redes do banco e emendas entre baterias), `placas` (cabos das redes das placas e emendas entre placas), `saida` (cabos entre a saída CA e os aparelhos) e `entrada` (cabos entre a entrada CA e a tomada da rede). Para não repetir, cada regra gera uma sugestão por circuito, com todos os cabos envolvidos em `alvos`.
 
-"Proteção de corrente" é fusível ou disjuntor. A capacidade exigida de um cabo é o maior valor entre a corrente de projeto dele e a corrente da proteção instalada nele.
+"Proteção de corrente" é fusível ou disjuntor. Em circuito de corrente contínua (`bateria` e `placas`) só contam `fusivel` e `disjuntorCC`: disjuntor de corrente alternada não apaga o arco da corrente contínua. A tensão de cada circuito, para conferir a proteção, é `tensaoCarga` na bateria, o `vocFrio` da pior fileira nas placas e `tensaoRede` na saída e na entrada. A capacidade exigida de um cabo é o maior valor entre a corrente de projeto dele e a corrente da proteção instalada nele.
 
 | Regra | Nível | Quando | Título | Texto | Ação |
 |---|---|---|---|---|---|
-| `sem-protecao-da-bateria` | erro | Banco externo e nenhum cabo da rede positiva do banco com proteção de corrente | Falta fusível entre a bateria e o inversor | Em um curto, uma bateria de lítio entrega centenas de ampères. O fusível fica no cabo positivo, o mais perto possível da bateria, e é ele que abre antes de o cabo pegar fogo. | Instalar a proteção escolhida no cabo ligado ao positivo de cada ramo |
+| `sem-protecao-da-bateria` | erro | Banco externo e algum ramo sem `fusivel` nem `disjuntorCC` nos cabos do caminho entre o `pos` da primeira bateria do ramo e `inversor.batPos` (o caminho da árvore da rede `P`, seção 9 do núcleo). Proteção no cabo do controlador ou em outro ramo não conta | Falta fusível entre a bateria e o inversor | Em um curto, uma bateria de lítio entrega centenas de ampères. O fusível fica no cabo positivo, o mais perto possível da bateria, e é ele que abre antes de o cabo pegar fogo. | Instalar a proteção escolhida no cabo ligado ao positivo de cada ramo |
+| `protecao-de-ca-em-cc` | erro | Cabo dos circuitos `bateria` ou `placas` com `disjuntorCA` | Disjuntor de tomada em cabo de corrente contínua | O disjuntor comum de quadro de luz é feito para corrente alternada. Em corrente contínua ele pode não conseguir interromper o curto e pegar fogo. Use fusível ou disjuntor de corrente contínua. | |
+| `tensao-da-protecao` | erro | Proteção com `tensaoMaxV` menor que a tensão do circuito do cabo, sem a regra anterior | Proteção de {32} V em circuito de {56,2} V | Acima da tensão para a qual foi feita, a proteção pode não interromper o curto. Use uma proteção para pelo menos {56,2} V. | |
 | `protecao-maior-que-o-cabo` | erro | Cabo cuja capacidade é menor que a corrente da proteção instalada nele | Fusível de {150} A em cabo que aguenta {125} A | O fusível existe para abrir antes de o cabo esquentar. Aqui o cabo esquenta primeiro. Use um cabo mais grosso ou um fusível menor. | Trocar os cabos do circuito pelo menor cabo de cobre que atende |
 | `cabo-fino` | erro | Cabo cuja capacidade é menor que a corrente de projeto, sem a regra anterior | Cabo fino para a corrente | Por este cabo passam até {40,1} A e ele aguenta {32} A. Cabo sobrecarregado esquenta e derrete a capa. | Trocar pelo menor cabo de cobre que atende |
 | `protecao-pequena` | alerta | Bateria: proteção menor que `1,1 ×` a corrente de projeto. Demais circuitos: proteção menor que a corrente de projeto | A proteção vai abrir em uso normal | Com tudo na potência máxima passam {127,4} A por aqui, e esta proteção é de {100} A. Ela serve se o uso ficar abaixo disso. | |

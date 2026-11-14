@@ -3,8 +3,9 @@
 import type {
   Aparelho, Bateria, Catalogo, Inversor, Item, Placa, Protecao, TipoCabo, TipoProtecao,
 } from '../catalogo/tipos';
-import { correntesDeProjeto, quedasDeTensao } from './cabos';
-import { infoBanco, vmpQuente, vocFrio } from './eletrica';
+import { caminhosAteOSorvedouro, correntesDeProjeto, quedasDeTensao } from './cabos';
+import { montarRedes } from './circuito';
+import { FATOR_TENSAO_CARGA, infoBanco, LIMITE_CARREGADOR_REDE_A, vmpQuente, vocFrio } from './eletrica';
 import type {
   Acao, AnaliseCircuito, Cabo, Circuito, CodigoProblema, Estimativas, InfoBanco, Nivel, PlanoMaisPlaca, Projeto,
   QuedaDeTensao, Sistema, Sugestao,
@@ -63,32 +64,24 @@ const LIGACAO: [CodigoProblema, Nivel, string, string][] = [
     'Em série, a placa de menor corrente limita as outras. Use o mesmo modelo no arranjo.'],
   ['saida-na-rede', 'erro', 'A saída do inversor está ligada na rede da casa',
     'Nunca ligue a saída do inversor em uma tomada da rede. Na queda de luz você manda energia para a rua, onde pode haver alguém trabalhando no fio, e quando a luz volta as duas fontes se chocam. A saída vai só para os aparelhos.'],
+  ['peca-repetida', 'erro', 'Série e paralelo misturados',
+    'Esta peça está em dois caminhos ao mesmo tempo. Monte cada série completa, com a mesma quantidade de peças, e só então junte as séries em paralelo pelas pontas. Os números da tela contam só o primeiro caminho.'],
+  ['placas-no-banco', 'erro', 'Placas e bateria ligadas direto',
+    'O circuito das placas e o da bateria só se encontram dentro do inversor ou do controlador de carga. Ligados direto, a placa sobrecarrega a bateria ou a bateria descarrega na entrada das placas. Placa vai em PV+ e PV−; bateria vai em BAT+ e BAT−.'],
 ];
 
 const CODIGOS_DE_PLACA: CodigoProblema[] = ['curto-placas', 'placa-invertida', 'placa-solta', 'fileiras-desiguais', 'placas-misturadas'];
+/** Códigos que são problema de placa quando apontam alguma placa. */
+const CODIGOS_DE_PLACA_OU_BATERIA: CodigoProblema[] = ['peca-repetida', 'placas-no-banco'];
 
 // ---------------------------------------------------------------- Auxiliares
 
 const ORDEM_NIVEL: Record<Nivel, number> = { erro: 0, alerta: 1, dica: 2 };
-const LIMITE_CARREGADOR_REDE_A = 20;
-const TIPOS_DE_CORRENTE: TipoProtecao[] = ['fusivel', 'disjuntorCC', 'disjuntorCA'];
+/** Proteções de corrente. Em corrente contínua o disjuntor de corrente alternada não conta: ele não apaga o arco. */
+const TIPOS_DE_CORRENTE_CA: TipoProtecao[] = ['fusivel', 'disjuntorCC', 'disjuntorCA'];
+const TIPOS_DE_CORRENTE_CC: TipoProtecao[] = ['fusivel', 'disjuntorCC'];
+const CIRCUITOS_CC: Circuito[] = ['bateria', 'placas'];
 const SO_NA_FALTA_DE_ENTRADA = ' Esta entrada não aceita mais placas deste modelo.';
-
-/** Redes elétricas: terminais ligados por cabos. */
-function montarRedes(projeto: Projeto): (disp: string, terminal: string) => string {
-  const pai = new Map<string, string>();
-  const raiz = (k: string): string => {
-    let r = k;
-    for (let p = pai.get(r); p !== undefined && p !== r; p = pai.get(r)) r = p;
-    return r;
-  };
-  for (const c of projeto.cabos) {
-    const ra = raiz(`${c.de.disp}:${c.de.terminal}`);
-    const rb = raiz(`${c.para.disp}:${c.para.terminal}`);
-    if (ra !== rb) pai.set(ra, rb);
-  }
-  return (disp, terminal) => raiz(`${disp}:${terminal}`);
-}
 
 function itensDe<T extends Item>(catalogo: Catalogo, categoria: T['categoria']): T[] {
   return [...catalogo.values()].filter((i): i is T => i.categoria === categoria);
@@ -191,6 +184,21 @@ export function analisarConsultor(
   const donoSolar = sistema.controlador ?? sistema.inversor;
   const placasDaFileira = fileiras.flat();
 
+  // Tensões de cada fileira. Com placas de modelos diferentes, a soma dos valores de cada placa.
+  const placasDe = (fileira: string[]): Placa[] => fileira.flatMap((uid) => placaDe(uid) ?? []);
+  const somaNaFileira = (fileira: string[], valor: (p: Placa, n: number) => number): number => {
+    const ps = placasDe(fileira);
+    if (ps.length === 0) return 0;
+    return ps.every((p) => p.id === ps[0].id) ? valor(ps[0], ps.length) : ps.reduce((s, p) => s + valor(p, 1), 0);
+  };
+  const vocFrioDa = (f: string[]): number => somaNaFileira(f, vocFrio);
+  const vmpQuenteDa = (f: string[]): number => somaNaFileira(f, vmpQuente);
+  const vmpDa = (f: string[]): number => somaNaFileira(f, (p, n) => n * p.vmp);
+  /** `vocFrio` da pior fileira (a maior). */
+  const vocFileira = comFileira ? Math.max(...fileiras.map(vocFrioDa)) : 0;
+  /** Sem banco, a tensão de carga vem da tensão de bateria do inversor. */
+  const tensaoCarga = banco?.tensaoCarga ?? inversor.tensaoBateria * FATOR_TENSAO_CARGA;
+
   // ---------------------------------------------------------------- Compatibilidade
 
   if (banco !== null && banco.tensao !== inversor.tensaoBateria) {
@@ -205,6 +213,26 @@ export function analisarConsultor(
       texto = 'A tensão do banco é maior que a do inversor e pode queimá-lo. Refaça a ligação.';
     }
     sugerir({ regra: 'tensao-do-banco', nivel: 'erro', titulo, texto, alvos: [sistema.inversor, ...bateriasDoBanco] });
+  }
+
+  // Controladores no barramento do banco que não aceitam a tensão dele.
+  if (banco !== null && sistema.banco.length > 0) {
+    const rede = montarRedes(projeto);
+    const P = rede(sistema.inversor, 'batPos');
+    const N = rede(sistema.inversor, 'batNeg');
+    for (const d of projeto.dispositivos) {
+      const c = catalogo.get(d.itemId);
+      if (c?.categoria !== 'controlador' || rede(d.uid, 'batPos') !== P || rede(d.uid, 'batNeg') !== N) continue;
+      if ((c.tensoesBateria as number[]).includes(banco.tensao)) continue;
+      sugerir({
+        regra: 'tensao-do-controlador',
+        nivel: 'erro',
+        titulo: `Controlador de ${c.tensoesBateria.map(inteiro).join('/')} V em banco de ${inteiro(banco.tensao)} V`,
+        texto: `Este controlador não foi feito para a tensão deste banco e queima. Use um controlador que aceite ${inteiro(banco.tensao)} V.`,
+        alvos: [d.uid, ...bateriasDoBanco],
+        acao: acaoVerCatalogo('controlador'),
+      });
+    }
   }
 
   if (inversor.saidaV !== projeto.tensaoRede) {
@@ -292,23 +320,27 @@ export function analisarConsultor(
   const plano = planejarMaisPlaca(projeto, catalogo, analise);
 
   if (comFileira && solar !== null && placa !== null) {
-    const nMin = Math.min(...fileiras.map((f) => f.length));
-    const nMax = Math.max(...fileiras.map((f) => f.length));
     const f = fileiras.length;
-    const tensaoCarga = banco?.tensaoCarga ?? null;
     const alvosPlacas = [donoSolar, ...placasDaFileira];
 
     // Tensão mínima que a entrada exige das placas no calor.
-    let minima: number | null = null;
-    if (solar.tipo === 'mppt') minima = tensaoCarga === null ? solar.vMin : Math.max(solar.vMin, tensaoCarga + 2);
-    else if (tensaoCarga !== null) minima = tensaoCarga + 1;
+    const minima = solar.tipo === 'mppt' ? Math.max(solar.vMin, tensaoCarga + 2) : tensaoCarga + 1;
 
-    if (minima !== null && vmpQuente(placa, nMin) < minima) {
-      let m = nMin + 1;
-      while (vmpQuente(placa, m) < minima && m < 1000) m++;
-      const naoCombina = vocFrio(placa, m) > solar.vocMax;
-      const prefixo = nMin === 1 ? 'Uma placa entrega' : `${inteiro(nMin)} placas em série entregam`;
-      const base = `${prefixo} cerca de ${um(vmpQuente(placa, nMin))} V no calor, e esta entrada só trabalha a partir de ${um(minima)} V.`;
+    // Para a tensão mínima, a pior fileira é a de menor vmpQuente.
+    const fraca = fileiras.reduce((a, b) => (vmpQuenteDa(b) < vmpQuenteDa(a) ? b : a));
+    const nFraca = fraca.length;
+    const vqFraca = vmpQuenteDa(fraca);
+    if (vqFraca < minima) {
+      // As placas acrescentadas em série são do modelo da primeira placa da fileira.
+      const modelo = placasDe(fraca)[0] ?? placa;
+      const uniforme = placasDe(fraca).every((p) => p.id === modelo.id);
+      const vqCom = (m: number): number => (uniforme ? vmpQuente(modelo, m) : vqFraca + vmpQuente(modelo, m - nFraca));
+      const vocCom = (m: number): number => (uniforme ? vocFrio(modelo, m) : vocFrioDa(fraca) + vocFrio(modelo, m - nFraca));
+      let m = nFraca + 1;
+      while (vqCom(m) < minima && m < 1000) m++;
+      const naoCombina = vocCom(m) > solar.vocMax;
+      const prefixo = nFraca === 1 ? 'Uma placa entrega' : `${inteiro(nFraca)} placas em série entregam`;
+      const base = `${prefixo} cerca de ${um(vqFraca)} V no calor, e esta entrada só trabalha a partir de ${um(minima)} V.`;
       let texto: string;
       let acao: Acao | undefined;
       const verCatalogo = acaoVerCatalogo(sistema.controlador !== null ? 'controlador' : 'inversor');
@@ -316,7 +348,7 @@ export function analisarConsultor(
         texto = 'Esta entrada não combina com esta placa. Escolha outro inversor ou controlador.';
         acao = verCatalogo;
       } else {
-        texto = `${base} Com ${inteiro(m)} placas em série a tensão sobe para ${um(vmpQuente(placa, m))} V.`;
+        texto = `${base} Com ${inteiro(m)} placas em série a tensão sobe para ${um(vqCom(m))} V.`;
         if (plano?.modo === 'serie') acao = acaoMaisPlaca(plano);
         else {
           acao = verCatalogo;
@@ -334,38 +366,41 @@ export function analisarConsultor(
       sugerir(s);
     }
 
-    const acimaDoLimite = vocFrio(placa, nMax) > solar.vocMax;
+    const acimaDoLimite = vocFileira > solar.vocMax;
     if (acimaDoLimite) {
       sugerir({
         regra: 'placas-acima-do-limite',
         nivel: 'erro',
         titulo: 'Tensão das placas acima do limite da entrada',
         texto:
-          `Em manhã fria esta fileira chega a ${um(vocFrio(placa, nMax))} V e a entrada aguenta ${um(solar.vocMax)} V. ` +
+          `Em manhã fria esta fileira chega a ${um(vocFileira)} V e a entrada aguenta ${um(solar.vocMax)} V. ` +
           'Isso queima o equipamento. Use menos placas em série.',
         alvos: alvosPlacas,
       });
     }
 
-    if (solar.correnteEntradaMaxA !== undefined && f * placa.isc > solar.correnteEntradaMaxA) {
+    // Corrente das fileiras somadas; com modelos diferentes, a maior isc de cada fileira.
+    const iscTotal = fileiras.reduce((s, fileira) => s + Math.max(...placasDe(fileira).map((p) => p.isc)), 0);
+    if (solar.correnteEntradaMaxA !== undefined && iscTotal > solar.correnteEntradaMaxA) {
       sugerir({
         regra: 'corrente-das-placas',
         nivel: 'erro',
         titulo: 'Corrente das placas acima do que a entrada aceita',
         texto:
-          `${f === 1 ? 'Uma fileira soma' : `${inteiro(f)} fileiras em paralelo somam`} ${um(f * placa.isc)} A e a entrada aceita ` +
+          `${f === 1 ? 'Uma fileira soma' : `${inteiro(f)} fileiras em paralelo somam`} ${um(iscTotal)} A e a entrada aceita ` +
           `${um(solar.correnteEntradaMaxA)} A. Ligue as placas em série: a corrente fica a de uma placa e a tensão soma.`,
         alvos: alvosPlacas,
       });
     }
 
-    if (!acimaDoLimite && nMax * placa.vmp > solar.vMax) {
+    const vmpMaior = Math.max(...fileiras.map(vmpDa));
+    if (!acimaDoLimite && vmpMaior > solar.vMax) {
       sugerir({
         regra: 'placas-acima-da-faixa',
         nivel: 'alerta',
         titulo: 'Tensão das placas acima da faixa de trabalho',
         texto:
-          `A fileira trabalha em ${um(nMax * placa.vmp)} V e a entrada aproveita até ${um(solar.vMax)} V. ` +
+          `A fileira trabalha em ${um(vmpMaior)} V e a entrada aproveita até ${um(solar.vMax)} V. ` +
           'Parte da geração se perde. Use menos placas em série.',
         alvos: alvosPlacas,
       });
@@ -384,8 +419,8 @@ export function analisarConsultor(
       });
     }
 
-    if (solar.tipo === 'pwm' && tensaoCarga !== null) {
-      const alvoV = nMax * placa.vmp * 0.9;
+    if (solar.tipo === 'pwm') {
+      const alvoV = vmpMaior * 0.9;
       const desperdicio = 1 - tensaoCarga / alvoV;
       if (desperdicio > 0.15) {
         sugerir({
@@ -400,23 +435,30 @@ export function analisarConsultor(
         });
       }
     }
+  }
 
-    for (const uid of placasDaFileira) {
-      const perda = estimativas.perdaSombra.get(uid) ?? 0;
-      if (perda > 0.2) {
-        sugerir({
-          regra: 'placa-na-sombra',
-          nivel: 'alerta',
-          titulo: `Esta placa perde ${inteiro(perda * 100)}% da geração para a sombra`,
-          texto:
-            'A sombra da casa cobre a placa em parte do dia. Mude a placa de lugar ou gire a casa para testar outra posição do telhado.',
-          alvos: [uid],
-        });
-      }
+  // Vale para qualquer placa do projeto, mesmo fora de fileira: o aviso é útil antes de puxar o cabo.
+  for (const d of projeto.dispositivos) {
+    if (catalogo.get(d.itemId)?.categoria !== 'placa') continue;
+    const perda = estimativas.perdaSombra.get(d.uid) ?? 0;
+    if (perda > 0.2) {
+      sugerir({
+        regra: 'placa-na-sombra',
+        nivel: 'alerta',
+        titulo: `Esta placa perde ${inteiro(perda * 100)}% da geração para a sombra`,
+        texto:
+          'A sombra da casa cobre a placa em parte do dia. Mude a placa de lugar ou gire a casa para testar outra posição do telhado.',
+        alvos: [d.uid],
+      });
     }
   }
 
-  if (solar !== null && fileiras.length === 0 && !analise.problemas.some((p) => CODIGOS_DE_PLACA.includes(p.codigo))) {
+  const problemaDePlaca = analise.problemas.some(
+    (p) =>
+      CODIGOS_DE_PLACA.includes(p.codigo) ||
+      (CODIGOS_DE_PLACA_OU_BATERIA.includes(p.codigo) && p.dispositivos.some((uid) => placaDe(uid) !== null)),
+  );
+  if (solar !== null && fileiras.length === 0 && !problemaDePlaca) {
     sugerir({
       regra: 'sem-placas',
       nivel: 'dica',
@@ -460,19 +502,32 @@ export function analisarConsultor(
     });
   }
 
+  // O ramo que se acrescenta em paralelo é igual ao último do banco. Com mais de uma bateria por ramo, a ação
+  // `mais-bateria` (uma bateria em paralelo) não serve: o texto pede um ramo inteiro e a sugestão sai sem ação.
+  const ultimoRamo = sistema.banco[sistema.banco.length - 1] ?? [];
+  const porRamo = ultimoRamo.length;
+  const umRamoIgual = `mais um ramo igual, de ${inteiro(porRamo)} baterias em série, em paralelo`;
+  const ahDoRamo = Math.min(
+    ...ultimoRamo.flatMap((uid) => {
+      const i = itemDe(uid);
+      return i?.categoria === 'bateria' ? [i.ah] : [];
+    }),
+  );
+
   if (banco !== null) {
     const iBanco = (somaPotencia / inversor.rendimento + inversor.consumoVazioW) / banco.tensaoRef;
     if (iBanco > banco.descargaMaxA) {
-      sugerir({
+      const s: Sugestao = {
         regra: 'corrente-da-bateria',
         nivel: 'alerta',
         titulo: 'A bateria desliga com esta carga',
         texto:
           `Os aparelhos ligados puxam ${um(iBanco)} A da bateria, e a proteção interna dela corta em ${um(banco.descargaMaxA)} A. ` +
-          'Acrescente uma bateria em paralelo ou desligue algo.',
+          `Acrescente ${porRamo > 1 ? umRamoIgual : 'uma bateria em paralelo'} ou desligue algo.`,
         alvos: [...bateriasDoBanco, ...ligadas.map((c) => c.uid)],
-        acao: { tipo: 'mais-bateria', rotulo: 'Acrescentar bateria em paralelo' },
-      });
+      };
+      if (porRamo <= 1) s.acao = { tipo: 'mais-bateria', rotulo: 'Acrescentar bateria em paralelo' };
+      sugerir(s);
     }
   }
 
@@ -506,18 +561,18 @@ export function analisarConsultor(
 
   // ---------------------------------------------------------------- Proteção e cabos
 
-  regrasDeCabos(projeto, catalogo, analise, sistema, inversor, banco, placa, sugerir);
+  regrasDeCabos(projeto, catalogo, analise, sistema, inversor, banco, vocFileira, sugerir);
 
   // ---------------------------------------------------------------- Autonomia e energia
 
   if (estimativas.autonomiaHoras !== null && estimativas.autonomiaHoras < 8 && banco !== null) {
     const autonomia = estimativas.autonomiaHoras;
-    const ultima = baterias()[baterias().length - 1];
     const partes = ['Para atravessar uma noite são umas 12 horas.'];
-    if (ultima) {
-      partes.push(
-        `Com mais uma bateria igual em paralelo, a autonomia vai para ${horas((autonomia * (banco.ah + ultima.ah)) / banco.ah)} horas.`,
-      );
+    const temRamo = porRamo > 0 && Number.isFinite(ahDoRamo);
+    if (temRamo) {
+      // Um ramo a mais soma a capacidade dele (a menor da série) à do banco; a tensão não muda.
+      const comMais = horas((autonomia * (banco.ah + ahDoRamo)) / banco.ah);
+      partes.push(`Com ${porRamo > 1 ? umRamoIgual : 'mais uma bateria igual em paralelo'}, a autonomia vai para ${comMais} horas.`);
     }
     if (ligadas.length > 1) {
       const maior = ligadas.reduce((a, b) => (b.item.mediaW > a.item.mediaW ? b : a));
@@ -533,7 +588,7 @@ export function analisarConsultor(
       texto: partes.join(' '),
       alvos: bateriasDoBanco,
     };
-    if (ultima) s.acao = { tipo: 'mais-bateria', rotulo: 'Acrescentar bateria em paralelo' };
+    if (temRamo && porRamo === 1) s.acao = { tipo: 'mais-bateria', rotulo: 'Acrescentar bateria em paralelo' };
     sugerir(s);
   }
 
@@ -571,7 +626,8 @@ function regrasDeCabos(
   sistema: Sistema,
   inversor: Inversor,
   banco: InfoBanco | null,
-  placa: Placa | null,
+  /** `vocFrio` da pior fileira; zero sem fileira. */
+  vocFileira: number,
   sugerir: (s: Sugestao) => void,
 ): void {
   const rede = montarRedes(projeto);
@@ -599,9 +655,10 @@ function regrasDeCabos(
     const r = rede(cabo.de.disp, cabo.de.terminal);
     const circuito = CIRCUITOS.find((c) => redesDe[c].has(r));
     if (circuito === undefined) continue;
+    const tipos = CIRCUITOS_CC.includes(circuito) ? TIPOS_DE_CORRENTE_CC : TIPOS_DE_CORRENTE_CA;
     const instaladas = cabo.protecoes.flatMap((id) => {
       const p = catalogo.get(id);
-      return p?.categoria === 'protecao' && TIPOS_DE_CORRENTE.includes(p.tipo) ? [p] : [];
+      return p?.categoria === 'protecao' && tipos.includes(p.tipo) ? [p] : [];
     });
     const protecao = instaladas.length > 0 ? instaladas.reduce((a, b) => (b.correnteA < a.correnteA ? b : a)) : null;
     const i = correntes.get(cabo.uid) ?? 0;
@@ -622,15 +679,27 @@ function regrasDeCabos(
       (c) => (c.de.disp === disp && c.de.terminal === terminal) || (c.para.disp === disp && c.para.terminal === terminal),
     );
 
-  // sem-protecao-da-bateria
+  // sem-protecao-da-bateria: cada ramo precisa de fusível ou disjuntor CC no caminho do positivo dele até o inversor.
   if (banco !== null && sistema.banco.length > 0) {
-    const positivos = circuitos.bateria.filter((c) => rede(c.cabo.de.disp, c.cabo.de.terminal) === rede(sistema.inversor, 'batPos'));
-    if (!positivos.some((c) => c.protecao !== null)) {
+    const caminho = caminhosAteOSorvedouro(projeto, catalogo, analise);
+    const protegeCC = (c: Cabo): boolean =>
+      c.protecoes.some((id) => {
+        const p = catalogo.get(id);
+        return p?.categoria === 'protecao' && TIPOS_DE_CORRENTE_CC.includes(p.tipo);
+      });
+    const semProtecao = sistema.banco
+      .map((ramo) => ({ ramo, cabos: caminho(ramo[0], 'pos') }))
+      .filter((r) => !r.cabos.some(protegeCC));
+    if (semProtecao.length > 0) {
       const escolhida = primeiroOuMaior(
         protecoesCorrente,
         (p) => p.correnteA >= 1.1 * iBateria && p.tensaoMaxV >= banco.tensaoCarga,
       );
-      const cabos = [...new Set(sistema.banco.flatMap((ramo) => cabosComEnd(ramo[0], 'pos').map((c) => c.uid)))];
+      // O cabo ligado ao positivo de cada ramo sem proteção: o primeiro do caminho até o inversor.
+      const cabos = [
+        ...new Set(semProtecao.flatMap((r) => (r.cabos.length > 0 ? [r.cabos[0].uid] : cabosComEnd(r.ramo[0], 'pos').map((c) => c.uid)))),
+      ];
+      const doCaminho = [...new Set(semProtecao.flatMap((r) => r.cabos.map((c) => c.uid)))];
       const s: Sugestao = {
         regra: 'sem-protecao-da-bateria',
         nivel: 'erro',
@@ -638,13 +707,58 @@ function regrasDeCabos(
         texto:
           'Em um curto, uma bateria de lítio entrega centenas de ampères. O fusível fica no cabo positivo, o mais perto possível da bateria, ' +
           'e é ele que abre antes de o cabo pegar fogo.',
-        alvos: positivos.length > 0 ? positivos.map(umCabo) : [sistema.inversor],
+        alvos: doCaminho.length > 0 ? doCaminho : [sistema.inversor],
       };
       if (escolhida && cabos.length > 0) {
         s.acao = { tipo: 'proteger-cabos', rotulo: `Instalar ${minuscula(escolhida.nome)}`, cabos, protecaoId: escolhida.id };
       }
       sugerir(s);
     }
+  }
+
+  // protecao-de-ca-em-cc
+  const protecoesDoCabo = (c: InfoCabo): Protecao[] =>
+    c.cabo.protecoes.flatMap((id) => {
+      const p = catalogo.get(id);
+      return p?.categoria === 'protecao' ? [p] : [];
+    });
+  for (const circuito of CIRCUITOS_CC) {
+    const comCa = circuitos[circuito].filter((c) => protecoesDoCabo(c).some((p) => p.tipo === 'disjuntorCA'));
+    if (comCa.length === 0) continue;
+    sugerir({
+      regra: 'protecao-de-ca-em-cc',
+      nivel: 'erro',
+      titulo: 'Disjuntor de tomada em cabo de corrente contínua',
+      texto:
+        'O disjuntor comum de quadro de luz é feito para corrente alternada. Em corrente contínua ele pode não conseguir interromper o curto ' +
+        'e pegar fogo. Use fusível ou disjuntor de corrente contínua.',
+      alvos: comCa.map(umCabo),
+    });
+  }
+
+  // tensao-da-protecao: o disjuntor CA em circuito CC já foi apontado pela regra anterior.
+  const tensaoDoCircuito: Record<Circuito, number> = {
+    bateria: banco?.tensaoCarga ?? 0,
+    placas: vocFileira,
+    saida: projeto.tensaoRede,
+    entrada: projeto.tensaoRede,
+  };
+  for (const circuito of CIRCUITOS) {
+    const v = tensaoDoCircuito[circuito];
+    const fracas = circuitos[circuito].flatMap((c) =>
+      protecoesDoCabo(c)
+        .filter((p) => !(CIRCUITOS_CC.includes(circuito) && p.tipo === 'disjuntorCA') && p.tensaoMaxV < v)
+        .map((p) => ({ c, p })),
+    );
+    if (fracas.length === 0) continue;
+    const pior = fracas.reduce((a, b) => (b.p.tensaoMaxV < a.p.tensaoMaxV ? b : a));
+    sugerir({
+      regra: 'tensao-da-protecao',
+      nivel: 'erro',
+      titulo: `Proteção de ${um(pior.p.tensaoMaxV)} V em circuito de ${um(v)} V`,
+      texto: `Acima da tensão para a qual foi feita, a proteção pode não interromper o curto. Use uma proteção para pelo menos ${um(v)} V.`,
+      alvos: [...new Set(fracas.map((x) => x.c.cabo.uid))],
+    });
   }
 
   // protecao-maior-que-o-cabo e cabo-fino
@@ -733,8 +847,7 @@ function regrasDeCabos(
   }
 
   // Proteções das placas e da saída.
-  if (comFileira && placa !== null) {
-    const vocFileira = vocFrio(placa, Math.max(...sistema.fileiras.map((f) => f.length)));
+  if (comFileira) {
     const doPv = cabosComEnd(donoSolar, 'pvPos')[0];
     const infoPv = doPv ? circuitos.placas.find((c) => c.cabo.uid === doPv.uid) : undefined;
     const tem = (tipo: TipoProtecao): boolean =>

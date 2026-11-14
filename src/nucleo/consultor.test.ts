@@ -496,6 +496,226 @@ describe('consultor: regras isoladas', () => {
   });
 });
 
+// ---------------------------------------------------------------- Montagens perigosas que o consultor não pode calar
+
+describe('consultor: regras de ligação de nível erro, com título e texto da especificação', () => {
+  const comBanco = (pecas: Record<string, string>, ligacoes: [string, string, string?][]) =>
+    montar({ inv: ANENJI, b: ALFX, ...pecas }, [...ligaBanco('inv', 'b'), ...ligacoes]);
+
+  const casos: [string, Projeto, string, string][] = [
+    ['sem-bateria', montar({ inv: ANENJI }, []), 'O inversor está sem bateria',
+      'Ligue o positivo da bateria no terminal BAT+ do inversor e o negativo no BAT−. Sem bateria, o inversor não liga.'],
+    ['curto-bateria', comBanco({}, [['inv.batPos', 'inv.batNeg']]), 'Curto-circuito na bateria',
+      'O positivo e o negativo da bateria estão ligados entre si. Em uma bateria de verdade isso derrete o cabo em segundos. Desfaça essa ligação.'],
+    ['bateria-invertida', montar({ inv: ANENJI, b: ALFX }, [['b.pos', 'inv.batNeg'], ['b.neg', 'inv.batPos']]), 'Bateria ligada ao contrário',
+      'O positivo da bateria vai no BAT+ e o negativo no BAT−. Invertida, ela queima o inversor na hora.'],
+    ['ramos-desiguais', comBanco({ b2: BELIFOU }, [['b2.pos', 'inv.batPos'], ['b2.neg', 'inv.batNeg']]), 'Baterias em paralelo com tensões diferentes',
+      'Só se liga em paralelo o que tem a mesma tensão. Confira quantas baterias há em cada série.'],
+    ['curto-placas', comBanco({}, [['inv.pvPos', 'inv.pvNeg', 'cabo-solar-6']]), 'Curto-circuito nas placas',
+      'O positivo e o negativo das placas estão ligados entre si. A placa não queima, mas não gera nada. Desfaça essa ligação.'],
+    ['placa-invertida', comBanco({ p: RENEPV }, [['p.pos', 'inv.pvNeg', 'cabo-solar-6'], ['p.neg', 'inv.pvPos', 'cabo-solar-6']]),
+      'Placa ligada ao contrário', 'O positivo da fileira vai no PV+ e o negativo no PV−.'],
+    ['fileiras-desiguais', comBanco({ p1: RENEPV, p2: RENEPV, p3: RENEPV }, [
+      ['p1.pos', 'inv.pvPos', 'cabo-solar-6'], ['p1.neg', 'p2.pos', 'cabo-solar-6'], ['p2.neg', 'inv.pvNeg', 'cabo-solar-6'],
+      ['p3.pos', 'inv.pvPos', 'cabo-solar-6'], ['p3.neg', 'inv.pvNeg', 'cabo-solar-6'],
+    ]), 'Fileiras com número diferente de placas',
+    'Fileiras em paralelo precisam ter a mesma quantidade de placas. A fileira menor derruba a tensão das outras.'],
+    ['saida-na-rede', comBanco({ rede: 'rede-tomada' }, [['inv.caSaida', 'rede.tomada', 'cabo-ca-2p5']]),
+      'A saída do inversor está ligada na rede da casa',
+      'Nunca ligue a saída do inversor em uma tomada da rede. Na queda de luz você manda energia para a rua, onde pode haver alguém trabalhando no fio, e quando a luz volta as duas fontes se chocam. A saída vai só para os aparelhos.'],
+    ['peca-repetida', montar({ inv: ANENJI, A: BELIFOU, B: BELIFOU, C: BELIFOU }, [
+      ['A.pos', 'inv.batPos'], ['A.neg', 'B.pos'], ['B.neg', 'inv.batNeg'], ['A.neg', 'C.pos'], ['C.neg', 'inv.batNeg'],
+    ]), 'Série e paralelo misturados',
+    'Esta peça está em dois caminhos ao mesmo tempo. Monte cada série completa, com a mesma quantidade de peças, e só então junte as séries em paralelo pelas pontas. Os números da tela contam só o primeiro caminho.'],
+    ['placas-no-banco', comBanco({ p: RENEPV }, [['p.pos', 'inv.batPos', 'cabo-solar-6'], ['p.neg', 'inv.batNeg', 'cabo-solar-6']]),
+      'Placas e bateria ligadas direto',
+      'O circuito das placas e o da bateria só se encontram dentro do inversor ou do controlador de carga. Ligados direto, a placa sobrecarrega a bateria ou a bateria descarrega na entrada das placas. Placa vai em PV+ e PV−; bateria vai em BAT+ e BAT−.'],
+  ];
+
+  it.each(casos)('`%s`', (regra, projeto, titulo, texto) => {
+    const s = da(consultar(projeto), regra);
+    expect(s.nivel).toBe('erro');
+    expect(s.titulo).toBe(titulo);
+    expect(s.texto).toBe(texto);
+  });
+
+  it('`peca-repetida` aponta a peça repetida e a que ficou de fora', () => {
+    const s = da(consultar(casos.find((c) => c[0] === 'peca-repetida')![1]), 'peca-repetida');
+    expect(s.alvos.slice(0, 2)).toEqual(['A', 'C']);
+  });
+
+  it('placa em BAT+ e BAT− não vira `sem-placas`', () => {
+    expect(regras(consultar(casos.find((c) => c[0] === 'placas-no-banco')![1]))).not.toContain('sem-placas');
+  });
+});
+
+describe('consultor: compatibilidade do controlador e proteções', () => {
+  const FELICITY_48 = 'inv-felicity-5kw-48v-127';
+  const BAT_48 = 'bat-felicity-48v-100';
+
+  it('`tensao-do-controlador`: Epever de 12/24 V em banco de 48 V', () => {
+    const projeto = montar({ inv: FELICITY_48, b: BAT_48, ctl: EPEVER }, [
+      ...ligaBanco('inv', 'b'), ['ctl.batPos', 'inv.batPos'], ['ctl.batNeg', 'inv.batNeg'],
+    ]);
+    const s = da(consultar(projeto), 'tensao-do-controlador');
+    expect(s.nivel).toBe('erro');
+    expect(s.titulo).toBe('Controlador de 12/24 V em banco de 48 V');
+    expect(s.texto).toBe('Este controlador não foi feito para a tensão deste banco e queima. Use um controlador que aceite 48 V.');
+    expect(s.acao).toMatchObject({ tipo: 'ver-catalogo', categoria: 'controlador' });
+    expect(s.alvos).toEqual(['ctl', 'b']);
+  });
+
+  it('`tensao-do-controlador` não aparece com o Epever em banco de 24 V', () => {
+    const projeto = montar({ inv: ANENJI, b: ALFX, ctl: EPEVER }, [
+      ...ligaBanco('inv', 'b'), ['ctl.batPos', 'inv.batPos'], ['ctl.batNeg', 'inv.batNeg'],
+    ]);
+    expect(regras(consultar(projeto))).not.toContain('tensao-do-controlador');
+  });
+
+  it('`tensao-da-protecao`: fusível de 32 V em banco de 48 V (48 × 1,17 = 56,2 V)', () => {
+    const projeto = montar({ inv: FELICITY_48, b: BAT_48 }, ligaBanco('inv', 'b'));
+    projeto.cabos[0].protecoes = ['prot-fusivel-anl-150'];
+    const s = da(consultar(projeto), 'tensao-da-protecao');
+    expect(s.nivel).toBe('erro');
+    expect(s.titulo).toBe('Proteção de 32 V em circuito de 56,2 V');
+    expect(s.texto).toBe('Acima da tensão para a qual foi feita, a proteção pode não interromper o curto. Use uma proteção para pelo menos 56,2 V.');
+    expect(s.alvos).toEqual(['k1']);
+    expect(regras(consultar(cenarioPlanoNoPapel()))).not.toContain('tensao-da-protecao');
+  });
+
+  it('`sem-protecao-da-bateria`: fusível só no cabo do controlador não protege a bateria', () => {
+    const projeto = montar({ inv: ANENJI, b: ALFX, ctl: EPEVER }, [
+      ...ligaBanco('inv', 'b'), ['ctl.batPos', 'inv.batPos'], ['ctl.batNeg', 'inv.batNeg'],
+    ]);
+    projeto.cabos[2].protecoes = ['prot-fusivel-anl-150'];
+    const s = da(consultar(projeto), 'sem-protecao-da-bateria');
+    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['k1'], protecaoId: 'prot-fusivel-anl-150' });
+  });
+
+  it('`sem-protecao-da-bateria`: dois ramos em paralelo com fusível em um só', () => {
+    const projeto = montar({ inv: ANENJI, b1: ALFX, b2: ALFX }, [
+      ...ligaBanco('inv', 'b1'), ...ligaBanco('inv', 'b2'),
+    ]);
+    projeto.cabos[0].protecoes = ['prot-fusivel-anl-150'];
+    const s = da(consultar(projeto), 'sem-protecao-da-bateria');
+    // A ação vai só para o ramo que está sem: o cabo do positivo de b2.
+    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['k3'] });
+    projeto.cabos[2].protecoes = ['prot-fusivel-anl-150'];
+    expect(regras(consultar(projeto))).not.toContain('sem-protecao-da-bateria');
+  });
+
+  it('disjuntor de tomada no positivo da bateria: `sem-protecao-da-bateria` e `protecao-de-ca-em-cc`', () => {
+    const projeto = cenarioPlanoNoPapel();
+    projeto.cabos.find((c) => c.uid === 'c3')!.protecoes = ['prot-disjuntor-ca-16'];
+    const s = consultar(projeto);
+    expect(da(s, 'sem-protecao-da-bateria').acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['c3'], protecaoId: 'prot-fusivel-anl-150' });
+    const ca = da(s, 'protecao-de-ca-em-cc');
+    expect(ca.nivel).toBe('erro');
+    expect(ca.titulo).toBe('Disjuntor de tomada em cabo de corrente contínua');
+    expect(ca.texto).toBe(
+      'O disjuntor comum de quadro de luz é feito para corrente alternada. Em corrente contínua ele pode não conseguir interromper o curto e pegar fogo. Use fusível ou disjuntor de corrente contínua.',
+    );
+    expect(ca.alvos).toEqual(['c3']);
+    // Ordem da tabela: sem-protecao-da-bateria, depois protecao-de-ca-em-cc.
+    expect(regras(s).indexOf('sem-protecao-da-bateria')).toBeLessThan(regras(s).indexOf('protecao-de-ca-em-cc'));
+    // O disjuntor de tomada não conta como proteção do cabo de corrente contínua, nem na tensão.
+    expect(regras(s)).not.toContain('tensao-da-protecao');
+    expect(regras(s)).not.toContain('protecao-pequena');
+  });
+});
+
+describe('consultor: placas de modelos diferentes e sem banco', () => {
+  it('`placas-acima-do-limite`: Resun 100 W mais duas Renepv em série no Epever', () => {
+    // Soma por placa: (21,58 + 2 × 52,01) × (1 + 0,0027 × 15) = 125,60 × 1,0405 = 130,69 V, acima de 100 V.
+    const projeto = montar({ inv: AIKER, b: ALFX, ctl: EPEVER, p1: 'placa-resun-100', p2: RENEPV, p3: RENEPV }, [
+      ['ctl.batPos', 'b.pos'], ['ctl.batNeg', 'b.neg'], ...ligaBanco('inv', 'b'),
+      ['p1.pos', 'ctl.pvPos', 'cabo-solar-6'], ['p1.neg', 'p2.pos', 'cabo-solar-6'],
+      ['p2.neg', 'p3.pos', 'cabo-solar-6'], ['p3.neg', 'ctl.pvNeg', 'cabo-solar-6'],
+    ]);
+    const s = da(consultar(projeto), 'placas-acima-do-limite');
+    expect(s.texto).toContain('chega a 130,7 V');
+    expect(s.texto).toContain('aguenta 100 V');
+  });
+
+  /** Anenji sem bateria, com um controlador PWM no barramento e uma placa nele. */
+  const pwmSemBanco = (placa: string): Projeto =>
+    montar({ inv: ANENJI, ctl: PWM, p: placa }, [
+      ['ctl.batPos', 'inv.batPos'], ['ctl.batNeg', 'inv.batNeg'],
+      ['p.pos', 'ctl.pvPos', 'cabo-solar-6'], ['p.neg', 'ctl.pvNeg', 'cabo-solar-6'],
+    ]);
+
+  it('`placas-abaixo-da-tensao` em PWM sem bateria usa 24 × 1,17 = 28,08 V', () => {
+    // Resun 100 W: 17,4 × (1 − 0,003 × 45) = 15,05 V no calor, abaixo de 28,08 + 1 = 29,08 V; com 2 placas, 30,10 V.
+    const s = da(consultar(pwmSemBanco('placa-resun-100')), 'placas-abaixo-da-tensao');
+    expect(s.texto).toContain('Uma placa entrega cerca de 15,1 V no calor, e esta entrada só trabalha a partir de 29,1 V.');
+    expect(s.texto).toContain('Com 2 placas em série a tensão sobe para 30,1 V.');
+  });
+
+  it('`pwm-desperdica` em PWM sem bateria: 1 − 28,08 / (43,83 × 0,9) = 29%', () => {
+    const s = da(consultar(pwmSemBanco(RENEPV)), 'pwm-desperdica');
+    expect(s.titulo).toBe('O controlador PWM desperdiça cerca de 29% desta placa');
+    expect(s.texto).toContain('na tensão da bateria, 28,1 V');
+  });
+
+  it('`placas-acima-da-faixa`: 3 Renepv numa entrada de teste que aproveita até 115 V e aguenta 170 V', () => {
+    // 3 × 43,83 = 131,49 V de trabalho; vocFrio de 162,35 V fica abaixo dos 170 V, então não é a regra do limite.
+    const catalogo = new Map(CATALOGO);
+    const epever = CATALOGO.get(EPEVER)!;
+    if (epever.categoria !== 'controlador') throw new Error('catálogo');
+    catalogo.set(EPEVER, { ...epever, solar: { ...epever.solar, vMax: 115, vocMax: 170 } });
+    const projeto = montar({ inv: AIKER, b: ALFX, ctl: EPEVER, p1: RENEPV, p2: RENEPV, p3: RENEPV }, [
+      ['ctl.batPos', 'b.pos'], ['ctl.batNeg', 'b.neg'], ...ligaBanco('inv', 'b'),
+      ['p1.pos', 'ctl.pvPos', 'cabo-solar-6'], ['p1.neg', 'p2.pos', 'cabo-solar-6'],
+      ['p2.neg', 'p3.pos', 'cabo-solar-6'], ['p3.neg', 'ctl.pvNeg', 'cabo-solar-6'],
+    ]);
+    const s = consultar(projeto, undefined, catalogo);
+    expect(regras(s)).not.toContain('placas-acima-do-limite');
+    const faixa = da(s, 'placas-acima-da-faixa');
+    expect(faixa.nivel).toBe('alerta');
+    expect(faixa.titulo).toBe('Tensão das placas acima da faixa de trabalho');
+    expect(faixa.texto).toBe('A fileira trabalha em 131,5 V e a entrada aproveita até 115 V. Parte da geração se perde. Use menos placas em série.');
+  });
+
+  it('`placa-na-sombra` vale para placa ainda sem cabo', () => {
+    const projeto = montar({ inv: ANENJI, b: ALFX, p: RENEPV }, ligaBanco('inv', 'b'));
+    const e = analisar(projeto).estimativas;
+    const s = da(consultar(projeto, { ...e, perdaSombra: new Map([['p', 0.31]]) }), 'placa-na-sombra');
+    expect(s.alvos).toEqual(['p']);
+  });
+});
+
+describe('consultor: banco com mais de uma bateria por ramo', () => {
+  /** Duas Belifou de 12 V em série no Anenji. */
+  const duasEmSerie = (extra: Record<string, string> = {}, ligacoes: [string, string, string?][] = []): Projeto =>
+    montar({ inv: ANENJI, b1: BELIFOU, b2: BELIFOU, ...extra }, [
+      ['b1.pos', 'inv.batPos'], ['b1.neg', 'b2.pos'], ['b2.neg', 'inv.batNeg'], ...ligacoes,
+    ]);
+
+  it('`autonomia-curta` pede um ramo inteiro e sai sem ação', () => {
+    const projeto = duasEmSerie();
+    const e = analisar(projeto).estimativas;
+    // Um ramo a mais soma 100 Ah aos 100 Ah do banco: a autonomia dobra, de 4,0 para 8,0 horas.
+    const s = da(consultar(projeto, { ...e, autonomiaHoras: 4 }), 'autonomia-curta');
+    expect(s.texto).toBe(
+      'Para atravessar uma noite são umas 12 horas. Com mais um ramo igual, de 2 baterias em série, em paralelo, a autonomia vai para 8,0 horas.',
+    );
+    expect(s.acao).toBeUndefined();
+  });
+
+  it('`corrente-da-bateria` pede um ramo inteiro e sai sem ação', () => {
+    const teste: Aparelho = {
+      ...(CATALOGO.get('ap-tv') as Aparelho), id: 'ap-teste', nome: 'Aparelho de teste', potenciaW: 2400, mediaW: 2400, picoW: 2400,
+    };
+    const catalogo: Catalogo = new Map([...CATALOGO, ['ap-teste', teste]]);
+    // (2.400 / 0,92 + 45) / 25,6 = 103,7 A, acima dos 100 A da Belifou.
+    const projeto = duasEmSerie({ t: 'ap-teste' }, [['inv.caSaida', 't.plug', 'cabo-ca-4']]);
+    const s = da(consultar(projeto, undefined, catalogo), 'corrente-da-bateria');
+    expect(s.texto).toContain('puxam 103,7 A da bateria');
+    expect(s.texto).toContain('Acrescente mais um ramo igual, de 2 baterias em série, em paralelo ou desligue algo.');
+    expect(s.acao).toBeUndefined();
+  });
+});
+
 describe('planejarMaisPlaca', () => {
   const plano = (p: Projeto) => planejarMaisPlaca(p, CATALOGO, analisarCircuito(p, CATALOGO));
 

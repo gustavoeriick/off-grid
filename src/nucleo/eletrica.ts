@@ -112,9 +112,10 @@ const PARAMETROS_QUIMICA: Record<Quimica, { socMin: number; rend: number; fatorR
   automotiva: { socMin: 0.7, rend: 0.866, fatorRef: 1 },
 };
 
-const FATOR_TENSAO_CARGA = 1.17;
-/** Limite da corrente do carregador pela rede, em A. */
-const LIMITE_CARREGADOR_REDE_A = 20;
+/** Tensão de carga sobre a nominal do banco. */
+export const FATOR_TENSAO_CARGA = 1.17;
+/** Maior corrente de carregador de rede que o simulador considera, em A. */
+export const LIMITE_CARREGADOR_REDE_A = 20;
 
 function dispositivoPorUid(projeto: Projeto, uid: string) {
   return projeto.dispositivos.find((d) => d.uid === uid);
@@ -330,7 +331,7 @@ export function passoSimulacao(
       pvW = pCc + carga;
       bateriaW = carga;
       cargaAtendidaW = atendivel;
-      if (pedidaW > 0) origem = 'solar';
+      if (cargaAtendidaW > 0) origem = 'solar';
     } else {
       const falta = -liquido;
       if (falta / b.tensaoRef > b.descargaMaxA) {

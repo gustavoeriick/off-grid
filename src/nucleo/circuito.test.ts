@@ -3,6 +3,7 @@ import { CATALOGO } from '../catalogo';
 import type { Controlador } from '../catalogo/tipos';
 import { CASA_INICIAL, cenarioPlanoCorrigido, cenarioPlanoNoPapel } from './cenarios';
 import { analisarCircuito } from './circuito';
+import { infoBanco } from './eletrica';
 import type { AnaliseCircuito, Cabo, CodigoProblema, Projeto } from './tipos';
 
 /** Monta um projeto pequeno: `pecas` mapeia `uid` para `id` do catálogo; cada ligação é um par `uid.terminal`. */
@@ -289,6 +290,17 @@ describe('analisarCircuito: corrente alternada', () => {
     expect(a.sistema!.redeLigada).toBe(false);
   });
 
+  it('saída do segundo inversor ligada na tomada da rede: saida-na-rede também', () => {
+    const a = analisar(montar({ ...comBateria, inv2: 'inv-aiker-500-12v-110', rede: 'rede-tomada' }, [
+      ...ligaBateria, ['inv2.caSaida', 'rede.tomada'],
+    ]));
+    expect(a.sistema!.inversor).toBe('inv');
+    expect(a.problemas).toEqual([
+      { codigo: 'varios-inversores', dispositivos: ['inv', 'inv2'], cabos: [] },
+      { codigo: 'saida-na-rede', dispositivos: ['inv2', 'rede'], cabos: ['c3'] },
+    ]);
+  });
+
   it('aparelho ligado só na tomada da rede: em naRede, não em cargas', () => {
     const a = analisar(montar({ ...comBateria, rede: 'rede-tomada', tv: 'ap-tv', gel: 'ap-geladeira' }, [
       ...ligaBateria,
@@ -307,6 +319,70 @@ describe('analisarCircuito: corrente alternada', () => {
     expect(a.sistema).toBeNull();
     expect(a.naRede).toEqual(['tv']);
     expect(a.problemas).toEqual([]);
+  });
+});
+
+describe('analisarCircuito: série e paralelo misturados (peca-repetida)', () => {
+  const BELIFOU = 'bat-belifou-12v-100';
+
+  it('baterias: A em série com B e, em paralelo, A em série com C', () => {
+    const projeto = montar({ inv: ANENJI, A: BELIFOU, B: BELIFOU, C: BELIFOU }, [
+      ['A.pos', 'inv.batPos'], ['A.neg', 'B.pos'], ['B.neg', 'inv.batNeg'],
+      ['A.neg', 'C.pos'], ['C.neg', 'inv.batNeg'],
+    ]);
+    const a = analisar(projeto);
+    // O caminho [A, C] repete A e é descartado: A não conta duas vezes.
+    expect(a.sistema!.banco).toEqual([['A', 'B']]);
+    expect(codigos(a)).toEqual(['peca-repetida']);
+    expect(a.problemas[0].dispositivos).toEqual(['A', 'C']);
+    // Os cabos de A e de C (c3 é só de B).
+    expect(a.problemas[0].cabos).toEqual(['c1', 'c2', 'c4', 'c5']);
+    // Capacidade de duas em série: 24 V e 100 Ah, não 200 Ah.
+    const banco = infoBanco(a.sistema!, projeto, CATALOGO)!;
+    expect(banco.tensao).toBe(24);
+    expect(banco.ah).toBe(100);
+    expect(banco.ramos).toBe(1);
+  });
+
+  it('placas: a em série com b e, em paralelo, a em série com c', () => {
+    const a = analisar(montar({ ...comBateria, a: RENEPV, b: RENEPV, c: RENEPV }, [
+      ...ligaBateria,
+      ['a.pos', 'inv.pvPos'], ['a.neg', 'b.pos'], ['b.neg', 'inv.pvNeg'],
+      ['a.neg', 'c.pos'], ['c.neg', 'inv.pvNeg'],
+    ]));
+    expect(a.sistema!.fileiras).toEqual([['a', 'b']]);
+    expect(codigos(a)).toEqual(['peca-repetida']);
+    expect(a.problemas[0].dispositivos).toEqual(['a', 'c']);
+  });
+});
+
+describe('analisarCircuito: placas e bateria ligadas direto (placas-no-banco)', () => {
+  it('"plano corrigido" com um cabo de inversor.batPos a inversor.pvPos', () => {
+    const projeto = cenarioPlanoCorrigido();
+    projeto.cabos.push({
+      uid: 'c13', de: { disp: 'inversor', terminal: 'batPos' }, para: { disp: 'inversor', terminal: 'pvPos' },
+      caboId: 'cabo-bat-35', comprimento: 1, protecoes: [],
+    });
+    const a = analisar(projeto);
+    expect(codigos(a)).toEqual(['placas-no-banco']);
+    expect(a.problemas[0].dispositivos).toEqual(['inversor', 'bateria1', 'placa1']);
+    expect(a.problemas[0].cabos).toContain('c13');
+  });
+
+  it('bateria ligada em PV+ e PV−, sem bateria-solta', () => {
+    const a = analisar(montar({ ...comBateria, b2: ALFX }, [...ligaBateria, ['b2.pos', 'inv.pvPos'], ['b2.neg', 'inv.pvNeg']]));
+    expect(a.problemas).toEqual([{ codigo: 'placas-no-banco', dispositivos: ['b2'], cabos: ['c3', 'c4'] }]);
+  });
+
+  it('placa ligada direto em BAT+ e BAT−, sem placa-solta', () => {
+    const a = analisar(montar({ ...comBateria, p: RENEPV }, [...ligaBateria, ['p.pos', 'inv.batPos'], ['p.neg', 'inv.batNeg']]));
+    expect(a.problemas).toEqual([{ codigo: 'placas-no-banco', dispositivos: ['p'], cabos: ['c3', 'c4'] }]);
+    expect(a.sistema!.banco).toEqual([['bat']]);
+  });
+
+  it('placa no positivo da bateria e no PV−: também placas-no-banco', () => {
+    const a = analisar(montar({ ...comBateria, p: RENEPV }, [...ligaBateria, ['p.pos', 'bat.pos'], ['p.neg', 'inv.pvNeg']]));
+    expect(codigos(a)).toEqual(['placas-no-banco']);
   });
 });
 

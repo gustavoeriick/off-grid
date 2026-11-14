@@ -217,7 +217,7 @@ Passos:
    - Se `cortado` e `soc ≥ socMin + 0,05`: `cortado = false`.
    - `pCc`: se `cortado`, 0; se houve sobrecarga ou `pedidaW = 0`, `consumoVazioW`; senão `pedidaW / rendimento + consumoVazioW`.
    - `liquido = pvDisp − pCc`.
-   - `liquido ≥ 0`: a sobra carrega a bateria, limitada por `aceita` e por `solar.correnteCargaA × tensaoCarga`. `pvW = pCc + carga`. Cargas atendidas. `origem: 'solar'` se `pedidaW > 0`.
+   - `liquido ≥ 0`: a sobra carrega a bateria, limitada por `aceita` e por `solar.correnteCargaA × tensaoCarga`. `pvW = pCc + carga`. Cargas atendidas. `origem: 'solar'` se `cargaAtendidaW > 0`; com o inversor cortado ou em sobrecarga, nada é atendido e a origem é `'nenhuma'`.
    - `liquido < 0`: `falta = −liquido`. Se `falta / tensaoRef > descargaMaxA`: aviso `'bms'`, nenhuma carga atendida, bateria parada. Senão, a energia disponível é `(soc − socMin) × wh × rendDescarga`. Se ela cobre `falta × dt`, `soc` desce `falta × dt / (wh × rendDescarga)` e as cargas são atendidas. Se não cobre, a bateria vai a `socMin`, `cortado = true`, aviso `'bateria-vazia'`, e as cargas são atendidas só na fração coberta. `origem: 'bateria'`.
 9. `soc` fica entre 0 e 1.
 
@@ -230,7 +230,7 @@ Na `SaidaPasso`, `bateriaW` é positivo quando carrega e negativo quando descarr
 1. **Redes.** Cada ponta de cabo é um terminal, identificado por `uid:terminal`. Terminais ligados por cabos, direta ou indiretamente, formam uma rede. Use união de conjuntos. Terminal sem cabo é uma rede sozinha.
 2. **Inversor.** O sistema usa o primeiro dispositivo de categoria `inversor` na ordem de `projeto.dispositivos`. Mais de um: problema `'varios-inversores'`. Nenhum: `sistema: null` e, se houver placa, bateria ou controlador no projeto, problema `'sem-inversor'`.
 3. **Barramento.** `P` é a rede de `inversor.batPos` e `N` a de `inversor.batNeg`. Estação portátil não tem barramento.
-4. **Ramos do banco.** Busca em profundidade a partir de `P`: para cada bateria com `pos` na rede atual, se o `neg` dela está em `N` o ramo fecha; senão a busca continua na rede do `neg`. Cada caminho completo é um ramo, do positivo para o negativo. Limite de 40 baterias por ramo.
+4. **Ramos do banco.** Busca em profundidade a partir de `P`: para cada bateria com `pos` na rede atual, se o `neg` dela está em `N` o ramo fecha; senão a busca continua na rede do `neg`. Cada caminho completo é um ramo, do positivo para o negativo. Limite de 40 baterias por ramo. Uma bateria só pode estar em um ramo: se um caminho repete uma bateria de um ramo já aceito, ele é descartado e gera o problema `peca-repetida`. Assim a capacidade não conta em dobro enquanto o erro está na tela. O mesmo vale para as placas nas fileiras.
 5. **Entrada solar.** Candidatas, em ordem: a entrada do inversor (`inversor.solar`, entre `pvPos` e `pvNeg`) e a de cada controlador cujo `batPos` está em `P` e cujo `batNeg` está em `N`. Para cada candidata, as fileiras são os caminhos de placas entre a rede do `pvPos` e a do `pvNeg`, pela mesma busca. Fica em uso a primeira candidata que tiver fileira completa. Se nenhuma tiver, fica a primeira candidata, com `fileiras: []`. Sem candidata, `entradaSolar: null`.
 6. **Cargas.** Aparelhos com o `plug` na rede de `inversor.caSaida`.
 7. **Rede elétrica.** `redeLigada` é verdadeiro quando a rede de `inversor.caEntrada` contém a `tomada` de um dispositivo de categoria `rede`. `naRede` lista os aparelhos com o `plug` na rede de uma tomada e fora da saída do inversor.
@@ -252,7 +252,11 @@ Problemas, com os `uid` envolvidos:
 | `placa-solta` | Placa com algum cabo e fora de fileira completa, sem ser invertida |
 | `fileiras-desiguais` | Fileiras em paralelo com número diferente de placas |
 | `placas-misturadas` | Arranjo com mais de um modelo de placa |
-| `saida-na-rede` | A rede de `inversor.caSaida` contém a `tomada` de um dispositivo `rede` |
+| `saida-na-rede` | A rede de `caSaida` de qualquer inversor do projeto contém a `tomada` de um dispositivo `rede` |
+| `peca-repetida` | Bateria em mais de um caminho do banco, ou placa em mais de um caminho do arranjo (série e paralelo misturados) |
+| `placas-no-banco` | `P` ou `N` é a mesma rede que o `pvPos` ou o `pvNeg` de uma candidata a entrada solar; ou uma bateria tem terminal em rede de `pvPos` ou `pvNeg`; ou uma placa tem terminal em `P` ou `N` |
+
+A peça apontada em `placas-no-banco` não gera também `bateria-solta` nem `placa-solta`.
 
 Placa ou bateria sem nenhum cabo não é problema: está só guardada na cena.
 
@@ -291,7 +295,7 @@ Método, por rede: escolha o terminal sorvedouro e as injeções; percorra a red
 
 `estimar(projeto, catalogo, analise, ambiente, msUtc)` devolve números do dia local de `msUtc`:
 
-- `geracaoDiaKwh`: soma de `saidaArranjo(...).p` ao longo do dia, com passo de 10 minutos avaliado no meio do passo. É o que as placas conseguem entregar, sem depender do estado da bateria. Zero sem fileiras.
+- `geracaoDiaKwh`: soma de `saidaArranjo(...).p` ao longo do dia, com passo de 10 minutos avaliado no meio do passo. É o que as placas conseguem entregar, sem depender do estado da bateria. Zero sem fileiras. Sem banco, a tensão de carga usada na conta é `inversor.tensaoBateria × 1,17`, para a geração aparecer enquanto a montagem está pela metade.
 - `consumoDiaKwh`: o que a bateria ou as placas precisam entregar em um dia de uso normal. `soma(mediaW × horas de uso) / rendimento + consumoVazioW × 24`, em kWh, para as cargas ligadas, com as horas de `horasDeUso(usoDe(...))`.
 - `autonomiaHoras`: `whUtil × rendDescarga / (soma(mediaW das cargas ligadas) / rendimento + consumoVazioW)`. `null` sem banco ou sem carga ligada. É o pior caso: todas as cargas ligadas funcionando ao mesmo tempo, sem olhar os horários.
 - `perdaSombra`: para cada placa, `1 − energia do dia com sombra / energia do dia sem sombra`, usando só `estadoPlaca`. "Sem sombra" é a mesma normal com `fSombra = 0` e `fCeuTapado = 0`.
