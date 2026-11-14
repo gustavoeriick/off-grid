@@ -2,12 +2,13 @@
 // Especificação: docs/especificacao/cena-e-interface.md, seções 1 e 12.
 
 import { acoes, assinar, estado, type ModoVisao } from '../estado';
+import { localPorId } from '../nucleo/irradiancia';
 import type { CasaConfig, Clima, LadoCasa } from '../nucleo/tipos';
 
 const MS_HORA = 3_600_000;
 const MS_DIA = 24 * MS_HORA;
-/** O Rio fica em UTC − 3. */
-const DESLOCAMENTO_RIO_MS = -3 * MS_HORA;
+/** Fuso do local do projeto, em ms (o Rio fica em UTC − 3). Vem do núcleo, não é escrito aqui. */
+const DESLOCAMENTO_RIO_MS = (localPorId(estado.projeto.localId)?.fuso ?? -3) * MS_HORA;
 const ANO = 2026;
 const INICIO_ANO_MS = Date.UTC(ANO, 0, 1, 3, 0, 0);
 const FIM_ANO_MS = Date.UTC(ANO + 1, 0, 1, 3, 0, 0);
@@ -165,8 +166,10 @@ function montarFormularioCasa(): void {
   const lado = el<HTMLSelectElement>('#varanda-lado');
   const vProf = el<HTMLInputElement>('#varanda-profundidade');
   const vInc = el<HTMLInputElement>('#varanda-inclinacao');
-  const qx = el<HTMLInputElement>('#quartinho-x');
-  const qz = el<HTMLInputElement>('#quartinho-z');
+  const camposQuartinho = (['x', 'z', 'largura', 'profundidade', 'altura', 'giro'] as const).map((chave) => ({
+    chave,
+    campo: el<HTMLInputElement>(`#quartinho-${chave}`),
+  }));
 
   // Últimos valores da varanda, para quando o usuário a liga de novo.
   const ultimaVaranda = { profundidade: 3, inclinacaoPct: 30 };
@@ -190,8 +193,7 @@ function montarFormularioCasa(): void {
     preencher(vProf, ultimaVaranda.profundidade);
     preencher(vInc, ultimaVaranda.inclinacaoPct);
     vProf.disabled = vInc.disabled = !casa.varanda;
-    preencher(qx, casa.quartinho.x);
-    preencher(qz, casa.quartinho.z);
+    camposQuartinho.forEach(({ chave, campo }) => preencher(campo, casa.quartinho[chave]));
   };
 
   campos.forEach((c) =>
@@ -213,9 +215,11 @@ function montarFormularioCasa(): void {
 
   const aplicarQuartinho = () => {
     const q = estado.projeto.casa.quartinho;
-    acoes.alterarCasa({ quartinho: { ...q, x: numeroDe(qx) ?? q.x, z: numeroDe(qz) ?? q.z } });
+    const novo = { ...q };
+    camposQuartinho.forEach(({ chave, campo }) => (novo[chave] = numeroDe(campo) ?? q[chave]));
+    acoes.alterarCasa({ quartinho: novo });
   };
-  [qx, qz].forEach((c) => c.addEventListener('change', aplicarQuartinho));
+  camposQuartinho.forEach(({ campo }) => campo.addEventListener('change', aplicarQuartinho));
 
   const alternar = (aberto: boolean) => {
     painel.hidden = !aberto;

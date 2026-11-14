@@ -119,6 +119,20 @@ async function principal() {
     console.log(`captura: ${nome}.png`);
   };
 
+  const CAMERA_INICIAL = { pos: [-14, 11, -16], alvo: [0, 2.5, 0] };
+  const mudarCamera = (pos, alvo) => pagina.evaluate(([p, a]) => window.__offgrid.posicionarCamera(p, a), [pos, alvo]);
+  /** Captura vista de cima (norte para cima na tela, se a cena seguir a especificação) e devolve a câmera à posição inicial. */
+  const de_cima = async (nome) => {
+    await mudarCamera([0, 45, 0.01], [0, 0, 0]);
+    await captura(nome);
+    await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
+  };
+  /** Preenche um campo numérico do formulário e confirma com Tab (dispara o evento change). */
+  const preencher = async (seletor, valor) => {
+    await pagina.locator(seletor).fill(String(valor));
+    await pagina.locator(seletor).press('Tab');
+  };
+
   // 1. Tela inicial.
   await captura('01-tela-inicial');
   let e = await estado();
@@ -134,12 +148,14 @@ async function principal() {
   await pagina.locator('#hora').fill('720');
   q = await quando();
   conferir(q.hora === 12, `hora deveria ser 12, veio ${q.hora}`);
-  await captura('02-meio-dia-21-06');
+  // Sem captura aqui: a tela é igual à inicial (21/06, meio-dia).
+  await de_cima('02-de-cima-meio-dia-21-06');
 
   await pagina.locator('#hora').fill('480');
   q = await quando();
   conferir(q.hora === 8 && q.dia === 21, `hora deveria ser 8, veio ${q.hora}`);
   await captura('03-oito-horas-21-06');
+  await de_cima('03b-de-cima-oito-horas-21-06');
 
   await pagina.locator('#hora').fill('0');
   q = await quando();
@@ -166,6 +182,22 @@ async function principal() {
   e = await estado();
   conferir(e.projeto.casa.andares === 1, 'a casa deveria ter 1 andar');
   await captura('08-casa-terrea-com-formulario');
+  await pagina.locator('[data-casa="andares"]').selectOption('2');
+
+  // Campos numéricos do corpo, pelo formulário, conferidos no estado.
+  for (const [chave, valor] of [
+    ['largura', 9],
+    ['profundidade', 8],
+    ['peDireito', 3],
+    ['inclinacaoTelhadoPct', 40],
+    ['beiral', 0.8],
+  ]) {
+    await preencher(`[data-casa="${chave}"]`, valor);
+    e = await estado();
+    conferir(e.projeto.casa[chave] === valor, `${chave} deveria ser ${valor}, veio ${e.projeto.casa[chave]}`);
+  }
+  await pagina.locator('[data-casa="andares"]').selectOption('1');
+  await captura('08b-casa-medidas-alteradas');
   await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
   await captura('09-casa-terrea');
 
@@ -180,6 +212,29 @@ async function principal() {
     await captura(`10-varanda-${lado}`);
     await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
   }
+  await pagina.locator('#varanda-lado').selectOption('frente');
+  await preencher('#varanda-profundidade', 4);
+  await preencher('#varanda-inclinacao', 20);
+  e = await estado();
+  conferir(e.projeto.casa.varanda?.profundidade === 4 && e.projeto.casa.varanda?.inclinacaoPct === 20, 'varanda deveria ter profundidade 4 e inclinação 20');
+
+  // Quartinho, campo a campo.
+  for (const [chave, valor] of [
+    ['x', 5],
+    ['z', -3],
+    ['largura', 3],
+    ['profundidade', 2.5],
+    ['altura', 2.6],
+    ['giro', 30],
+  ]) {
+    await preencher(`#quartinho-${chave}`, valor);
+    e = await estado();
+    conferir(e.projeto.casa.quartinho[chave] === valor, `quartinho.${chave} deveria ser ${valor}, veio ${e.projeto.casa.quartinho[chave]}`);
+  }
+  await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await captura('10b-quartinho-alterado');
+  await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+
   await pagina.locator('#varanda-lado').selectOption('');
   e = await estado();
   conferir(e.projeto.casa.varanda === null, 'a varanda deveria sumir');
@@ -192,6 +247,7 @@ async function principal() {
   e = await estado();
   conferir(e.projeto.casa.orientacaoGraus === 90, 'orientação deveria ser 90');
   await captura('12-orientacao-90');
+  await de_cima('12b-de-cima-orientacao-90');
   await pagina.locator('#rotacao').fill('45');
   e = await estado();
   conferir(e.projeto.casa.orientacaoGraus === 45, 'o controle deslizante deveria dar 45');
