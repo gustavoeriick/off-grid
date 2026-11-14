@@ -4,10 +4,130 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Simulador off-grid</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/estilo.css" />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <header id="topo">
+        <h1 id="nome-projeto">Simulador off-grid</h1>
+        <div class="grupo-linha" role="group" aria-label="Modo de visão">
+          <span class="rotulo">Visão</span>
+          <div class="botoes" id="botoes-visao">
+            <button type="button" data-visao="completa">Completa</button>
+            <button type="button" data-visao="sem-telhado">Sem telhado</button>
+            <button type="button" data-visao="terreo">Só térreo</button>
+          </div>
+        </div>
+      </header>
+
+      <aside id="esquerda" aria-label="Catálogo">
+        <h2>Catálogo</h2>
+        <p class="vazio">As peças para arrastar para a casa aparecem aqui.</p>
+      </aside>
+
+      <main id="centro">
+        <div id="cena"></div>
+        <section id="form-casa" class="painel-casa" hidden aria-label="Medidas da casa">
+          <h3>Casa</h3>
+          <div class="colunas-casa">
+            <fieldset>
+              <legend>Corpo</legend>
+              <label>Largura (m) <input type="number" data-casa="largura" min="4" max="20" step="0.5" /></label>
+              <label>Profundidade (m) <input type="number" data-casa="profundidade" min="4" max="20" step="0.5" /></label>
+              <label>Andares
+                <select data-casa="andares">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                </select>
+              </label>
+              <label>Pé-direito (m) <input type="number" data-casa="peDireito" min="2.2" max="4" step="0.1" /></label>
+              <label>Inclinação do telhado (%) <input type="number" data-casa="inclinacaoTelhadoPct" min="10" max="100" step="1" /></label>
+              <label>Beiral (m) <input type="number" data-casa="beiral" min="0" max="1.5" step="0.1" /></label>
+            </fieldset>
+            <fieldset>
+              <legend>Varanda</legend>
+              <label>Lado
+                <select id="varanda-lado">
+                  <option value="">Sem varanda</option>
+                  <option value="frente">Frente</option>
+                  <option value="fundos">Fundos</option>
+                  <option value="esquerda">Esquerda</option>
+                  <option value="direita">Direita</option>
+                </select>
+              </label>
+              <label>Profundidade (m) <input type="number" id="varanda-profundidade" min="1" max="6" step="0.5" /></label>
+              <label>Inclinação (%) <input type="number" id="varanda-inclinacao" min="10" max="100" step="1" /></label>
+            </fieldset>
+            <fieldset>
+              <legend>Quartinho</legend>
+              <label>Posição x (m) <input type="number" id="quartinho-x" min="-15" max="15" step="0.5" /></label>
+              <label>Posição z (m) <input type="number" id="quartinho-z" min="-15" max="15" step="0.5" /></label>
+            </fieldset>
+          </div>
+          <button type="button" id="fechar-casa">Fechar</button>
+        </section>
+      </main>
+
+      <aside id="direita" aria-label="Painéis">
+        <div class="abas" role="tablist">
+          <button type="button" role="tab" data-aba="consultor" aria-selected="true">Consultor</button>
+          <button type="button" role="tab" data-aba="orcamento" aria-selected="false">Orçamento</button>
+          <button type="button" role="tab" data-aba="sistema" aria-selected="false">Sistema</button>
+        </div>
+        <div class="aba-painel" role="tabpanel" data-painel="consultor"><p class="vazio">As sugestões do consultor aparecem aqui.</p></div>
+        <div class="aba-painel" role="tabpanel" data-painel="orcamento" hidden><p class="vazio">O orçamento aparece aqui.</p></div>
+        <div class="aba-painel" role="tabpanel" data-painel="sistema" hidden><p class="vazio">Geração, consumo e bateria aparecem aqui.</p></div>
+      </aside>
+
+      <footer id="base">
+        <div class="grupo">
+          <span class="rotulo">Data (2026)</span>
+          <div class="linha">
+            <input type="number" id="dia" min="1" max="31" step="1" aria-label="Dia" />
+            <select id="mes" aria-label="Mês"></select>
+          </div>
+        </div>
+        <div class="grupo grupo-hora">
+          <span class="rotulo">Hora no Rio <output id="hora-texto">12:00</output></span>
+          <input type="range" id="hora" min="0" max="1439" step="1" aria-label="Hora do dia" />
+        </div>
+        <div class="grupo">
+          <span class="rotulo">Velocidade</span>
+          <div class="botoes" id="botoes-velocidade">
+            <button type="button" data-vel="0">Pausa</button>
+            <button type="button" data-vel="1">1 min/s</button>
+            <button type="button" data-vel="10">10 min/s</button>
+            <button type="button" data-vel="60">60 min/s</button>
+          </div>
+        </div>
+        <div class="grupo">
+          <span class="rotulo">Clima</span>
+          <select id="clima" aria-label="Clima">
+            <option value="tipico">Típico do mês</option>
+            <option value="limpo">Céu limpo</option>
+            <option value="nublado">Nublado</option>
+            <option value="chuvoso">Chuvoso</option>
+          </select>
+        </div>
+        <div class="grupo grupo-rotacao">
+          <span class="rotulo">Rotação da casa <output id="rotacao-texto">0°</output></span>
+          <div class="linha">
+            <input type="range" id="rotacao" min="0" max="359" step="1" aria-label="Rotação da casa em graus" />
+            <div class="botoes" id="botoes-rosa">
+              <button type="button" data-graus="0" title="Frente para o norte">N</button>
+              <button type="button" data-graus="90" title="Frente para o leste">L</button>
+              <button type="button" data-graus="180" title="Frente para o sul">S</button>
+              <button type="button" data-graus="270" title="Frente para o oeste">O</button>
+            </div>
+          </div>
+        </div>
+        <div class="grupo">
+          <span class="rotulo">Medidas</span>
+          <button type="button" id="abrir-casa" aria-expanded="false">Casa</button>
+        </div>
+      </footer>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

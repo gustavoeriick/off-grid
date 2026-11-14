@@ -1,7 +1,11 @@
-// Ponto de entrada. Monta a cena em tela cheia; os painéis entram depois.
+// Ponto de entrada. Monta a cena no centro da tela e liga os controles.
 
 import { criarCena } from './cena';
+import { montarInterface } from './ui';
 
-const app = document.querySelector<HTMLDivElement>('#app');
+const cena = document.querySelector<HTMLElement>('#cena');
 
-if (app) criarCena(app);
+if (cena) {
+  criarCena(cena);
+  montarInterface();
+}
