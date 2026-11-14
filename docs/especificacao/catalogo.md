@@ -210,20 +210,51 @@ Todos os cabos desta tabela são de cobre. As capacidades são valores de refer�
 
 ## 5. Aparelhos
 
-Os aparelhos são os da casa, com preço zero e sem `tipico`. `potenciaW` é a potência com o aparelho funcionando, `mediaW` a média ao longo do tempo ligado, `picoW` o pico de partida e `horasDia` o uso típico por dia.
+Os aparelhos são os da casa, com preço zero. `potenciaW` é a potência com o aparelho funcionando, `mediaW` a média ao longo do tempo ligado, `picoW` o pico de partida e `usoPadrao` o horário de uso típico, que o usuário troca em cada aparelho.
 
-| `id` | Nome | `potenciaW` | `mediaW` | `picoW` | `horasDia` | `tensao` | Motor | Eletrônico | `forma` | `dimensoes` |
+As potências são valores típicos de cada tipo de aparelho, não medições. O painel do aparelho avisa isso e sugere medir o consumo real com um medidor de tomada (`acc-wattimetro`).
+
+### Do plano elétrico do Gustavo
+
+| `id` | Nome | `potenciaW` | `mediaW` | `picoW` | `usoPadrao` | `tensao` | Motor | Eletrônico | `forma` | `dimensoes` |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `ap-rede` | Modem, roteador e mini PC | 40 | 40 | 60 | 24 | bivolt | não | sim | `roteador` | 0,35 × 0,20 × 0,20 |
-| `ap-pc-24h` | PC ligado 24 h | 70 | 70 | 150 | 24 | bivolt | não | sim | `pc` | 0,20 × 0,45 × 0,45 |
-| `ap-pc-trabalho` | PC de trabalho | 135 | 135 | 300 | 10 | bivolt | não | sim | `pc` | 0,20 × 0,45 × 0,45 |
-| `ap-geladeira` | Geladeira | 150 | 90 | 900 | 24 | 127 | sim | não | `geladeira` | 0,70 × 1,75 × 0,70 |
-| `ap-ventilador` | Ventilador | 50 | 50 | 100 | 12 | 127 | sim | não | `ventilador` | 0,45 × 1,30 × 0,45 |
-| `ap-tv` | TV | 80 | 80 | 100 | 5 | bivolt | não | sim | `tv` | 1,10 × 0,70 × 0,25 |
-| `ap-lampada` | Lâmpada LED | 9 | 9 | 9 | 6 | bivolt | não | não | `lampada` | 0,12 × 0,12 × 0,12 |
-| `ap-notebook` | Notebook | 60 | 45 | 65 | 8 | bivolt | não | sim | `notebook` | 0,36 × 0,25 × 0,25 |
-| `ap-microondas` | Micro-ondas | 1.300 | 1.300 | 1.500 | 0,3 | 127 | não | não | `microondas` | 0,50 × 0,30 × 0,40 |
-| `ap-bomba` | Bomba d'água de 1/2 cv | 400 | 400 | 1.500 | 1 | 127 | sim | não | `caixa` | 0,30 × 0,25 × 0,20 |
-| `ap-chuveiro` | Chuveiro elétrico | 5.500 | 5.500 | 5.500 | 0,5 | 127 | não | não | `chuveiro` | 0,25 × 0,25 × 0,25 |
+| `ap-rede` | Modem, roteador e mini PC | 40 | 40 | 60 | 0 às 24 | bivolt | não | sim | `roteador` | 0,35 × 0,20 × 0,20 |
+| `ap-pc-24h` | PC ligado 24 h | 70 | 70 | 150 | 0 às 24 | bivolt | não | sim | `pc` | 0,20 × 0,45 × 0,45 |
+| `ap-pc-trabalho` | PC de trabalho do plano (RX 580) | 135 | 135 | 300 | 8 às 18 | bivolt | não | sim | `pc` | 0,20 × 0,45 × 0,45 |
+| `ap-geladeira` | Geladeira grande | 150 | 90 | 900 | 0 às 24 | 127 | sim | não | `geladeira` | 0,75 × 1,80 × 0,75 |
+| `ap-ventilador` | Ventilador | 50 | 50 | 100 | 10 às 22 | 127 | sim | não | `ventilador` | 0,45 × 1,30 × 0,45 |
+| `ap-tv` | TV | 80 | 80 | 100 | 18 às 23 | bivolt | não | sim | `tv` | 1,10 × 0,70 × 0,25 |
 
-Os seis primeiros são os do plano elétrico do Gustavo e somam 465 W de média. O micro-ondas, a bomba e o chuveiro estão no catálogo para o usuário ver o inversor recusar a carga.
+Esses seis somam 465 W de média e são os do cenário "plano no papel". A geladeira de 90 W médios do plano corresponde a uma geladeira grande.
+
+### Computadores
+
+| `id` | Nome | `potenciaW` | `mediaW` | `picoW` | `usoPadrao` | `forma` | `dimensoes` |
+|---|---|---|---|---|---|---|---|
+| `ap-pc-escritorio` | PC de trabalho, sem placa de vídeo | 90 | 60 | 150 | 8 às 18 | `pc` | 0,20 × 0,45 × 0,45 |
+| `ap-pc-gamer` | PC gamer, com placa de vídeo | 450 | 350 | 600 | 19 às 23 | `pc` | 0,22 × 0,50 × 0,48 |
+| `ap-notebook` | Notebook de trabalho | 65 | 45 | 65 | 8 às 18 | `notebook` | 0,36 × 0,25 × 0,25 |
+| `ap-notebook-gamer` | Notebook com placa de vídeo | 180 | 120 | 230 | 19 às 23 | `notebook` | 0,38 × 0,27 × 0,27 |
+
+Todos bivolt, eletrônicos, sem motor. No PC gamer e no notebook com placa de vídeo, a média é a de jogo; em uso de escritório consomem perto do que consomem os modelos de trabalho.
+
+### Geladeiras
+
+| `id` | Nome | `potenciaW` | `mediaW` | `picoW` | `usoPadrao` | `dimensoes` |
+|---|---|---|---|---|---|---|
+| `ap-frigobar` | Frigobar | 70 | 25 | 400 | 0 às 24 | 0,48 × 0,85 × 0,52 |
+| `ap-geladeira-normal` | Geladeira normal, de uma porta | 100 | 45 | 600 | 0 às 24 | 0,60 × 1,55 × 0,65 |
+| `ap-geladeira-maior` | Geladeira maior, duplex | 130 | 65 | 800 | 0 às 24 | 0,68 × 1,70 × 0,70 |
+
+Todas de 127 V, com motor, `forma` `geladeira`. A geladeira grande é `ap-geladeira`, da primeira tabela.
+
+### Outros
+
+| `id` | Nome | `potenciaW` | `mediaW` | `picoW` | `usoPadrao` | `tensao` | Motor | Eletrônico | `forma` | `dimensoes` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `ap-lampada` | Lâmpada LED | 9 | 9 | 9 | 18 às 24 | bivolt | não | não | `lampada` | 0,12 × 0,12 × 0,12 |
+| `ap-microondas` | Micro-ondas | 1.300 | 1.300 | 1.500 | 12 às 13 | 127 | não | não | `microondas` | 0,50 × 0,30 × 0,40 |
+| `ap-bomba` | Bomba d'água de 1/2 cv | 400 | 400 | 1.500 | 7 às 8 | 127 | sim | não | `caixa` | 0,30 × 0,25 × 0,20 |
+| `ap-chuveiro` | Chuveiro elétrico | 5.500 | 5.500 | 5.500 | 19 às 20 | 127 | não | não | `chuveiro` | 0,25 × 0,25 × 0,25 |
+
+O micro-ondas, a bomba e o chuveiro estão no catálogo para o usuário ver o inversor recusar a carga.

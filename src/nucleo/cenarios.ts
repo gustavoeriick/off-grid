@@ -16,7 +16,7 @@ export const CASA_INICIAL: CasaConfig = {
 };
 
 function dispositivo(uid: string, itemId: string): Dispositivo {
-  return { uid, itemId, pos: [0, 0, 0], quat: [0, 0, 0, 1], superficie: null, giro: 0, ligado: true };
+  return { uid, itemId, pos: [0, 0, 0], quat: [0, 0, 0, 1], superficie: null, giro: 0, ligado: true, uso: null };
 }
 
 function cabo(uid: string, de: string, para: string, caboId: string, comprimento: number, protecoes: string[] = []): Cabo {

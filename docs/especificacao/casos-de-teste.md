@@ -153,7 +153,7 @@ Autonomia de 1 bateria Alfx no Anenji (rendimento 0,92; consumo sem carga 45 W):
 | 110 W | 164,6 W | 6,4 A | 13,65 h |
 | 40 W | 88,5 W | 3,5 A | 25,39 h |
 
-Passos, sempre sobre o "plano no papel", com `dtHoras` de 1/12 e sem sol, salvo indicação:
+Passos, sempre sobre o "plano no papel", com `dtHoras` de 1/12, sem sol e com `horaLocal` nulo (horários ignorados), salvo indicação:
 
 | Caso | Entrada | Esperado |
 |---|---|---|
@@ -166,6 +166,10 @@ Passos, sempre sobre o "plano no papel", com `dtHoras` de 1/12 e sem sol, salvo 
 | Sol sobrando | "Plano corrigido", queda de luz, placas a 1000 W/m² e 25 °C, `soc` 0,5 | `pvW` 930,8; cargas atendidas; `bateriaW` +380,4; `origem` `solar` |
 | Religamento | Depois de vazia, com sol e sem carga ligada | `cortado` volta a falso quando `soc` chega a 0,15 |
 | Sem sistema | Projeto vazio | Tudo zero; `origem` `nenhuma` |
+| Horário de uso às 20:00 | Queda de luz, `horaLocal` 20 | `cargaPedidaW` 330: o PC de trabalho (8 às 18) está fora do horário; `bateriaW` −403,7 |
+| Horário de uso às 23:30 | Queda de luz, `horaLocal` 23,5 | `cargaPedidaW` 200: ficam modem, PC 24 h e geladeira; `bateriaW` −262,4 |
+| Horário definido pelo usuário | Como o anterior, com `uso` da TV trocado para 20 às 2 | `cargaPedidaW` 280 |
+| Desligado manda mais | `horaLocal` 20, TV com `ligado` falso | `cargaPedidaW` 250 |
 
 ## 7. Circuito (tarefa 1.4)
 
@@ -283,7 +287,7 @@ Com o ambiente da seção 1:
 | "Plano corrigido", 21/06/2026 | 3,91 | 8,85 | 4,08 |
 | "Plano corrigido", 21/12/2026 | 5,23 | 8,85 | 4,08 |
 
-O consumo do dia vem de 7,15 kWh em CA: modem 40 W por 24 h, PC 70 W por 24 h, PC de trabalho 135 W por 10 h, geladeira 90 W por 24 h, ventilador 50 W por 12 h e TV 80 W por 5 h. Tolerância de 2% na geração. `perdaSombra` é zero para todas as placas com `ambienteSemSombra`.
+O consumo do dia vem de 7,15 kWh em CA, com os horários típicos: modem 40 W e PC 70 W o dia inteiro, PC de trabalho 135 W das 8 às 18, geladeira 90 W o dia inteiro, ventilador 50 W das 10 às 22 e TV 80 W das 18 às 23. Trocando o `uso` do PC de trabalho para o dia inteiro, o consumo sobe para 10,91 kWh. Tolerância de 2% na geração. `perdaSombra` é zero para todas as placas com `ambienteSemSombra`.
 
 ## 11. Orçamento (tarefa 1.8)
 
@@ -345,6 +349,7 @@ Conferidos pelo roteiro `scripts/verificar.mjs`, com capturas de tela, e pelo `r
 | 2.3 | Mover um dispositivo atualiza `pos` e o comprimento dos cabos dele; `Delete` remove o dispositivo e os cabos |
 | 2.4 | Puxar de `placa.pos` a `inversor.pvPos` cria um cabo vermelho; puxar de `ap-tv.plug` a `inversor.batPos` não cria; arrastar um fusível para um cabo o instala |
 | 2.5 | Recarregar a página mantém a montagem; "Cenário do plano" recria o "plano no papel", com as seis sugestões da seção 9 |
-| 3.2 | No "plano no papel", com queda de luz às 20:00 e velocidade de 60 minutos por segundo, a tela mostra a bateria vazia perto de 00:05 (entre 23:55 e 00:15) |
+| 3.2 | No "plano no papel", com queda de luz às 20:00 e velocidade de 60 minutos por segundo, a tela mostra a bateria vazia perto de 03:10 (entre 03:00 e 03:20), porque o ventilador para às 22 e a TV às 23. Com todos os aparelhos em "o dia inteiro", perto de 00:05 |
+| 2.3 | Trocar o horário de uso de um aparelho no painel muda `uso` no estado e o consumo do dia na aba Sistema |
 | 3.3 | Clicar na ação de `protecao-maior-que-o-cabo` troca os cabos, e a sugestão some |
 | 3.4 | O total do painel é R$ 8.289,32 no "plano no papel" montado com os comprimentos da seção 1 |

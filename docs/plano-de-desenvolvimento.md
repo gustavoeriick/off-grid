@@ -1,6 +1,6 @@
 # Plano de desenvolvimento do simulador off-grid 3D
 
-**Estado:** plano aprovado pelo Gustavo em 14/11/2026. Fase 0 entregue; a especificação aguarda a aprovação dele antes da fase 1.
+**Estado:** plano e especificação aprovados pelo Gustavo em 14/11/2026. Fase 0 concluída. A próxima é a fase 1.
 
 **Como usar este documento:** ele é a memória do projeto. Cada fase começa em uma sessão nova do Claude Code, que lê este plano e a especificação e não depende de conversas anteriores. Quem coordena uma fase marca aqui as tarefas concluídas.
 
@@ -70,7 +70,7 @@ Coordenação: Fable 5.2, na sessão em que este plano foi escrito, porque é el
 - [x] **0.3 Contratos em código.** Tipos do projeto e do catálogo, os arquivos do núcleo com as assinaturas, os terminais, os dois cenários de teste e o esqueleto da página. `npm run typecheck`, `npm test` e `npm run build` passam.
 - [x] **0.4 Agentes e convenções.** Os seis arquivos em `.claude/agents/` e o `CLAUDE.md`.
 
-**Aprovação:** o Gustavo lê a especificação, principalmente [as regras do consultor](especificacao/consultor.md) e [os casos de teste](especificacao/casos-de-teste.md), e aprova. Pendente.
+**Aprovação:** o Gustavo lê a especificação, principalmente [as regras do consultor](especificacao/consultor.md) e [os casos de teste](especificacao/casos-de-teste.md), e aprova. Aprovada em 14/11/2026, com dois ajustes pedidos por ele e já incorporados: horário de uso definido em cada aparelho, e mais tipos de computador e de geladeira no catálogo.
 
 ### Fase 1: cálculo e casa, em paralelo
 
@@ -229,7 +229,7 @@ Decisões do Gustavo, tomadas em 14/11/2026:
 3. Autorizado um commit por tarefa aprovada, em ramo separado de `master`. O ramo é o `dev`. Push só quando ele pedir: o repositório no GitHub é público.
 4. Os dois arquivos `.md` foram trazidos para o repositório.
 
-Pendente: a aprovação da especificação, que libera a fase 1.
+5. Aprovada a especificação, com os ajustes de horário de uso e de tipos de aparelho.
 
 Coleta complementar, opcional, para rodar no Claude in Chrome antes da tarefa 1.2:
 

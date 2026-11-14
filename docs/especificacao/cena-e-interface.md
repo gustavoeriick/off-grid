@@ -138,7 +138,7 @@ Outras placas e equipamentos não entram como obstáculo nesta versão.
 
 O coordenador escreve este arquivo. O estado guarda: o projeto, a seleção, o tempo (`msUtc` e a velocidade em minutos simulados por segundo), a queda de luz (ativa e início), o estado da simulação, a última saída do passo, o histórico e o modo de visão.
 
-Ações: adicionar, mover, girar e remover dispositivo; ligar e desligar aparelho; adicionar e remover cabo; trocar o tipo de um cabo; instalar e remover proteção; alterar a casa; alterar clima, prioridade e tensão da rede; selecionar; definir tempo e velocidade; alternar a queda de luz; recarregar a bateria; definir o modo de visão; carregar, exportar e criar projeto; aplicar uma ação do consultor.
+Ações: adicionar, mover, girar e remover dispositivo; ligar e desligar aparelho; definir o horário de uso de um aparelho; adicionar e remover cabo; trocar o tipo de um cabo; instalar e remover proteção; alterar a casa; alterar clima, prioridade e tensão da rede; selecionar; definir tempo e velocidade; alternar a queda de luz; recarregar a bateria; definir o modo de visão; carregar, exportar e criar projeto; aplicar uma ação do consultor.
 
 Depois de cada mudança no projeto, com espera de 150 ms, o estado recalcula `analisarCircuito`, `estimar`, `analisarConsultor` e `calcularOrcamento` e avisa os painéis.
 
@@ -147,7 +147,7 @@ Depois de cada mudança no projeto, com espera de 150 ms, o estado recalcula `an
 A cada quadro:
 
 1. Minutos simulados = velocidade × segundos reais do quadro, com o quadro limitado a 0,1 s.
-2. O intervalo é dividido em passos de até 5 minutos. Em cada passo: `irradianciaNasPlacas`, depois `passoSimulacao`, com `redeDisponivel` falso durante a queda de luz.
+2. O intervalo é dividido em passos de até 5 minutos. Em cada passo: `irradianciaNasPlacas`, depois `passoSimulacao`, com `redeDisponivel` falso durante a queda de luz e `horaLocal` igual à hora simulada, para cada aparelho consumir só no horário dele.
 3. A cada 10 minutos simulados entra um ponto no histórico (hora, carga da bateria, geração, consumo), guardando as últimas 48 horas.
 4. Com a simulação pausada, calcula-se um passo de duração zero, só para os mostradores.
 
@@ -159,7 +159,7 @@ Velocidades: pausa, 1, 10 e 60 minutos por segundo. O botão "Queda de luz" liga
 - **Consultor.** Lista de sugestões, com cor por nível: erro `#c62828`, alerta `#ef6c00`, dica `#1565c0`. Clicar em uma sugestão destaca os alvos na cena. O botão da ação a executa. Sem sugestões, mostra "Nada a corrigir" em verde.
 - **Orçamento.** Linhas por grupo, total, quanto do total é valor típico e a data dos preços. Cada linha com `url` tem o link do anúncio.
 - **Sistema.** Geração agora, consumo, carga da bateria, autonomia, tensão das placas e de onde vem a energia. Estimativas do dia. Gráfico da bateria ao longo do tempo.
-- **Item selecionado.** Nome, dados e preço. Dispositivo: girar e apagar; aparelho: ligar e desligar. Cabo: tipo (lista dos cabos do mesmo uso), comprimento, proteções instaladas, corrente de projeto e queda de tensão.
+- **Item selecionado.** Nome, dados e preço. Dispositivo: girar e apagar; aparelho: ligar e desligar, e o horário de uso, com início e fim de hora em hora e os atalhos "o dia inteiro" e "voltar ao típico". Cabo: tipo (lista dos cabos do mesmo uso), comprimento, proteções instaladas, corrente de projeto e queda de tensão.
 - **Barra de tempo.** Data, hora (0 a 24 h), velocidade, botão "Queda de luz", clima, rotação da casa (0 a 359°, com as letras N, L, S, O) e o botão "Casa", que abre o formulário de `CasaConfig`.
 - **Mostradores.** Sol (W), consumo (W), bateria (% e barra) e rede (ligada ou em queda).
 

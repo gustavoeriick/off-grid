@@ -200,6 +200,8 @@ chumbo e automotiva com soc > 0,8:  aceita = aceita × máx(0,1; (1 − soc) / 0
 
 `passoSimulacao(projeto, catalogo, analise, estado, entrada)` avança `entrada.dtHoras` e devolve a `SaidaPasso`, que traz o novo estado. Quem chama usa `dt` de até 5 minutos.
 
+Horário de uso: cada aparelho da casa tem um horário, com início e fim em horas locais. Vale o que o usuário definiu no aparelho (`dispositivo.uso`) ou, na falta, o `usoPadrao` do catálogo. As funções estão em `uso.ts`. O botão ligado ou desligado manda mais que o horário: aparelho desligado não consome em hora nenhuma.
+
 Estado: `soc` (0 a 1 da capacidade nominal), `cortado` (inversor desligado por bateria vazia) e `emRede` (inversor usando a rede no modo "solar primeiro"). `estadoInicial()` devolve `{ soc: 1, cortado: false, emRede: false }`.
 
 Passos:
@@ -207,7 +209,7 @@ Passos:
 1. Sem `analise.sistema`: devolve tudo zero, `origem: 'nenhuma'`, estado igual.
 2. `b = infoBanco(...)`. Se `null`: aviso `'sem-bateria'`, nada é alimentado.
 3. Placas: `estadoPlaca` de cada placa com o `g` e o `tAmb` de `entrada.placas` (placa ausente no mapa vale `g = 0`), depois `saidaArranjo`. `pvDisp` é o `p` devolvido.
-4. Cargas ligadas: aparelhos de `sistema.cargas` com `ligado === true`. `pedidaW` é a soma de `mediaW`; `nominalW` é a soma de `potenciaW`. Se `nominalW > inversor.potenciaW`: aviso `'sobrecarga'` e nenhuma carga é atendida neste passo.
+4. Cargas ligadas: aparelhos de `sistema.cargas` com `ligado === true` e, quando `entrada.horaLocal` não é nulo, dentro do horário de uso (`emUso(usoDe(dispositivo, item), horaLocal)`). Com `horaLocal` nulo, os horários são ignorados. `pedidaW` é a soma de `mediaW`; `nominalW` é a soma de `potenciaW`. Se `nominalW > inversor.potenciaW`: aviso `'sobrecarga'` e nenhuma carga é atendida neste passo.
 5. Modo "solar primeiro" (`projeto.prioridade === 'solar'`), com rede disponível e ligada: se `!emRede` e `soc ≤ socMin + 0,10`, `emRede = true`; se `emRede` e `soc ≥ 0,90`, `emRede = false`. No modo "rede primeiro", `emRede = false`.
 6. `usaRede = entrada.redeDisponivel && sistema.redeLigada && (prioridade === 'rede' || emRede)`.
 7. Com `usaRede`: as cargas são atendidas pela rede, a não ser que tenha havido sobrecarga. A bateria carrega primeiro pelas placas, limitada por `solar.correnteCargaA × tensaoCarga`, e o que faltar pela rede, limitada por `mín(carregadorRedeA; 20) × tensaoCarga`. `soc` sobe `carga × rendCarga × dt / wh`. `redeW = cargaAtendidaW + consumoVazioW + carga pela rede`. `origem: 'rede'`, `cortado = false`.
@@ -290,8 +292,8 @@ Método, por rede: escolha o terminal sorvedouro e as injeções; percorra a red
 `estimar(projeto, catalogo, analise, ambiente, msUtc)` devolve números do dia local de `msUtc`:
 
 - `geracaoDiaKwh`: soma de `saidaArranjo(...).p` ao longo do dia, com passo de 10 minutos avaliado no meio do passo. É o que as placas conseguem entregar, sem depender do estado da bateria. Zero sem fileiras.
-- `consumoDiaKwh`: o que a bateria ou as placas precisam entregar em um dia de uso normal. `soma(mediaW × horasDia) / rendimento + consumoVazioW × 24`, em kWh, para as cargas ligadas.
-- `autonomiaHoras`: `whUtil × rendDescarga / (soma(mediaW das cargas ligadas) / rendimento + consumoVazioW)`. `null` sem banco ou sem carga ligada.
+- `consumoDiaKwh`: o que a bateria ou as placas precisam entregar em um dia de uso normal. `soma(mediaW × horas de uso) / rendimento + consumoVazioW × 24`, em kWh, para as cargas ligadas, com as horas de `horasDeUso(usoDe(...))`.
+- `autonomiaHoras`: `whUtil × rendDescarga / (soma(mediaW das cargas ligadas) / rendimento + consumoVazioW)`. `null` sem banco ou sem carga ligada. É o pior caso: todas as cargas ligadas funcionando ao mesmo tempo, sem olhar os horários.
 - `perdaSombra`: para cada placa, `1 − energia do dia com sombra / energia do dia sem sombra`, usando só `estadoPlaca`. "Sem sombra" é a mesma normal com `fSombra = 0` e `fCeuTapado = 0`.
 
 ## 11. Orçamento (`orcamento.ts`)

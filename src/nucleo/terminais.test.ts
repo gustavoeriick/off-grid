@@ -12,7 +12,7 @@ const hibrido: Inversor = { ...inversorBase, id: 'h', solar, carregadorRedeA: 80
 const simples: Inversor = { ...inversorBase, id: 's' };
 const estacao: Inversor = { ...inversorBase, id: 'e', solar, bateriaInternaWh: 1024, montagem: 'piso' };
 const controlador: Controlador = { ...base, id: 'c', categoria: 'controlador', solar, tensoesBateria: [12, 24], dimensoes: [0.25, 0.18, 0.07] };
-const aparelho: Aparelho = { ...base, id: 'a', categoria: 'aparelho', potenciaW: 150, mediaW: 90, picoW: 900, horasDia: 24, tensao: 127, motor: true, eletronico: false, forma: 'geladeira', dimensoes: [0.7, 1.75, 0.7] };
+const aparelho: Aparelho = { ...base, id: 'a', categoria: 'aparelho', potenciaW: 150, mediaW: 90, picoW: 900, usoPadrao: { inicio: 0, fim: 24 }, tensao: 127, motor: true, eletronico: false, forma: 'geladeira', dimensoes: [0.7, 1.75, 0.7] };
 const rede: Rede = { ...base, id: 'r', categoria: 'rede' };
 
 const ids = (item: Parameters<typeof terminaisDe>[0]) => terminaisDe(item).map((t) => t.id);

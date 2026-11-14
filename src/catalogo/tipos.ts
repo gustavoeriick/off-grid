@@ -133,6 +133,12 @@ export interface TipoCabo extends ItemBase {
   cobre: boolean;
 }
 
+/** Horário de uso em um dia, em horas locais de 0 a 24. Se `fim` é menor que `inicio`, o uso atravessa a meia-noite. De 0 a 24 é o dia inteiro. */
+export interface Uso {
+  inicio: number;
+  fim: number;
+}
+
 export type FormaAparelho =
   | 'geladeira' | 'ventilador' | 'tv' | 'pc' | 'notebook'
   | 'roteador' | 'microondas' | 'lampada' | 'chuveiro' | 'caixa';
@@ -145,8 +151,8 @@ export interface Aparelho extends ItemBase {
   mediaW: number;
   /** Pico de partida, em W. */
   picoW: number;
-  /** Horas de uso em um dia típico. */
-  horasDia: number;
+  /** Horário de uso típico. O usuário pode trocar em cada aparelho da casa. */
+  usoPadrao: Uso;
   tensao: TensaoRede | 'bivolt';
   motor: boolean;
   eletronico: boolean;

@@ -66,7 +66,7 @@ Comandos:
 A fonte da verdade são [src/nucleo/tipos.ts](../src/nucleo/tipos.ts) e [src/catalogo/tipos.ts](../src/catalogo/tipos.ts). Resumo:
 
 - **Projeto.** Tudo o que o usuário montou: a casa (`CasaConfig`), o local, o clima, a tensão das tomadas (127 ou 220 V), a prioridade do inversor, a lista de dispositivos e a lista de cabos.
-- **Dispositivo.** Uma peça colocada na casa: referência ao item do catálogo, posição e rotação em coordenadas da casa, superfície em que está encaixada e, nos aparelhos, se está ligada.
+- **Dispositivo.** Uma peça colocada na casa: referência ao item do catálogo, posição e rotação em coordenadas da casa, superfície em que está encaixada e, nos aparelhos, se está ligada e o horário de uso (`uso`, com início e fim em horas; nulo usa o horário típico do catálogo).
 - **Cabo.** Liga dois terminais. Tem o tipo de cabo do catálogo, o comprimento em metros e a lista de proteções instaladas nele.
 - **Terminal.** Ponto de ligação de um dispositivo. São três tipos: positivo de corrente contínua (`cc+`), negativo (`cc-`) e corrente alternada (`ca`).
 - **Item de catálogo.** Placa, bateria, inversor, controlador, proteção, tipo de cabo, aparelho, tomada da rede ou acessório. Todo item tem preço de referência, e os que vieram da pesquisa têm link e data.
@@ -96,6 +96,7 @@ Os arquivos já existem com as assinaturas e o corpo `throw new Error('não impl
 | `irradiancia.ts` | `LOCAIS`, `localPorId`, `irradiancia`, `irradianciaNoPlano`, `irradianciaNasPlacas`, `ambienteSemSombra` | Núcleo, seção 2 |
 | `terminais.ts` | `terminaisDe`, `podeLigar` | Esta página, seção 3 |
 | `eletrica.ts` | `estadoPlaca`, `vocFrio`, `vmpQuente`, `saidaArranjo`, `infoBanco`, `estadoInicial`, `passoSimulacao` | Núcleo, seções 3 a 7 |
+| `uso.ts` | `usoDe`, `horasDeUso`, `emUso` (já implementado) | Núcleo, seção 7 |
 | `circuito.ts` | `analisarCircuito` | Núcleo, seção 8 |
 | `cabos.ts` | `resistencia`, `correntesDeProjeto`, `quedasDeTensao` | Núcleo, seção 9 |
 | `estimativas.ts` | `estimar` | Núcleo, seção 10 |

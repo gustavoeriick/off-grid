@@ -1,7 +1,7 @@
 // Tipos do projeto e dos resultados do núcleo. Especificação: docs/especificacao.md
 // Este arquivo é contrato: mudanças passam pelo coordenador.
 
-import type { Categoria, EntradaSolar, Quimica, TensaoRede } from '../catalogo/tipos';
+import type { Categoria, EntradaSolar, Quimica, TensaoRede, Uso } from '../catalogo/tipos';
 
 /** Eixos da cena: X = leste, Y = cima, Z = sul. */
 export type Vec3 = [x: number, y: number, z: number];
@@ -40,6 +40,8 @@ export interface Dispositivo {
   giro: number;
   /** Aparelhos: ligado ou desligado. Nas demais peças, sempre verdadeiro. */
   ligado: boolean;
+  /** Aparelhos: horário de uso definido pelo usuário. Nulo usa o `usoPadrao` do catálogo. */
+  uso: Uso | null;
 }
 
 export interface PontaCabo {
@@ -201,6 +203,8 @@ export interface EntradaPasso {
   dtHoras: number;
   /** Falso durante a queda de luz. */
   redeDisponivel: boolean;
+  /** Hora local decimal, de 0 a 24. Com ela, só consomem os aparelhos dentro do horário de uso. Nulo ignora os horários. */
+  horaLocal: number | null;
   placas: ReadonlyMap<string, CondicaoPlaca>;
 }
 
