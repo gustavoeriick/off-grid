@@ -18,10 +18,12 @@ export interface EstadoApp {
   visao: ModoVisao;
 }
 
-export type Evento = 'projeto' | 'tempo' | 'visao';
+/** 'casa' avisa só mudanças nas medidas e na orientação da casa; 'projeto' avisa qualquer mudança no projeto, inclusive essas. */
+export type Evento = 'projeto' | 'casa' | 'tempo' | 'visao';
 
 const ouvintes: Record<Evento, Set<() => void>> = {
   projeto: new Set(),
+  casa: new Set(),
   tempo: new Set(),
   visao: new Set(),
 };
@@ -49,6 +51,7 @@ export const acoes = {
   /** Troca campos da casa: medidas, varanda, quartinho, orientação. */
   alterarCasa(mudanca: Partial<CasaConfig>): void {
     estado.projeto.casa = { ...estado.projeto.casa, ...mudanca };
+    avisar('casa');
     avisar('projeto');
   },
 

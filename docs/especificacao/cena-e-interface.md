@@ -17,7 +17,7 @@ Sobre a cena ficam os mostradores (sol, consumo, bateria, rede), o painel do ite
 
 ## 2. Cena base
 
-- **Câmera.** Perspectiva de 45°, começando em (14, 11, 16) e olhando para (0, 2,5, 0). Órbita com o botão esquerdo, deslocamento com o direito, zoom na roda. Distância de 4 a 60 m. A câmera não desce abaixo do chão.
+- **Câmera.** Perspectiva de 45°, começando em (−14, 11, −16) e olhando para (0, 2,5, 0): com a orientação inicial, é a vista da frente da casa, com a varanda e o quartinho à mostra. Órbita com o botão esquerdo, deslocamento com o direito, zoom na roda. Distância de 4 a 60 m. A câmera não desce abaixo do chão.
 - **Chão.** Plano de 80 × 80 m, gramado (`#7fae6b`).
 - **Rosa dos ventos.** Letras N, L, S e O a 12 m do centro e uma seta para o norte. Fica presa ao mundo: não gira com a casa.
 - **Luz.** Uma luz direcional (o sol), com sombra, e uma luz de hemisfério para o ambiente.
