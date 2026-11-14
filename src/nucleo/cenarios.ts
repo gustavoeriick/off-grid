@@ -23,7 +23,7 @@ export const CASA_INICIAL: CasaConfig = {
     { uid: 'cm-cozinha', andar: 0, nome: 'Cozinha', ponto: [0, -2.0] },
     { uid: 'cm-quarto-1', andar: 1, nome: 'Quarto 1', ponto: [0, 2.0] },
     { uid: 'cm-quarto-2', andar: 1, nome: 'Quarto 2', ponto: [-2.0, -1.5] },
-    { uid: 'cm-corredor', andar: 1, nome: 'Corredor', ponto: [2.2, -1.5] },
+    { uid: 'cm-corredor', andar: 1, nome: 'Corredor', ponto: [1.7, -1.5] },
   ],
   quartinho: { x: 6.5, z: -2.0, largura: 2.4, profundidade: 2.0, altura: 2.3, giro: 0 },
   orientacaoGraus: 0,

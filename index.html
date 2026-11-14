@@ -45,19 +45,40 @@
               <label>Inclinação do telhado (%) <input type="number" data-casa="inclinacaoTelhadoPct" min="10" max="100" step="1" /></label>
               <label>Beiral (m) <input type="number" data-casa="beiral" min="0" max="1.5" step="0.1" /></label>
             </fieldset>
-            <fieldset>
-              <legend>Varanda</legend>
-              <label>Lado
-                <select id="varanda-lado">
-                  <option value="">Sem varanda</option>
-                  <option value="frente">Frente</option>
-                  <option value="fundos">Fundos</option>
-                  <option value="esquerda">Esquerda</option>
-                  <option value="direita">Direita</option>
-                </select>
-              </label>
-              <label>Profundidade (m) <input type="number" id="varanda-profundidade" min="1" max="6" step="0.5" /></label>
-              <label>Inclinação (%) <input type="number" id="varanda-inclinacao" min="10" max="100" step="1" /></label>
+            <fieldset class="varandas">
+              <legend>Varandas (uma por lado)</legend>
+                <div class="linha-varanda" data-lado="frente">
+                  <label class="tem"><input type="checkbox" id="varanda-frente-tem" /> Frente</label>
+                  <label>Profundidade (m) <input type="number" id="varanda-frente-prof" min="1" max="6" step="0.5" /></label>
+                  <label>Inclinação (%) <input type="number" id="varanda-frente-inc" min="10" max="100" step="1" /></label>
+                  <label class="tem"><input type="checkbox" id="varanda-frente-inteira" /> Fachada inteira</label>
+                  <label>Largura (m) <input type="number" id="varanda-frente-largura" min="1" step="0.5" /></label>
+                  <label>Deslocamento (m) <input type="number" id="varanda-frente-desloc" step="0.5" /></label>
+                </div>
+                <div class="linha-varanda" data-lado="fundos">
+                  <label class="tem"><input type="checkbox" id="varanda-fundos-tem" /> Fundos</label>
+                  <label>Profundidade (m) <input type="number" id="varanda-fundos-prof" min="1" max="6" step="0.5" /></label>
+                  <label>Inclinação (%) <input type="number" id="varanda-fundos-inc" min="10" max="100" step="1" /></label>
+                  <label class="tem"><input type="checkbox" id="varanda-fundos-inteira" /> Fachada inteira</label>
+                  <label>Largura (m) <input type="number" id="varanda-fundos-largura" min="1" step="0.5" /></label>
+                  <label>Deslocamento (m) <input type="number" id="varanda-fundos-desloc" step="0.5" /></label>
+                </div>
+                <div class="linha-varanda" data-lado="esquerda">
+                  <label class="tem"><input type="checkbox" id="varanda-esquerda-tem" /> Esquerda</label>
+                  <label>Profundidade (m) <input type="number" id="varanda-esquerda-prof" min="1" max="6" step="0.5" /></label>
+                  <label>Inclinação (%) <input type="number" id="varanda-esquerda-inc" min="10" max="100" step="1" /></label>
+                  <label class="tem"><input type="checkbox" id="varanda-esquerda-inteira" /> Fachada inteira</label>
+                  <label>Largura (m) <input type="number" id="varanda-esquerda-largura" min="1" step="0.5" /></label>
+                  <label>Deslocamento (m) <input type="number" id="varanda-esquerda-desloc" step="0.5" /></label>
+                </div>
+                <div class="linha-varanda" data-lado="direita">
+                  <label class="tem"><input type="checkbox" id="varanda-direita-tem" /> Direita</label>
+                  <label>Profundidade (m) <input type="number" id="varanda-direita-prof" min="1" max="6" step="0.5" /></label>
+                  <label>Inclinação (%) <input type="number" id="varanda-direita-inc" min="10" max="100" step="1" /></label>
+                  <label class="tem"><input type="checkbox" id="varanda-direita-inteira" /> Fachada inteira</label>
+                  <label>Largura (m) <input type="number" id="varanda-direita-largura" min="1" step="0.5" /></label>
+                  <label>Deslocamento (m) <input type="number" id="varanda-direita-desloc" step="0.5" /></label>
+                </div>
             </fieldset>
             <fieldset>
               <legend>Quartinho</legend>
@@ -69,6 +90,7 @@
               <label>Giro (°) <input type="number" id="quartinho-giro" min="-180" max="180" step="5" /></label>
             </fieldset>
           </div>
+          <p class="aviso-quartinho" id="aviso-quartinho" role="status" hidden></p>
           <button type="button" id="fechar-casa">Fechar</button>
         </section>
       </main>

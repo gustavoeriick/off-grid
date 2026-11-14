@@ -5,6 +5,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { acoes, assinar, estado } from '../estado';
 import { localPorId } from '../nucleo/irradiancia';
 import { criarCasa } from './casa';
+import { liberar } from './malha';
+import { liberarMateriais } from './materiais';
 import { criarChao, criarRosaDosVentos } from './mundo';
 import { criarSol } from './sol';
 
@@ -16,13 +18,13 @@ export interface OffgridGlobal {
   acoes: typeof acoes;
   /** Auxiliar para o roteiro de verificação: posiciona a câmera. */
   posicionarCamera?: (pos: [number, number, number], alvo: [number, number, number]) => void;
+  /** Auxiliar de verificação: `id` das superfícies de encaixe que o modo de visão atual deixa à vista. */
+  superficies?: () => string[];
   /**
    * Auxiliar de verificação: desenha `n` quadros seguidos e devolve o tempo médio de cada um, em ms, e o que foi desenhado.
    * Com `comSombra` (o padrão) o mapa de sombra é refeito em todo quadro, como quando o tempo corre;
    * sem ele, mede o quadro de quando só a câmera se move.
    */
-  /** Auxiliar de verificação: `id` das superfícies de encaixe que o modo de visão atual deixa à vista. */
-  superficies?: () => string[];
   medirQuadros?: (n: number, comSombra?: boolean) => { ms: number; chamadas: number; triangulos: number; geometrias: number; texturas: number };
 }
 
@@ -121,8 +123,11 @@ export function criarCena(container: HTMLElement): Cena {
   observador.observe(container);
   redimensionar();
 
+  const caixaDaCasa = new THREE.Box3();
   const refazerCasa = (): void => {
     casa.reconstruir(estado.projeto.casa);
+    // O mapa de sombra acompanha a casa: cobre tudo que ela tem, onde quer que o quartinho esteja.
+    sol.enquadrar(caixaDaCasa.setFromObject(casa.grupo));
     pedirQuadro();
   };
   const refazerVisao = (): void => {
@@ -260,11 +265,11 @@ export function criarCena(container: HTMLElement): Cena {
       cancelAnimationFrame(quadro);
       observador.disconnect();
       controles.dispose();
+      // Geometrias, materiais, texturas e mapa de sombra de tudo: casa, terreno, rosa dos ventos e sol.
+      liberar(cena, true);
       sol.destruir();
-      cena.traverse((o) => {
-        if (o instanceof THREE.InstancedMesh) o.dispose();
-        if (o instanceof THREE.Mesh || o instanceof THREE.Line) o.geometry.dispose();
-      });
+      liberarMateriais();
+      cena.clear();
       renderizador.dispose();
       renderizador.domElement.remove();
       if (window.__offgrid?.pronto) delete window.__offgrid;

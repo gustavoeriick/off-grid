@@ -3,7 +3,8 @@
 
 import { acoes, assinar, estado, type ModoVisao } from '../estado';
 import { localPorId } from '../nucleo/irradiancia';
-import type { CasaConfig, Clima, LadoCasa } from '../nucleo/tipos';
+import type { CasaConfig, Clima, Varanda } from '../nucleo/tipos';
+import { LADOS, LIMITES_VARANDA, avisoDoQuartinho, deslocamentoMaximo, inclinacaoMaxima, limitarVaranda, limitarVarandas, medidaDaFachada, novaVaranda, profundidadeMaxima } from './varandas';
 
 const MS_HORA = 3_600_000;
 const MS_DIA = 24 * MS_HORA;
@@ -163,19 +164,49 @@ function montarFormularioCasa(): void {
   const abrir = el<HTMLButtonElement>('#abrir-casa');
   const fechar = el<HTMLButtonElement>('#fechar-casa');
   const campos = document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-casa]');
-  const lado = el<HTMLSelectElement>('#varanda-lado');
-  const vProf = el<HTMLInputElement>('#varanda-profundidade');
-  const vInc = el<HTMLInputElement>('#varanda-inclinacao');
+  const aviso = el<HTMLElement>('#aviso-quartinho');
+  const linhas = LADOS.map((l) => ({
+    lado: l,
+    tem: el<HTMLInputElement>(`#varanda-${l}-tem`),
+    prof: el<HTMLInputElement>(`#varanda-${l}-prof`),
+    inc: el<HTMLInputElement>(`#varanda-${l}-inc`),
+    inteira: el<HTMLInputElement>(`#varanda-${l}-inteira`),
+    largura: el<HTMLInputElement>(`#varanda-${l}-largura`),
+    desloc: el<HTMLInputElement>(`#varanda-${l}-desloc`),
+  }));
   const camposQuartinho = (['x', 'z', 'largura', 'profundidade', 'altura', 'giro'] as const).map((chave) => ({
     chave,
     campo: el<HTMLInputElement>(`#quartinho-${chave}`),
   }));
 
-  // Últimos valores da varanda, para quando o usuário a liga de novo.
-  const ultimaVaranda = { profundidade: 3, inclinacaoPct: 30 };
-
   const preencher = (campo: HTMLInputElement, valor: number) => {
     if (document.activeElement !== campo) campo.value = String(valor);
+  };
+
+  type Linha = (typeof linhas)[number];
+  const forcar = (campo: HTMLInputElement, valor: number) => {
+    campo.value = String(valor);
+  };
+  const desenharLinha = (ln: Linha, casa: CasaConfig) => {
+    const v = casa.varandas.find((x) => x.lado === ln.lado);
+    const ref: Varanda = v ?? novaVaranda(ln.lado, casa);
+    const fachada = medidaDaFachada(casa, ln.lado);
+    ln.tem.checked = !!v;
+    ln.inteira.checked = ref.largura === null;
+    const largura = ref.largura ?? fachada;
+    ln.prof.max = String(Math.min(LIMITES_VARANDA.profundidadeMax, profundidadeMaxima(casa)));
+    ln.inc.max = String(inclinacaoMaxima(casa, ref.profundidade));
+    ln.largura.max = String(fachada);
+    const lim = deslocamentoMaximo(fachada, largura);
+    ln.desloc.min = String(-lim);
+    ln.desloc.max = String(lim);
+    preencher(ln.prof, ref.profundidade);
+    preencher(ln.inc, ref.inclinacaoPct);
+    preencher(ln.largura, largura);
+    preencher(ln.desloc, ref.deslocamento);
+    const sem = !v;
+    ln.prof.disabled = ln.inc.disabled = ln.inteira.disabled = sem;
+    ln.largura.disabled = ln.desloc.disabled = sem || ref.largura === null;
   };
 
   const desenhar = () => {
@@ -185,14 +216,10 @@ function montarFormularioCasa(): void {
       if (c instanceof HTMLSelectElement) c.value = String(casa[chave]);
       else preencher(c, casa[chave] as number);
     });
-    if (casa.varanda) {
-      ultimaVaranda.profundidade = casa.varanda.profundidade;
-      ultimaVaranda.inclinacaoPct = casa.varanda.inclinacaoPct;
-    }
-    lado.value = casa.varanda?.lado ?? '';
-    preencher(vProf, ultimaVaranda.profundidade);
-    preencher(vInc, ultimaVaranda.inclinacaoPct);
-    vProf.disabled = vInc.disabled = !casa.varanda;
+    linhas.forEach((ln) => desenharLinha(ln, casa));
+    const texto = avisoDoQuartinho(casa);
+    aviso.hidden = texto === null;
+    aviso.textContent = texto ?? '';
     camposQuartinho.forEach(({ chave, campo }) => preencher(campo, casa.quartinho[chave]));
   };
 
@@ -202,16 +229,49 @@ function montarFormularioCasa(): void {
       const v = c instanceof HTMLSelectElement ? Number(c.value) : numeroDe(c);
       if (v === null) return desenhar();
       acoes.alterarCasa({ [chave]: v } as Partial<CasaConfig>);
+      // Pé-direito, andares ou medidas novas podem deixar as varandas fora dos limites: corta e mostra o valor cortado.
+      const casa = estado.projeto.casa;
+      const cortadas = limitarVarandas(casa.varandas, casa);
+      if (cortadas !== casa.varandas) acoes.alterarCasa({ varandas: cortadas });
+      linhas.forEach((ln) => {
+        const v2 = estado.projeto.casa.varandas.find((x) => x.lado === ln.lado);
+        if (v2) {
+          forcar(ln.prof, v2.profundidade);
+          forcar(ln.inc, v2.inclinacaoPct);
+        }
+      });
     }),
   );
 
-  const aplicarVaranda = () => {
-    if (lado.value === '') return acoes.alterarCasa({ varanda: null });
-    const p = numeroDe(vProf) ?? ultimaVaranda.profundidade;
-    const i = numeroDe(vInc) ?? ultimaVaranda.inclinacaoPct;
-    acoes.alterarCasa({ varanda: { lado: lado.value as LadoCasa, profundidade: p, inclinacaoPct: i } });
+  const aplicarVaranda = (ln: Linha) => {
+    const casa = estado.projeto.casa;
+    const outras = casa.varandas.filter((x) => x.lado !== ln.lado);
+    if (!ln.tem.checked) return acoes.alterarCasa({ varandas: outras });
+    const atual = casa.varandas.find((x) => x.lado === ln.lado) ?? novaVaranda(ln.lado, casa);
+    const fachada = medidaDaFachada(casa, ln.lado);
+    const inteira = ln.inteira.checked;
+    const largura = inteira ? null : (numeroDe(ln.largura) ?? atual.largura ?? fachada);
+    const nova = limitarVaranda(
+      {
+        lado: ln.lado,
+        profundidade: numeroDe(ln.prof) ?? atual.profundidade,
+        inclinacaoPct: numeroDe(ln.inc) ?? atual.inclinacaoPct,
+        largura,
+        deslocamento: inteira ? 0 : (numeroDe(ln.desloc) ?? atual.deslocamento),
+      },
+      casa,
+    );
+    // Mantém a ordem dos lados.
+    const lista = [...outras, nova].sort((a, b) => LADOS.indexOf(a.lado) - LADOS.indexOf(b.lado));
+    acoes.alterarCasa({ varandas: lista });
+    forcar(ln.prof, nova.profundidade);
+    forcar(ln.inc, nova.inclinacaoPct);
+    if (nova.largura !== null) {
+      forcar(ln.largura, nova.largura);
+      forcar(ln.desloc, nova.deslocamento);
+    }
   };
-  [lado, vProf, vInc].forEach((c) => c.addEventListener('change', aplicarVaranda));
+  linhas.forEach((ln) => [ln.tem, ln.prof, ln.inc, ln.inteira, ln.largura, ln.desloc].forEach((c) => c.addEventListener('change', () => aplicarVaranda(ln))));
 
   const aplicarQuartinho = () => {
     const q = estado.projeto.casa.quartinho;

@@ -110,7 +110,7 @@ Pendências que a revisão deixou para a fase 2:
 
 - Limitar no formulário a varanda cujo telhado desce abaixo de 2 m (hoje, com inclinação e profundidade altas, ele entra no chão) e avisar quando o quartinho cruza a casa ou a varanda. Entra na tarefa 2.7.
 - `sem-disjuntor-na-saida` escolher um disjuntor por cabo: pede mudança no tipo `Acao`.
-- Acabamento da cena: rufo no encontro do telhado com a varanda em casa térrea; fresta de 6 cm no topo das paredes do quartinho; mapa de sombra de ±18 m não cobre o quartinho nos extremos; `destruir()` não libera materiais e texturas.
+- Resolvido na tarefa 2.7a: acabamento da cena: rufo no encontro do telhado com a varanda em casa térrea; fresta de 6 cm no topo das paredes do quartinho; mapa de sombra de ±18 m não cobre o quartinho nos extremos; `destruir()` não libera materiais e texturas.
 - Esconder os equipamentos junto com a superfície escondida; o raio de arraste mira só `superficies()`; o raio de sombra filtra por `userData.sombra`.
 - Medir o tempo de quadro em vídeo integrado: só foi medido em placa dedicada (1,2 ms).
 

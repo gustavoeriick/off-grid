@@ -288,3 +288,33 @@ select:focus-visible {
   margin: 20vh auto 0;
   padding: 0 1.5rem;
 }
+
+.painel-casa fieldset.varandas {
+  flex: 1 1 100%;
+}
+
+.linha-varanda {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.linha-varanda label.tem {
+  min-width: 9.5rem;
+  justify-content: flex-start;
+}
+
+.linha-varanda label.tem:first-child {
+  min-width: 6rem;
+  font-weight: 600;
+}
+
+.aviso-quartinho {
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #fff3cd;
+  color: #664d03;
+  font-size: 13px;
+}

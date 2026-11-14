@@ -3,11 +3,22 @@
 import * as THREE from 'three';
 import { direcaoSol, posicaoSol } from '../nucleo/sol';
 import type { Local } from '../nucleo/tipos';
+import { liberar } from './malha';
 
 const DIA_MS = 86_400_000;
 const DIST_LUZ = 50;
 const DIST_ESFERA = 45;
 const RAIO_CEU = 700;
+
+/** Lado do mapa de sombra, em pontos, e o maior lado de terreno que ele cobre sem perder a nitidez de ±18 m. */
+const MAPA_DE_SOMBRA = 2048;
+const LADO_NITIDO = 36;
+/** Folga em volta do que projeta sombra, em metros. */
+const FOLGA_DA_SOMBRA = 1;
+/** Com o sol baixo a sombra no chão não tem fim: o mapa acompanha a sombra só até esta distância da casa. */
+const ALCANCE_DA_SOMBRA = 16;
+/** Recuo da sombra, em metros ao longo do raio de sol, para a superfície não fazer sombra em si mesma. */
+const RECUO_DA_SOMBRA = 0.032;
 
 /** Intensidade da luz do sol a pino. */
 const SOL_A_PINO = 3.5;
@@ -123,6 +134,11 @@ export interface SolCena {
   luz: THREE.DirectionalLight;
   /** Reposiciona o sol e ajusta céu e luz para o instante e o local dados. */
   atualizar(msUtc: number, local: Local): void;
+  /**
+   * Informa a caixa, em coordenadas do mundo, de tudo que projeta sombra (casa, varandas, quartinho).
+   * O mapa de sombra passa a cobrir essa caixa e a sombra dela no chão, onde quer que o quartinho esteja.
+   */
+  enquadrar(caixa: THREE.Box3): void;
   destruir(): void;
 }
 
@@ -132,17 +148,10 @@ export function criarSol(cena: THREE.Scene): SolCena {
 
   const luz = new THREE.DirectionalLight(SOL_ALTO, SOL_A_PINO);
   luz.castShadow = true;
-  luz.shadow.mapSize.set(2048, 2048);
+  luz.shadow.mapSize.set(MAPA_DE_SOMBRA, MAPA_DE_SOMBRA);
   const cam = luz.shadow.camera;
-  cam.left = -18;
-  cam.right = 18;
-  cam.top = 18;
-  cam.bottom = -18;
-  cam.near = 20;
-  cam.far = 100;
   // A câmera de sombra enxerga todas as camadas: o que o modo de visão esconde continua projetando sombra.
   cam.layers.enableAll();
-  luz.shadow.bias = -0.0004;
   luz.shadow.normalBias = 0.03;
   luz.target.position.set(0, 0, 0);
   grupo.add(luz, luz.target);
@@ -228,8 +237,84 @@ export function criarSol(cena: THREE.Scene): SolCena {
     arco.geometry = new THREE.BufferGeometry().setFromPoints(pontos);
   }
 
-  const dir = new THREE.Vector3();
+  const dir = new THREE.Vector3(0, 1, 0);
   const cor = new THREE.Color();
+
+  const caixa = new THREE.Box3(new THREE.Vector3(-12, 0, -12), new THREE.Vector3(12, 8, 12));
+  const base = new THREE.Matrix4();
+  const eixoX = new THREE.Vector3();
+  const eixoY = new THREE.Vector3();
+  const eixoZ = new THREE.Vector3();
+  const ponto = new THREE.Vector3();
+  const PARA_CIMA = new THREE.Vector3(0, 1, 0);
+
+  /** Ajusta a câmera de sombra ao que projeta sombra e à sombra no chão, para a direção atual do sol. */
+  function enquadrarSombra(): void {
+    if (dir.y <= 0.01) return; // de noite a luz do sol está apagada
+    const alvo = luz.target.position;
+    caixa.getCenter(alvo);
+    alvo.y = 0;
+    luz.position.copy(alvo).addScaledVector(dir, DIST_LUZ);
+    // Os mesmos eixos que o Three.js dá à câmera de sombra: ela olha da luz para o alvo.
+    base.lookAt(luz.position, alvo, PARA_CIMA);
+    base.extractBasis(eixoX, eixoY, eixoZ);
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    let perto = Infinity;
+    let longe = -Infinity;
+    const incluir = (): void => {
+      ponto.sub(luz.position);
+      const x = ponto.dot(eixoX);
+      const y = ponto.dot(eixoY);
+      const d = -ponto.dot(eixoZ);
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
+      perto = Math.min(perto, d);
+      longe = Math.max(longe, d);
+    };
+    // Quanto a sombra de um ponto anda no chão por metro de altura, limitado ao alcance.
+    const porMetro = Math.hypot(dir.x, dir.z) / dir.y;
+    const corte = Math.min(1, ALCANCE_DA_SOMBRA / Math.max(1e-6, porMetro * caixa.max.y));
+    for (const x of [caixa.min.x, caixa.max.x]) {
+      for (const z of [caixa.min.z, caixa.max.z]) {
+        ponto.set(x, caixa.min.y, z);
+        incluir();
+        ponto.set(x, caixa.max.y, z);
+        incluir();
+        const t = (caixa.max.y / dir.y) * corte;
+        ponto.set(x - dir.x * t, 0, z - dir.z * t);
+        incluir();
+      }
+    }
+    const f = FOLGA_DA_SOMBRA;
+    cam.left = x0 - f;
+    cam.right = x1 + f;
+    cam.bottom = y0 - f;
+    cam.top = y1 + f;
+    cam.near = Math.max(0.5, perto - 2 * f);
+    cam.far = longe + 2 * f;
+    cam.updateProjectionMatrix();
+    luz.shadow.bias = -RECUO_DA_SOMBRA / (cam.far - cam.near);
+    // Quartinho longe da casa: a área cresce, e o mapa dobra de lado para a sombra junto da casa não perder nitidez.
+    const lado = Math.max(cam.right - cam.left, cam.top - cam.bottom);
+    const tamanho = lado > LADO_NITIDO ? MAPA_DE_SOMBRA * 2 : MAPA_DE_SOMBRA;
+    if (luz.shadow.mapSize.x !== tamanho) {
+      luz.shadow.mapSize.set(tamanho, tamanho);
+      luz.shadow.map?.dispose();
+      luz.shadow.map = null;
+    }
+  }
+
+  function enquadrar(nova: THREE.Box3): void {
+    if (nova.isEmpty()) return;
+    caixa.copy(nova);
+    caixa.min.y = Math.min(caixa.min.y, 0);
+    enquadrarSombra();
+  }
 
   function atualizar(msUtc: number, local: Local): void {
     const p = posicaoSol(msUtc, local.lat, local.lon);
@@ -244,7 +329,7 @@ export function criarSol(cena: THREE.Scene): SolCena {
     /** 0 com o sol no horizonte, 1 a partir de 35°: quanto a luz já perdeu o tom quente. */
     const alto = suave(elevacao / 35);
 
-    luz.position.copy(dir).multiplyScalar(DIST_LUZ);
+    enquadrarSombra();
     luz.intensity = SOL_A_PINO * transmissaoDoAr(elevacao);
     luz.color.copy(SOL_BAIXO).lerp(SOL_ALTO, alto);
 
@@ -268,10 +353,15 @@ export function criarSol(cena: THREE.Scene): SolCena {
     refazerArco(msUtc, local);
   }
 
+  /** Tira o sol da cena e libera luz, mapa de sombra, céu, disco, brilho e arco. */
   function destruir(): void {
-    texBrilho.dispose();
-    materialCeu.dispose();
+    liberar(grupo, true);
+    cena.remove(grupo);
+    cena.background = null;
+    cena.fog = null;
   }
 
-  return { grupo, luz, atualizar, destruir };
+  enquadrarSombra();
+
+  return { grupo, luz, atualizar, enquadrar, destruir };
 }

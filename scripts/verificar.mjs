@@ -204,19 +204,27 @@ async function principal() {
   // 5. Varanda nos quatro lados (casa de volta com 2 andares).
   await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
   await pagina.locator('[data-casa="andares"]').selectOption('2');
-  for (const lado of ['frente', 'fundos', 'esquerda', 'direita']) {
-    await pagina.locator('#varanda-lado').selectOption(lado);
+  /** Liga ou desliga a varanda de um lado pela caixa "tem varanda". */
+  const marcar = async (seletor, ligado) => {
+    await pagina.locator(seletor).setChecked(ligado);
+  };
+  const lados = ['frente', 'fundos', 'esquerda', 'direita'];
+  const apenas = async (lado) => {
+    for (const l of lados) await marcar(`#varanda-${l}-tem`, l === lado);
+  };
+  for (const lado of lados) {
+    await apenas(lado);
     e = await estado();
-    conferir(e.projeto.casa.varanda?.lado === lado, `varanda deveria estar em ${lado}`);
+    conferir(e.projeto.casa.varandas.length === 1 && e.projeto.casa.varandas[0].lado === lado, `varanda deveria estar só em ${lado}`);
     await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
     await captura(`10-varanda-${lado}`);
     await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
   }
-  await pagina.locator('#varanda-lado').selectOption('frente');
-  await preencher('#varanda-profundidade', 4);
-  await preencher('#varanda-inclinacao', 20);
+  await apenas('frente');
+  await preencher('#varanda-frente-prof', 4);
+  await preencher('#varanda-frente-inc', 20);
   e = await estado();
-  conferir(e.projeto.casa.varanda?.profundidade === 4 && e.projeto.casa.varanda?.inclinacaoPct === 20, 'varanda deveria ter profundidade 4 e inclinação 20');
+  conferir(e.projeto.casa.varandas[0]?.profundidade === 4 && e.projeto.casa.varandas[0]?.inclinacaoPct === 20, 'varanda deveria ter profundidade 4 e inclinação 20');
 
   // Quartinho, campo a campo.
   for (const [chave, valor] of [
@@ -235,11 +243,56 @@ async function principal() {
   await captura('10b-quartinho-alterado');
   await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
 
-  await pagina.locator('#varanda-lado').selectOption('');
+  await apenas(null);
   e = await estado();
-  conferir(e.projeto.casa.varanda === null, 'a varanda deveria sumir');
+  conferir(e.projeto.casa.varandas.length === 0, 'as varandas deveriam sumir');
   await captura('11-sem-varanda-com-formulario');
-  await pagina.locator('#varanda-lado').selectOption('frente');
+
+  // Varanda na frente inteira mais meia varanda na direita.
+  await apenas('frente');
+  await marcar('#varanda-direita-tem', true);
+  await marcar('#varanda-direita-inteira', false);
+  await preencher('#varanda-direita-largura', 3);
+  await preencher('#varanda-direita-desloc', 1);
+  e = await estado();
+  let vd = e.projeto.casa.varandas.find((x) => x.lado === 'direita');
+  let vf = e.projeto.casa.varandas.find((x) => x.lado === 'frente');
+  conferir(e.projeto.casa.varandas.length === 2 && vf?.largura === null && vd?.largura === 3 && vd?.deslocamento === 1, 'deveria haver varanda na frente inteira e meia varanda na direita');
+  await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await captura('11b-frente-inteira-e-meia-direita');
+  await de_cima('11c-de-cima-frente-inteira-e-meia-direita');
+  await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+
+  // Quatro varandas.
+  for (const l of lados) await marcar(`#varanda-${l}-tem`, true);
+  e = await estado();
+  conferir(e.projeto.casa.varandas.length === 4 && lados.every((l) => e.projeto.casa.varandas.some((x) => x.lado === l)), 'deveria haver quatro varandas');
+  await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await captura('11d-quatro-varandas');
+  await de_cima('11e-de-cima-quatro-varandas');
+  await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+
+  // Altura mínima da beira: varanda de 6 m a 100% em casa térrea de pé-direito 2,2 deve ser cortada.
+  await apenas(null);
+  await pagina.locator('[data-casa="andares"]').selectOption('1');
+  await preencher('[data-casa="peDireito"]', 2.2);
+  await marcar('#varanda-frente-tem', true);
+  await preencher('#varanda-frente-prof', 6);
+  await preencher('#varanda-frente-inc', 100);
+  e = await estado();
+  const casaT = e.projeto.casa;
+  const vt = casaT.varandas[0];
+  const yParede = casaT.peDireito - 0.1;
+  conferir(vt && yParede - (vt.profundidade * vt.inclinacaoPct) / 100 >= 2.0 - 1e-6, `a beira da varanda ficou abaixo de 2 m: ${JSON.stringify(vt)}`);
+  conferir(
+    Number(await pagina.locator('#varanda-frente-inc').inputValue()) === vt.inclinacaoPct && Number(await pagina.locator('#varanda-frente-prof').inputValue()) === vt.profundidade,
+    'o formulário deveria mostrar os valores cortados',
+  );
+  await captura('11f-varanda-cortada-casa-terrea');
+  // Volta ao estado das etapas seguintes: 2 andares, pé-direito 3, varanda na frente.
+  await preencher('[data-casa="peDireito"]', 3);
+  await pagina.locator('[data-casa="andares"]').selectOption('2');
+  await apenas('frente');
   await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
 
   // 6. Orientação 90 pela letra L, e pelo controle deslizante.

@@ -266,5 +266,16 @@ export const mat = {
   soSombra: new THREE.MeshBasicMaterial({ color: '#000000' }),
 };
 
+/**
+ * Libera da placa de vídeo os materiais e as texturas compartilhados. Eles continuam valendo:
+ * se uma cena nova os usar, o Three.js os envia de novo.
+ */
+export function liberarMateriais(): void {
+  for (const m of Object.values(mat)) {
+    if ('map' in m && m.map) m.map.dispose();
+    m.dispose();
+  }
+}
+
 // Cor média do gramado: a da especificação vezes a média da textura e a média das manchas (ver mundo.ts).
 mat.gramaLonge.color.multiply(mediaLinear(texGrama)).multiply(new THREE.Color(1.01, 0.98, 0.95));

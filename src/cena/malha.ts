@@ -41,6 +41,31 @@ export function esconder(raiz: THREE.Object3D, escondido: boolean): void {
   });
 }
 
+function liberarMaterial(m: THREE.Material): void {
+  for (const valor of Object.values(m)) {
+    if (valor instanceof THREE.Texture) valor.dispose();
+  }
+  m.dispose();
+}
+
+/**
+ * Libera da placa de vídeo o que está debaixo de `raiz`: sempre as geometrias e os materiais marcados com
+ * `userData.materialProprio` (com as texturas deles). Com `tudo`, também os materiais compartilhados,
+ * as texturas e os mapas de sombra das luzes; é o que `destruir()` usa.
+ */
+export function liberar(raiz: THREE.Object3D, tudo = false): void {
+  raiz.traverse((o) => {
+    if (o instanceof THREE.InstancedMesh) o.dispose();
+    if (o instanceof THREE.Mesh || o instanceof THREE.Line || o instanceof THREE.Sprite) {
+      o.geometry.dispose();
+      if (tudo || o.userData.materialProprio) {
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) liberarMaterial(m);
+      }
+    }
+    if (tudo && o instanceof THREE.Light) o.dispose();
+  });
+}
+
 /** Gerador determinístico de números entre 0 e 1 (mulberry32), para a casa não mudar a cada reconstrução. */
 export function sorteio(semente: number): () => number {
   let a = semente >>> 0;

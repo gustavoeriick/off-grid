@@ -6,7 +6,7 @@
 // (0,085 a 0,11) e os caibros. As placas da fase 2 encaixam na malha plana de y = 0.
 
 import * as THREE from 'three';
-import { CAMADA_SO_SOMBRA, type Marca, sorteio } from './malha';
+import { CAMADA_SO_SOMBRA, Construtor, type Marca, sorteio } from './malha';
 import { COR, mat } from './materiais';
 
 /** Do plano da crista até a face de baixo das ripas, medido na normal. */
@@ -141,6 +141,14 @@ function instanciar(
   return m;
 }
 
+/** Retângulo no quadro da água: X ao longo da largura (zero no meio), Z descendo a partir da borda de cima. */
+export interface Recorte {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
 export interface OpcoesAgua {
   largura: number;
   /** Medida ao longo da descida, no plano da água. */
@@ -151,6 +159,43 @@ export interface OpcoesAgua {
   semente: number;
   /** Faixa de argamassa no alto, onde a água encosta em uma parede. */
   rufo?: boolean;
+  /**
+   * Pedaços da água que não existem (o beiral que some onde uma varanda encosta, em casa térrea).
+   * Cada recorte é alargado até a junta de telhas mais próxima, para não sobrar telha cortada.
+   */
+  recortes?: readonly Recorte[];
+  /** Posições em X e em Z onde tem de cair uma junta de telhas (a linha da parede, nos recortes). */
+  marcosX?: readonly number[];
+  marcosZ?: readonly number[];
+}
+
+/** Juntas de `a` até `b`, com passo perto de `passo` e uma junta em cada marco. */
+function juntas(a: number, b: number, marcos: readonly number[], passo: number): number[] {
+  const pontos = [a];
+  for (const m of [...marcos].sort((p, q) => p - q)) {
+    if (m > pontos[pontos.length - 1]! + 0.12 && m < b - 0.12) pontos.push(m);
+  }
+  pontos.push(b);
+  const lista = [a];
+  for (let i = 0; i + 1 < pontos.length; i++) {
+    const p0 = pontos[i]!;
+    const p1 = pontos[i + 1]!;
+    const n = Math.max(1, Math.round((p1 - p0) / passo));
+    for (let j = 1; j <= n; j++) lista.push(j === n ? p1 : p0 + ((p1 - p0) * j) / n);
+  }
+  return lista;
+}
+
+/** Trechos seguidos de `n` posições com a mesma categoria, fora a categoria zero. */
+function trechos(n: number, categoria: (i: number) => number): [inicio: number, fim: number, categoria: number][] {
+  const lista: [number, number, number][] = [];
+  let inicio = 0;
+  for (let i = 1; i <= n; i++) {
+    if (i < n && categoria(i) === categoria(inicio)) continue;
+    if (categoria(inicio) !== 0) lista.push([inicio, i, categoria(inicio)]);
+    inicio = i;
+  }
+  return lista;
 }
 
 /** Uma água de telhado. A origem fica no meio da borda de cima. */
@@ -161,20 +206,61 @@ export function criarAgua(o: OpcoesAgua): THREE.Group {
   const C = o.comprimento;
   const r = sorteio(o.semente);
 
-  // Malha de encaixe: plana, na crista, invisível ao desenho.
-  const geoEncaixe = new THREE.PlaneGeometry(L, C);
-  geoEncaixe.rotateX(-Math.PI / 2);
-  geoEncaixe.translate(0, 0, C / 2);
-  const encaixe = new THREE.Mesh(geoEncaixe, mat.encaixe);
+  // Grade das telhas: colunas de canal ao longo de X, fiadas ao longo de Z.
+  const xs = juntas(-L / 2, L / 2, o.marcosX ?? [], 0.235);
+  const zs = juntas(0, C, o.marcosZ ?? [], 0.42);
+  const colunas = xs.length - 1;
+  const fiadas = zs.length - 1;
+  const passoX = L / colunas;
+  const passoZ = C / fiadas;
+
+  // Recortes alargados até as juntas, e a grade do que sobra.
+  const antes = (lista: number[], v: number): number => lista.filter((p) => p <= v + 0.02).pop() ?? lista[0]!;
+  const depois = (lista: number[], v: number): number => lista.find((p) => p >= v - 0.02) ?? lista[lista.length - 1]!;
+  const recortes = (o.recortes ?? []).map((c) => ({ x0: antes(xs, c.x0), x1: depois(xs, c.x1), z0: antes(zs, c.z0), z1: depois(zs, c.z1) }));
+  const vivas: boolean[] = [];
+  for (let i = 0; i < colunas; i++) {
+    const x = (xs[i]! + xs[i + 1]!) / 2;
+    for (let j = 0; j < fiadas; j++) {
+      const z = (zs[j]! + zs[j + 1]!) / 2;
+      vivas.push(!recortes.some((c) => x > c.x0 && x < c.x1 && z > c.z0 && z < c.z1));
+    }
+  }
+  const viva = (i: number, j: number): boolean => i >= 0 && i < colunas && j >= 0 && j < fiadas && vivas[i * fiadas + j]!;
+
+  // O que sobra, em retângulos: colunas vizinhas com as mesmas fiadas viram um retângulo só.
+  const partes: Recorte[] = [];
+  let abertas = new Map<string, Recorte>();
+  for (let i = 0; i < colunas; i++) {
+    const novas = new Map<string, Recorte>();
+    for (const [j0, j1] of trechos(fiadas, (j) => (viva(i, j) ? 1 : 0))) {
+      const chave = `${j0}-${j1}`;
+      let parte = abertas.get(chave);
+      if (parte) parte.x1 = xs[i + 1]!;
+      else {
+        parte = { x0: xs[i]!, x1: xs[i + 1]!, z0: zs[j0]!, z1: zs[j1]! };
+        partes.push(parte);
+      }
+      novas.set(chave, parte);
+    }
+    abertas = novas;
+  }
+
+  // Malha de encaixe (plana, na crista, invisível ao desenho) e laje só de sombra
+  // (o sólido que tapa o sol, na tela e no cálculo).
+  const plano = new Construtor();
+  const sombra = new Construtor();
+  for (const p of partes) {
+    plano.quad([p.x0, 0, p.z1], [p.x1, 0, p.z1], [p.x1, 0, p.z0], [p.x0, 0, p.z0]);
+    sombra.caixa(p.x0, -FUNDO_RIPA, p.z0, p.x1, -TOPO_RIPA, p.z1);
+  }
+  const encaixe = plano.malha(mat.encaixe);
   encaixe.name = `encaixe-${o.superficie.id}`;
   encaixe.userData.superficie = o.superficie;
   encaixe.userData.soEncaixe = true;
   g.add(encaixe);
 
-  // Laje só de sombra: o sólido que tapa o sol, na tela e no cálculo.
-  const geoLaje = new THREE.BoxGeometry(L, FUNDO_RIPA - TOPO_RIPA, C);
-  geoLaje.translate(0, -(FUNDO_RIPA + TOPO_RIPA) / 2, C / 2);
-  const laje = new THREE.Mesh(geoLaje, mat.soSombra);
+  const laje = sombra.malha(mat.soSombra);
   laje.name = `sombra-${o.superficie.id}`;
   laje.castShadow = true;
   laje.userData.sombra = true;
@@ -183,10 +269,6 @@ export function criarAgua(o: OpcoesAgua): THREE.Group {
   g.add(laje);
 
   // Telhas: fiadas de canal lado a lado e capas sobre as juntas.
-  const fiadas = Math.max(1, Math.round(C / 0.42));
-  const passoZ = C / fiadas;
-  const colunas = Math.max(1, Math.round(L / 0.235));
-  const passoX = L / colunas;
   const comp = passoZ + TRASPASSE;
 
   const geoCapa = geometriaTelha({
@@ -221,20 +303,25 @@ export function criarAgua(o: OpcoesAgua): THREE.Group {
   const cCanais: THREE.Color[] = [];
   const q = new THREE.Quaternion();
   const eixoY = new THREE.Vector3(0, 1, 0);
-  const um = new THREE.Vector3(1, 1, 1);
-  const matriz = (x: number, z: number): THREE.Matrix4 => {
+  /** `ex` e `ez` esticam a peça onde um marco deixou a coluna ou a fiada fora do passo comum. */
+  const matriz = (x: number, z: number, ex: number, ez: number): THREE.Matrix4 => {
     // Assentamento à mão: um nada torta, um nada fora do lugar.
     q.setFromAxisAngle(eixoY, (r() - 0.5) * 0.022);
-    return new THREE.Matrix4().compose(new THREE.Vector3(x + (r() - 0.5) * 0.006, 0, z + (r() - 0.5) * 0.008), q, um);
+    return new THREE.Matrix4().compose(new THREE.Vector3(x + (r() - 0.5) * 0.006, 0, z + (r() - 0.5) * 0.008), q, new THREE.Vector3(ex, 1, ez));
   };
+  const larguraDaColuna = (i: number): number => xs[i + 1]! - xs[i]!;
   for (let j = 0; j < fiadas; j++) {
-    const z = j * passoZ - TRASPASSE;
+    const z = zs[j]! - TRASPASSE;
+    const ez = (zs[j + 1]! - zs[j]! + TRASPASSE) / comp;
     for (let i = 0; i <= colunas; i++) {
-      mCapas.push(matriz(-L / 2 + i * passoX, z));
+      if (!viva(i - 1, j) && !viva(i, j)) continue;
+      const vizinhas = i === 0 ? larguraDaColuna(0) : i === colunas ? larguraDaColuna(i - 1) : (larguraDaColuna(i - 1) + larguraDaColuna(i)) / 2;
+      mCapas.push(matriz(xs[i]!, z, vizinhas / passoX, ez));
       cCapas.push(corDeTelha(r, 1, new THREE.Color()));
     }
     for (let i = 0; i < colunas; i++) {
-      mCanais.push(matriz(-L / 2 + (i + 0.5) * passoX, z));
+      if (!viva(i, j)) continue;
+      mCanais.push(matriz((xs[i]! + xs[i + 1]!) / 2, z, larguraDaColuna(i) / passoX, ez));
       cCanais.push(corDeTelha(r, 0.8, new THREE.Color()));
     }
   }
@@ -253,16 +340,34 @@ export function criarAgua(o: OpcoesAgua): THREE.Group {
     cMadeira.push(new THREE.Color().setScalar(0.85 + r() * 0.3));
   };
   const hRipa = FUNDO_RIPA - TOPO_RIPA;
+  const MEIO = 1;
+  const BEIRA_DE_BAIXO = 2;
+  const BEIRA_DE_CIMA = 3;
   for (let j = 0; j <= fiadas; j++) {
-    const z = THREE.MathUtils.clamp(j * passoZ, 0.025, C - 0.025);
-    peca(0, -(FUNDO_RIPA + TOPO_RIPA) / 2, z, L, hRipa, 0.05);
+    const categoria = (i: number): number => {
+      const acima = viva(i, j - 1);
+      const abaixo = viva(i, j);
+      return acima && abaixo ? MEIO : acima ? BEIRA_DE_BAIXO : abaixo ? BEIRA_DE_CIMA : 0;
+    };
+    for (const [i0, i1, tipo] of trechos(colunas, categoria)) {
+      const xa = xs[i0]!;
+      const xb = xs[i1]!;
+      const z = zs[j]! + (tipo === BEIRA_DE_BAIXO ? -0.025 : tipo === BEIRA_DE_CIMA ? 0.025 : 0);
+      peca((xa + xb) / 2, -(FUNDO_RIPA + TOPO_RIPA) / 2, z, xb - xa, hRipa, 0.05);
+      // Ripa dobrada no beiral, que levanta a primeira fiada e serve de testeira.
+      if (tipo === BEIRA_DE_BAIXO) peca((xa + xb) / 2, -FUNDO_RIPA - 0.02, zs[j]! - 0.0125, xb - xa, 0.04, 0.025);
+    }
   }
-  // Ripa dobrada no beiral, que levanta a primeira fiada e serve de testeira.
-  peca(0, -FUNDO_RIPA - 0.02, C - 0.0125, L, 0.04, 0.025);
   const nCaibros = Math.max(2, Math.round(L / 0.5) + 1);
-  for (let i = 0; i < nCaibros; i++) {
-    const x = -L / 2 + 0.045 + (i * (L - 0.09)) / (nCaibros - 1);
-    peca(x, -FUNDO_RIPA - o.caibro / 2, C / 2 - 0.01, 0.05, o.caibro, C - 0.02);
+  for (let n = 0; n < nCaibros; n++) {
+    const x = -L / 2 + 0.045 + (n * (L - 0.09)) / (nCaibros - 1);
+    const depoisDeX = xs.findIndex((p) => p > x);
+    const i = THREE.MathUtils.clamp(depoisDeX - 1, 0, colunas - 1);
+    for (const [j0, j1] of trechos(fiadas, (j) => (viva(i, j) ? 1 : 0))) {
+      const z0 = zs[j0]!;
+      const z1 = zs[j1]!;
+      peca(x, -FUNDO_RIPA - o.caibro / 2, (z0 + z1) / 2 - 0.01, 0.05, o.caibro, z1 - z0 - 0.02);
+    }
   }
   const madeira = instanciar(new THREE.BoxGeometry(1, 1, 1), mat.madeiramento, mMadeira, cMadeira);
   madeira.name = 'madeiramento';
