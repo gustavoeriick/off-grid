@@ -42,7 +42,7 @@ Formato de cada registro:
 
 O arquivo final é `{ "coletadoEm": "2026-11-14", "registros": [...] }`.
 
-Contagem esperada na coleta de 14/11/2026, 157 registros: A1 5, A2 5, A3 6, A4 5, A5 14, A6 8, A7 9, A8 15, B1 3, B2 3, B3 3, B4 5, B5 8, B6 8, B7 9, B8 6, C1 6, C2 6, C3 12, C4 3, C5 9, C6 3, C7 6.
+Contagem esperada na coleta de 14/11/2026, 201 registros: A1 5, A2 5, A3 6, A4 5, A5 14, A6 8, A7 9, A8 15, B1 3, B2 3, B3 3, B4 5, B5 8, B6 8, B7 9, B8 6, C1 6, C2 6, C3 12, C4 3, C5 9, C6 3, C7 6, D1 2, D2 6, D3 9, D4 9, D5 9, D6 9.
 
 ## 2. Regras de curadoria (tarefa 1.2)
 
@@ -51,7 +51,7 @@ Contagem esperada na coleta de 14/11/2026, 157 registros: A1 5, A2 5, A3 6, A4 5
 - Campo que não está no anúncio recebe o valor típico da tabela e entra na lista `tipico` do item. Nas tabelas, esses campos estão na coluna "Valores típicos".
 - Item sem anúncio (seção 4) tem `tipico` contendo `'preco'` e não tem `url`. A exceção é `inv-powmr-ps3k-110`: o preço dele está nas observações da coleta, então o item tem `coletadoEm`, não tem `url` e não leva `'preco'` em `tipico`.
 - `naoRecomendado` e `obs` são os textos das tabelas.
-- `linha`: `simples` para 12 V, chumbo e PWM; `plano` para o sistema de 24 V do Gustavo; `avancada` fica vazia até a coleta da linha de 48 V.
+- `linha`: `simples` para 12 V, chumbo e PWM; `plano` para o sistema de 24 V do Gustavo; `avancada` para a linha de 48 V.
 - Fica fora do catálogo o que a pesquisa não deixa confirmar: Serrana Solar 1000 W (tensão de bateria não informada), inversores Joyfox e "Genérica" (dados do MPPT só no título), string box Lukma (10 A, menos que a corrente das placas) e Sibratec (16 A, abaixo de 1,25 vez a corrente das placas), disjuntores automotivos de 150 A.
 
 Teste de consistência (`catalogo.test.ts`):
@@ -189,7 +189,7 @@ Nas estações, `tensaoBateria` é 24 (não é usada), `bateriaInternaWh` é a c
 
 ## 4. Itens sem anúncio
 
-Entram com `tipico: ['preco', ...]` e sem `url`. Os preços são estimativas até a coleta complementar (parte D do prompt de coleta).
+Entram com `tipico: ['preco', ...]` e sem `url`. Os preços são estimativas: a parte D da coleta não achou anúncio para eles.
 
 | `id` | Nome | Categoria | Dados |
 |---|---|---|---|
@@ -201,14 +201,72 @@ Entram com `tipico: ['preco', ...]` e sem `url`. Os preços são estimativas at�
 | `cabo-bat-25` | Cabo de bateria 25 mm² | cabo bateria | 55,00 por metro; `ampacidade` 125 |
 | `cabo-bat-50` | Cabo de bateria 50 mm² | cabo bateria | 110,00 por metro; `ampacidade` 190 |
 | `cabo-ca-1p5` | Circuito CA 1,5 mm² | cabo ca | 4,20 por metro; `ampacidade` 17,5 |
-| `cabo-ca-2p5` | Circuito CA 2,5 mm² | cabo ca | 6,60 por metro; `ampacidade` 24 |
-| `cabo-ca-4` | Circuito CA 4 mm² | cabo ca | 10,50 por metro; `ampacidade` 32 |
-| `acc-trilhos` | Trilhos e grampos, por placa | acessório, estrutura | 150,00 |
 | `rede-tomada` | Tomada da rede da casa | rede | Preço 0; não é típico |
 
 Todos os cabos desta tabela são de cobre. As capacidades são valores de referência da NBR 5410: cabo solar com isolação de 90 °C, cabo de bateria ao ar livre em trecho curto, circuito CA em eletroduto.
 
-## 5. Aparelhos
+## 5. Itens da coleta complementar (parte D)
+
+Seguem as mesmas regras da seção 2: preço e link vêm do registro indicado pelo código.
+
+### Inversores de 24 V e 127 V que funcionam com uma placa
+
+A busca por inversor de 2 a 3 kW com MPPT de faixa baixa não achou nenhum novo. Os dois abaixo têm menos potência, mas começam em 30 V.
+
+| `id` | Nome | Linha | Código | Do anúncio | Valores típicos |
+|---|---|---|---|---|---|
+| `inv-felicity-2kw-24v-127` | Felicity 2 kW 24 V 127 V | plano | MLB2048668646 | pura; 2.000 W; 24 V; saída 127; MPPT: carga 60 A, 30 a 120 V, `vocMax` 145, 1.600 W | pico 4.000; carregador 15 A; rendimento 0,92; vazio 35 W; parede; 0,30 × 0,42 × 0,12 |
+| `inv-panda-1600-24v-127` | Panda 1,6 kW 24 V 127 V | plano | MLBU3798704772 | pura; 1.600 W; 24 V; saída 127; MPPT: carga 60 A, 30 a 145 V, `vocMax` 145; vazio 18 W | pico 3.200; `vMax` 120; 1.600 W de placas; rendimento 0,92; parede; 0,30 × 0,40 × 0,12 |
+
+`obs`:
+
+- `inv-felicity-2kw-24v-127`: "Funciona com uma placa só e aceita duas em série, até 1.600 W. A terceira placa não cabe. O preço é o da listagem, sem os centavos, e a ficha traz a tensão de saída com erro de digitação."
+- `inv-panda-1600-24v-127`: "Funciona com uma placa só e aceita duas em série. O anúncio não informa a potência máxima de placas. Garantia do vendedor de 6 meses."
+
+### Cabos de cobre e estrutura
+
+| `id` | Nome | Código | Do anúncio | Valores típicos |
+|---|---|---|---|---|
+| `cabo-ca-2p5` | Circuito CA 2,5 mm² | MLBU3374542876 | `uso` ca; 2,5 mm²; cobre; R$ 293,87 por 100 m; 8,82 por metro de circuito de três condutores | `ampacidade` 24 |
+| `cabo-ca-4` | Circuito CA 4 mm² | MLB23927199 | `uso` ca; 4 mm²; cobre; R$ 464,00 por 100 m; 13,92 por metro de circuito | `ampacidade` 32 |
+| `acc-trilhos` | Kit de trilhos para 2 placas | MLBU5083389403 | acessório, estrutura; 4 trilhos de 1,18 m e 4 grampos finais; moldura de 30 ou 35 mm | |
+
+No cabo, `preco` é o do anúncio dividido por 100 e multiplicado por 3, arredondado a centavos; o teste de consistência confere essa conta em vez da igualdade com o registro. O cabo de bateria de 25 mm² de cobre não apareceu na coleta e continua na seção 4.
+
+### Fusíveis
+
+| `id` | Nome | Código | Do anúncio | Valores típicos |
+|---|---|---|---|---|
+| `prot-fusivel-mega-125` | Fusível Mega 125 A com porta-fusível | MLBU3910726055 | fusível; 125 A | `tensaoMaxV` 32 |
+| `prot-fusivel-anl-100` | Fusível ANL 100 A, 2 peças | MLBU5143928892 | fusível; 100 A | `tensaoMaxV` 32 |
+
+`obs` do ANL de 100 A: "Vem sem porta-fusível."
+
+### Linha de 48 V
+
+| `id` | Nome | Linha | Código | `precoMax` | Do anúncio | Valores típicos |
+|---|---|---|---|---|---|---|
+| `inv-felicity-5kw-48v-127` | Felicity 5 kW 48 V 127 V | avancada | MLBU2738010883 | 6.000,00 | pura; 5.000 W; 48 V; saída 127; MPPT: carga 100 A, 90 a 500 V, `vocMax` 500 | pico 10.000; 6.000 W de placas; `vMax` 450; carregador 60 A; rendimento 0,93; vazio 60 W; parede; 0,35 × 0,50 × 0,13 |
+| `bat-felicity-48v-100` | Felicity FLA48100 48 V 100 Ah | avancada | MLB2118643980 | | `lifepo4`; 48 V; 100 Ah; descarga 100 A; 4.000 ciclos | carga 50 A; 0,48 × 0,22 × 0,55 |
+| `bat-dyness-48v-100` | Dyness DLC5.0C 48 V 100 Ah | avancada | MLB2044882917 | | `lifepo4`; 48 V; 100 Ah; descarga 100 A; 6.000 ciclos | carga 50 A; 0,48 × 0,22 × 0,55 |
+
+`obs`:
+
+- `inv-felicity-5kw-48v-127`: "A entrada das placas começa em 90 V: precisa de três ou mais placas em série. O mesmo vendedor anuncia o modelo por R$ 3.087 e por R$ 6.000."
+- `bat-felicity-48v-100`: "A ficha diz 4.000 ciclos e a descrição diz 6.000. Garantia do vendedor de 90 dias."
+- `bat-dyness-48v-100`: "Garantia de 7 anos. Aceita até 50 em paralelo."
+
+### Acabamento
+
+| `id` | Nome | Código | `tipo` |
+|---|---|---|---|
+| `acc-tomadas-5` | Kit de 5 tomadas duplas de sobrepor | MLB56649232 | estrutura |
+| `acc-terminais-35` | Kit de 20 terminais olhal de 35 mm² | MLB45564347 | conector |
+| `acc-quadro-8` | Quadro de sobrepor para 8 disjuntores | MLB36945875 | estrutura |
+
+Esses três não entram no orçamento automático; ficam na aba Instalação do catálogo.
+
+## 6. Aparelhos
 
 Os aparelhos são os da casa, com preço zero. `potenciaW` é a potência com o aparelho funcionando, `mediaW` a média ao longo do tempo ligado, `picoW` o pico de partida e `usoPadrao` o horário de uso típico, que o usuário troca em cada aparelho.
 

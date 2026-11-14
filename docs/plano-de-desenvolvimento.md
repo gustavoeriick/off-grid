@@ -231,10 +231,4 @@ Decisões do Gustavo, tomadas em 14/11/2026:
 
 5. Aprovada a especificação, com os ajustes de horário de uso e de tipos de aparelho.
 
-Coleta complementar, opcional, para rodar no Claude in Chrome antes da tarefa 1.2:
-
-- Inversor híbrido de 24 V e 127 V com MPPT de faixa baixa (30 a 115 V), que funcione com uma placa só. Exemplos: Growatt SPF 3000TL LVM-24P, SRNE HF2430U60-100.
-- Cabo flexível 100% cobre de 2,5 mm² e de 25 mm².
-- Trilhos e grampos para a estrutura das placas.
-- Fusíveis de 100 A e de 125 A.
-- Linha de 48 V: inversor híbrido de 5 kW e bateria de 48 V e 100 Ah.
+A coleta complementar (parte D) foi feita em 14/11/2026 e está no mesmo arquivo da pesquisa. Os itens dela estão na seção 5 da especificação do catálogo.

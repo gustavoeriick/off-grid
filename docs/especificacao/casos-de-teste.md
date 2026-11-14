@@ -300,22 +300,22 @@ O consumo do dia vem de 7,15 kWh em CA, com os horários típicos: modem 40 W e 
 | Alfx 24 V 100 Ah | 1 | 3.750,00 | 3.750,00 |
 | `cabo-solar-6` | 24 m | 8,50 | 204,00 |
 | `cabo-bat-25` | 2 m | 55,00 | 110,00 |
-| `cabo-ca-2p5` | 77 m | 6,60 | 508,20 |
+| `cabo-ca-2p5` | 77 m | 8,82 | 679,14 |
 | `prot-disjuntor-cc-32` | 1 | 47,90 | 47,90 |
 | `prot-fusivel-anl-150` | 1 | 35,78 | 35,78 |
 | `acc-ganchos-8` | 1 | 251,79 | 251,79 |
-| `acc-trilhos` | 1 | 150,00 | 150,00 |
+| `acc-trilhos` | 1 | 357,93 | 357,93 |
 | `acc-mc4-10` | 1 | 58,68 | 58,68 |
 | `acc-haste` | 1 | 44,97 | 44,97 |
-| **Total** | | | **8.289,32** |
+| **Total** | | | **8.668,19** |
 
-`totalTipico`: 768,20 (cabo de bateria, circuito CA e trilhos).
+`totalTipico`: 110,00 (só o cabo de bateria de 25 mm², que continua sem anúncio).
 
-"Plano corrigido": total de 9.485,35, com `totalTipico` de 808,20. Mudam: 2 placas; 25,5 m de `cabo-solar-6`; 2 m de `cabo-bat-35` no lugar do `cabo-bat-25`; mais `prot-dps-cc-600` (63,30) e 6 `prot-disjuntor-ca-16` (18,00 cada); 2 `acc-trilhos`.
+"Plano corrigido": total de 9.714,22, com `totalTipico` zero. Mudam: 2 placas; 25,5 m de `cabo-solar-6`; 2 m de `cabo-bat-35` no lugar do `cabo-bat-25`; mais `prot-dps-cc-600` (63,30) e 6 `prot-disjuntor-ca-16` (18,00 cada). O kit de trilhos continua sendo um, porque atende 2 placas.
 
 ## 12. Catálogo (tarefas 1.1 e 1.2)
 
-- O importador gera 157 registros, com a contagem por seção da [especificação do catálogo](catalogo.md).
+- O importador gera 201 registros, com a contagem por seção da [especificação do catálogo](catalogo.md).
 - O registro `MLB2074314862` (Epever 3210CN) tem `preco` 1286.00 e `notaPreco` "listagem, que omite os centavos". O registro `MLB23503621` tem `preco` 114.98 e `notaPreco` "na listagem aparecia 121,03".
 - Nenhum registro tem `preco` nulo.
 - O teste de consistência do catálogo passa.
@@ -352,4 +352,4 @@ Conferidos pelo roteiro `scripts/verificar.mjs`, com capturas de tela, e pelo `r
 | 3.2 | No "plano no papel", com queda de luz às 20:00 e velocidade de 60 minutos por segundo, a tela mostra a bateria vazia perto de 03:10 (entre 03:00 e 03:20), porque o ventilador para às 22 e a TV às 23. Com todos os aparelhos em "o dia inteiro", perto de 00:05 |
 | 2.3 | Trocar o horário de uso de um aparelho no painel muda `uso` no estado e o consumo do dia na aba Sistema |
 | 3.3 | Clicar na ação de `protecao-maior-que-o-cabo` troca os cabos, e a sugestão some |
-| 3.4 | O total do painel é R$ 8.289,32 no "plano no papel" montado com os comprimentos da seção 1 |
+| 3.4 | O total do painel é R$ 8.668,19 no "plano no papel" montado com os comprimentos da seção 1 |

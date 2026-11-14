@@ -305,8 +305,8 @@ console.log('\n== 8. Cenário "plano no papel" e "plano corrigido" ==');
     ['placa Renepv 585 W', 1, 819.00], ['inversor Anenji 3 kW 24 V 127 V', 1, 2309.00], ['bateria Alfx 24 V 100 Ah', 1, 3750.00],
     ['cabo solar 6 mm² (m)', 24, 8.50], ['disjuntor CC 32 A', 1, 47.90],
     ['cabo de bateria 25 mm² cobre (m, valor típico)', 2, 55.00], ['fusível ANL 150 A com porta-fusível', 1, 35.78],
-    ['cabo CA 2,5 mm² cobre, 3 condutores (m, valor típico)', 77, 6.60],
-    ['kit de 8 ganchos para telha colonial', 1, 251.79], ['trilhos e grampos (por placa, valor típico)', 1, 150.00],
+    ['cabo CA 2,5 mm² cobre, 3 condutores (m)', 77, 8.82],
+    ['kit de 8 ganchos para telha colonial', 1, 251.79], ['kit de trilhos para 2 placas', 1, 357.93],
     ['kit de 10 pares MC4', 1, 58.68], ['haste de aterramento', 1, 44.97],
   ];
   let total = 0;
@@ -354,11 +354,11 @@ console.log('\n== 9. Passo de simulação, fileira com sombra e orçamento do pl
     ['placa Renepv 585 W', 2, 819.00], ['inversor Anenji', 1, 2309.00], ['bateria Alfx', 1, 3750.00],
     ['cabo solar 6 mm² (m)', 25.5, 8.50], ['disjuntor CC 32 A', 1, 47.90], ['DPS CC 600 V', 1, 63.30],
     ['cabo de bateria 35 mm² (m)', 2, 76.49], ['fusível ANL 150 A', 1, 35.78],
-    ['circuito CA 2,5 mm² (m)', 77, 6.60], ['disjuntor CA 16 A', 6, 18.00],
-    ['kit de 8 ganchos', 1, 251.79], ['trilhos e grampos', 2, 150.00], ['kit MC4', 1, 58.68], ['haste', 1, 44.97],
+    ['circuito CA 2,5 mm² (m)', 77, 8.82], ['disjuntor CA 16 A', 6, 18.00],
+    ['kit de 8 ganchos', 1, 251.79], ['kit de trilhos para 2 placas', 1, 357.93], ['kit MC4', 1, 58.68], ['haste', 1, 44.97],
   ];
   const total = linhas.reduce((s, [, q, u]) => s + q * u, 0);
-  const tipico = 77 * 6.60 + 2 * 150;
+  const tipico = 0;
   console.log(`orçamento do plano corrigido: R$ ${fmt(total)}, dos quais R$ ${fmt(tipico)} em valores típicos`);
-  console.log(`orçamento do plano no papel: valores típicos R$ ${fmt(2 * 55 + 77 * 6.60 + 150)}`);
+  console.log(`orçamento do plano no papel: valores típicos R$ ${fmt(2 * 55)}`);
 }

@@ -305,6 +305,6 @@ Método, por rede: escolha o terminal sorvedouro e as injeções; percorra a red
 | `equipamentos` | Uma por item de catálogo com preço maior que zero entre os dispositivos; quantidade é a contagem |
 | `cabos` | Uma por tipo de cabo; quantidade é a soma dos comprimentos, em metros; unitário é o preço por metro |
 | `protecoes` | Uma por item de proteção instalado em cabos; quantidade é a contagem |
-| `instalacao` | Automáticas: `acc-ganchos-8` (um kit a cada 2 placas, arredondando para cima), `acc-trilhos` (um por placa), `acc-mc4-10` (um kit se houver placa), `acc-haste` (uma se houver inversor) |
+| `instalacao` | Automáticas: `acc-ganchos-8` (um kit a cada 2 placas, arredondando para cima), `acc-trilhos` (um kit a cada 2 placas, arredondando para cima), `acc-mc4-10` (um kit se houver placa), `acc-haste` (uma se houver inversor) |
 
 Cada linha traz `url` quando o item tem, e `tipico: true` quando o preço do item é valor típico (`tipico` contém `'preco'`). `total` é a soma de tudo e `totalTipico` é a soma das linhas típicas, para a tela dizer quanto do orçamento é estimativa.
