@@ -216,11 +216,13 @@ Queda de tensão, com a corrente de trabalho:
 | Trecho | Queda |
 |---|---|
 | 1 placa, `cabo-solar-6`, 12 m + 12 m | 1,01 V, 2,31% |
-| 2 em série, `cabo-solar-6`, 12 m + 12 m | 1,01 V, 1,16% |
+| 2 em série, `cabo-solar-6`, 12 m + 12 m, sem contar a emenda | 1,01 V, 1,16% |
+| "Plano corrigido" (os mesmos cabos mais a emenda de 1,5 m) | 1,06 V, 1,21% |
 | 3 em paralelo em um só par de `cabo-solar-6`, 12 m + 12 m | 3,04 V, 6,94% |
 | O mesmo com `cabo-solar-10` | 1,83 V, 4,17% |
 | Bateria, `cabo-bat-35`, 1 m + 1 m | 0,14 V, 0,54% |
-| Geladeira, `cabo-ca-2p5`, 15 m | 0,27 V, 0,21% |
+| Geladeira, `cabo-ca-2p5`, 15 m (caso avulso) | 0,27 V, 0,21% |
+| Geladeira no "plano no papel" (`c9`, 12 m) | 0,22 V, 0,17% |
 
 `resistencia`: 12 m de `cabo-solar-6` dão 0,0380 Ω; 10 m de `cabo-bat-25-alucobre` dão 0,01216 Ω.
 
