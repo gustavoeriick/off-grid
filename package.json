@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "verificar": "node scripts/verificar.mjs"
+    "verificar": "node scripts/verificar.mjs",
+    "cenario": "node scripts/cenario.mjs"
   },
   "dependencies": {
     "three": "^0.187.0"

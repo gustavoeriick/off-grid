@@ -263,7 +263,7 @@ Regras isoladas, cada uma com um projeto mínimo que a dispara:
 | `onda-modificada` | `inv-vedo-1000-mod` com `ap-pc-24h` |
 | `bateria-automotiva` e `item-nao-recomendado` | `bat-automotiva-60` no banco |
 | `item-nao-recomendado` | `cabo-bat-25-alucobre` em um cabo; a ação troca por `cabo-bat-25` |
-| `placas-acima-do-limite` | 3 Renepv em série no `ctl-epever-xtra4210n` (162,4 V contra 100 V) |
+| `placas-acima-do-limite` | 3 Renepv em série no `ctl-epever-xtra4210n` (162,3 V contra 100 V) |
 | `corrente-das-placas` | 2 fileiras de 2 Renepv no Anenji (28,4 A contra 18 A) |
 | `pwm-desperdica` | 1 Renepv no `ctl-pwm-30a` com banco de 24 V: 29% |
 | `pwm-desperdica` não aparece | 1 `placa-resun-100` no `ctl-pwm-30a` com bateria de 12 V |
