@@ -262,7 +262,7 @@ No cabo, `preco` é o do anúncio dividido por 100 e multiplicado por 3, arredon
 |---|---|---|---|
 | `acc-tomadas-5` | Kit de 5 tomadas duplas de sobrepor | MLB56649232 | estrutura |
 | `acc-terminais-35` | Kit de 20 terminais olhal de 35 mm² | MLB45564347 | conector |
-| `acc-quadro-8` | Quadro de sobrepor para 8 disjuntores | MLB36945875 | estrutura |
+| `acc-quadro-8` | Quadro de sobrepor para 8 disjuntores | MLB36945875 | quadro (8 módulos; medidas típicas de 0,20 × 0,25 × 0,09 m) |
 
 Esses três não entram no orçamento automático; ficam na aba Instalação do catálogo.
 

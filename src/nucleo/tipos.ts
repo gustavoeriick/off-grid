@@ -11,6 +11,35 @@ export type Quat = [x: number, y: number, z: number, w: number];
 
 export type LadoCasa = 'frente' | 'fundos' | 'esquerda' | 'direita';
 
+/** Varanda coberta encostada em uma fachada. No máximo uma por lado. */
+export interface Varanda {
+  lado: LadoCasa;
+  profundidade: number;
+  inclinacaoPct: number;
+  /** Largura ao longo da fachada, em metros. Nulo ocupa a fachada inteira. */
+  largura: number | null;
+  /** Centro da varanda ao longo da fachada, em metros a partir do centro da fachada. Positivo vai para a direita de quem olha a fachada de fora. Ignorado com largura nula. */
+  deslocamento: number;
+}
+
+export interface ParedeInterna {
+  uid: string;
+  andar: 0 | 1;
+  /** Pontas no plano do piso, em coordenadas da casa. A parede é paralela a X ou a Z. */
+  de: [x: number, z: number];
+  para: [x: number, z: number];
+  /** Passagens de 0,8 m: distância do centro de cada uma até a ponta `de`, em metros. */
+  passagens: number[];
+}
+
+export interface Comodo {
+  uid: string;
+  andar: 0 | 1;
+  nome: string;
+  /** Um ponto dentro do cômodo. O cômodo é a área fechada por paredes que contém este ponto. */
+  ponto: [x: number, z: number];
+}
+
 export interface CasaConfig {
   /** Medida da frente, em metros. */
   largura: number;
@@ -20,7 +49,10 @@ export interface CasaConfig {
   /** Inclinação do telhado principal, em porcento. */
   inclinacaoTelhadoPct: number;
   beiral: number;
-  varanda: { lado: LadoCasa; profundidade: number; inclinacaoPct: number } | null;
+  /** No máximo uma varanda por lado. */
+  varandas: Varanda[];
+  paredesInternas: ParedeInterna[];
+  comodos: Comodo[];
   /** Posição do centro do quartinho, em coordenadas da casa, e as medidas dele. */
   quartinho: { x: number; z: number; largura: number; profundidade: number; altura: number; giro: number };
   /** Azimute para onde a frente da casa aponta: 0 norte, 90 leste. */
@@ -59,6 +91,8 @@ export interface Cabo {
   comprimento: number;
   /** `id` das proteções instaladas neste cabo. */
   protecoes: string[];
+  /** `uid` do quadro de energia por onde o cabo passa. Nulo sem quadro. */
+  quadro: string | null;
 }
 
 export type Clima = 'tipico' | 'limpo' | 'nublado' | 'chuvoso';
@@ -67,7 +101,7 @@ export type Clima = 'tipico' | 'limpo' | 'nublado' | 'chuvoso';
 export type Prioridade = 'rede' | 'solar';
 
 export interface Projeto {
-  versao: 1;
+  versao: 2;
   nome: string;
   casa: CasaConfig;
   /** `id` de um item de `LOCAIS`. */
@@ -294,7 +328,7 @@ export interface Estimativas {
 export type Nivel = 'erro' | 'alerta' | 'dica';
 
 export type Acao =
-  | { tipo: 'proteger-cabos'; rotulo: string; cabos: string[]; protecaoId: string }
+  | { tipo: 'proteger-cabos'; rotulo: string; itens: { cabo: string; protecaoId: string }[] }
   | { tipo: 'trocar-cabos'; rotulo: string; cabos: string[]; caboId: string }
   | { tipo: 'mais-placa'; rotulo: string }
   | { tipo: 'mais-bateria'; rotulo: string }

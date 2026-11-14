@@ -79,11 +79,12 @@ describe('calcularOrcamento: plano corrigido', () => {
       ['acc-trilhos', 1, 357.93, 357.93],
       ['acc-mc4-10', 1, 58.68, 58.68],
       ['acc-haste', 1, 44.97, 44.97],
+      ['acc-quadro-8', 2, 41.7, 83.4],
     ]);
   });
 
-  it('soma 9.714,22 sem valor típico', () => {
-    expect(orc.total).toBeCloseTo(9714.22, 2);
+  it('soma 9.797,62 sem valor típico', () => {
+    expect(orc.total).toBeCloseTo(9797.62, 2);
     expect(orc.totalTipico).toBe(0);
   });
 });

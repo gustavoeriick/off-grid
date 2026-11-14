@@ -19,6 +19,7 @@ describe('cenarioPlanoNoPapel', () => {
       caboId: 'cabo-bat-25',
       comprimento: 1,
       protecoes: ['prot-fusivel-anl-150'],
+      quadro: null,
     });
     expect(projeto.cabos.find((c) => c.uid === 'c9')).toMatchObject({
       de: { disp: 'inversor', terminal: 'caSaida' },
@@ -49,6 +50,13 @@ describe('cenarioPlanoCorrigido', () => {
     expect(projeto.dispositivos.map((d) => d.uid).slice(0, 2)).toEqual(['placa1', 'placa2']);
     expect(cabo('c12')).toMatchObject({ de: { disp: 'placa1', terminal: 'neg' }, para: { disp: 'placa2', terminal: 'pos' }, comprimento: 1.5 });
     expect(cabo('c2')).toMatchObject({ de: { disp: 'placa2', terminal: 'neg' }, para: { disp: 'inversor', terminal: 'pvNeg' } });
+  });
+
+  it('acrescenta dois quadros, um para a corrente contínua e outro para a saída', () => {
+    expect(projeto.dispositivos.filter((d) => d.itemId === 'acc-quadro-8').map((d) => d.uid)).toEqual(['quadro-cc', 'quadro-ca']);
+    expect(cabo('c1')?.quadro).toBe('quadro-cc');
+    for (const uid of ['c6', 'c7', 'c8', 'c9', 'c10', 'c11']) expect(cabo(uid)?.quadro).toBe('quadro-ca');
+    expect(cabo('c3')?.quadro).toBeNull();
   });
 
   it('troca o cabo da bateria e acrescenta as proteções', () => {

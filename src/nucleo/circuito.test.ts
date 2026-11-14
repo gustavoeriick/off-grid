@@ -18,10 +18,11 @@ function montar(pecas: Record<string, string>, ligacoes: [string, string][]): Pr
       caboId: 'cabo-solar-6',
       comprimento: 1,
       protecoes: [],
+      quadro: null,
     };
   });
   return {
-    versao: 1,
+    versao: 2,
     nome: 'teste',
     casa: structuredClone(CASA_INICIAL),
     localId: 'rio',
@@ -361,7 +362,7 @@ describe('analisarCircuito: placas e bateria ligadas direto (placas-no-banco)', 
     const projeto = cenarioPlanoCorrigido();
     projeto.cabos.push({
       uid: 'c13', de: { disp: 'inversor', terminal: 'batPos' }, para: { disp: 'inversor', terminal: 'pvPos' },
-      caboId: 'cabo-bat-35', comprimento: 1, protecoes: [],
+      caboId: 'cabo-bat-35', comprimento: 1, protecoes: [], quadro: null,
     });
     const a = analisar(projeto);
     expect(codigos(a)).toEqual(['placas-no-banco']);

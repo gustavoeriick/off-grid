@@ -48,10 +48,11 @@ function montar(
       caboId: caboId ?? 'cabo-bat-35',
       comprimento: comprimento ?? 1,
       protecoes: [],
+      quadro: null,
     };
   });
   return {
-    versao: 1,
+    versao: 2,
     nome: 'teste',
     casa: structuredClone(CASA_INICIAL),
     localId: 'rio',
@@ -80,7 +81,7 @@ const ligaBanco = (inv: string, bat: string): [string, string][] => [[`${inv}.ba
 /** Aplica ao projeto as ações que o aplicativo executaria: `proteger-cabos`, `trocar-cabos` e `mais-placa` (em série). */
 function aplicar(projeto: Projeto, acao: Acao): void {
   if (acao.tipo === 'proteger-cabos') {
-    for (const c of projeto.cabos) if (acao.cabos.includes(c.uid)) c.protecoes.push(acao.protecaoId);
+    for (const { cabo, protecaoId } of acao.itens) projeto.cabos.find((c) => c.uid === cabo)!.protecoes.push(protecaoId);
   } else if (acao.tipo === 'trocar-cabos') {
     for (const c of projeto.cabos) if (acao.cabos.includes(c.uid)) c.caboId = acao.caboId;
   } else if (acao.tipo === 'mais-placa') {
@@ -98,6 +99,7 @@ function aplicar(projeto: Projeto, acao: Acao): void {
       caboId: 'cabo-solar-6',
       comprimento: 1.5,
       protecoes: [],
+      quadro: null,
     });
   } else {
     throw new Error(`ação não aplicada no teste: ${acao.tipo}`);
@@ -117,6 +119,7 @@ describe('consultor: "plano no papel"', () => {
       ['carga-acima-da-bateria', 'dica'],
       ['sem-dps-nas-placas', 'dica'],
       ['sem-disjuntor-na-saida', 'dica'],
+      ['sem-quadro', 'dica'],
     ]);
   });
 
@@ -152,14 +155,13 @@ describe('consultor: "plano no papel"', () => {
   });
 
   it('sem-dps-nas-placas', () => {
-    expect(da(sugestoes, 'sem-dps-nas-placas').acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['c1'], protecaoId: 'prot-dps-cc-600' });
+    expect(da(sugestoes, 'sem-dps-nas-placas').acao).toMatchObject({ tipo: 'proteger-cabos', itens: [{ cabo: 'c1', protecaoId: 'prot-dps-cc-600' }] });
   });
 
   it('sem-disjuntor-na-saida', () => {
     expect(da(sugestoes, 'sem-disjuntor-na-saida').acao).toMatchObject({
       tipo: 'proteger-cabos',
-      cabos: ['c6', 'c7', 'c8', 'c9', 'c10', 'c11'],
-      protecaoId: 'prot-disjuntor-ca-16',
+      itens: ['c6', 'c7', 'c8', 'c9', 'c10', 'c11'].map((cabo) => ({ cabo, protecaoId: 'prot-disjuntor-ca-16' })),
     });
   });
 
@@ -201,12 +203,18 @@ describe('consultor: "plano corrigido"', () => {
 });
 
 describe('consultor: equivalência', () => {
-  it('aplicar as ações do "plano no papel" leva às sugestões do "plano corrigido"', () => {
+  it('aplicar as ações do "plano no papel" e acrescentar os dois quadros leva às sugestões do "plano corrigido"', () => {
     const projeto = cenarioPlanoNoPapel();
     const sugestoes = consultar(projeto);
     for (const regra of ['placas-abaixo-da-tensao', 'protecao-maior-que-o-cabo', 'sem-dps-nas-placas', 'sem-disjuntor-na-saida']) {
       aplicar(projeto, da(sugestoes, regra).acao!);
     }
+    // O corrigido também tem os dois quadros, com os cabos associados.
+    projeto.dispositivos.push(
+      { ...projeto.dispositivos[0], uid: 'quadro-cc', itemId: 'acc-quadro-8' },
+      { ...projeto.dispositivos[0], uid: 'quadro-ca', itemId: 'acc-quadro-8' },
+    );
+    for (const c of projeto.cabos) c.quadro = c.uid === 'c1' ? 'quadro-cc' : c.de.terminal === 'caSaida' ? 'quadro-ca' : null;
     const depois = consultar(projeto);
     const corrigido = consultar(cenarioPlanoCorrigido());
     expect(depois.map((s) => [s.regra, s.nivel, s.titulo])).toEqual(corrigido.map((s) => [s.regra, s.nivel, s.titulo]));
@@ -227,7 +235,7 @@ describe('consultor: regras isoladas', () => {
     const projeto = cenarioPlanoNoPapel();
     projeto.cabos.push({
       uid: 'c12', de: { disp: 'inversor', terminal: 'caSaida' }, para: { disp: 'rede', terminal: 'tomada' },
-      caboId: 'cabo-ca-2p5', comprimento: 2, protecoes: [],
+      caboId: 'cabo-ca-2p5', comprimento: 2, protecoes: [], quadro: null,
     });
     const s = da(consultar(projeto), 'saida-na-rede');
     expect(s).toMatchObject({ nivel: 'erro', titulo: 'A saída do inversor está ligada na rede da casa' });
@@ -363,7 +371,7 @@ describe('consultor: regras isoladas', () => {
     projeto.dispositivos.push({ ...projeto.dispositivos.find((d) => d.uid === 'ap-tv')!, uid: 'ap-chuveiro', itemId: 'ap-chuveiro' });
     projeto.cabos.push({
       uid: 'c12', de: { disp: 'inversor', terminal: 'caSaida' }, para: { disp: 'ap-chuveiro', terminal: 'plug' },
-      caboId: 'cabo-ca-4', comprimento: 5, protecoes: [],
+      caboId: 'cabo-ca-4', comprimento: 5, protecoes: [], quadro: null,
     });
     const s = da(consultar(projeto), 'sobrecarga');
     expect(s.nivel).toBe('erro');
@@ -394,7 +402,7 @@ describe('consultor: regras isoladas', () => {
     projeto.dispositivos.push({ ...projeto.dispositivos.find((d) => d.uid === 'ap-tv')!, uid: 'teste', itemId: 'ap-teste' });
     projeto.cabos.push({
       uid: 'c12', de: { disp: 'inversor', terminal: 'caSaida' }, para: { disp: 'teste', terminal: 'plug' },
-      caboId: 'cabo-ca-4', comprimento: 3, protecoes: [],
+      caboId: 'cabo-ca-4', comprimento: 3, protecoes: [], quadro: null,
     });
     const s = da(consultar(projeto, undefined, catalogo), 'corrente-da-bateria');
     expect(s.nivel).toBe('alerta');
@@ -408,7 +416,7 @@ describe('consultor: regras isoladas', () => {
     const s = da(consultar(projeto), 'sem-protecao-da-bateria');
     expect(s.nivel).toBe('erro');
     expect(s.titulo).toBe('Falta fusível entre a bateria e o inversor');
-    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['c3'], protecaoId: 'prot-fusivel-anl-150' });
+    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', itens: [{ cabo: 'c3', protecaoId: 'prot-fusivel-anl-150' }] });
   });
 
   it('`cabo-fino`: 3 Renepv em paralelo em um só par de cabo-solar-4', () => {
@@ -492,7 +500,7 @@ describe('consultor: regras isoladas', () => {
     const projeto = cenarioPlanoNoPapel();
     projeto.cabos.find((c) => c.uid === 'c1')!.protecoes = [];
     const s = da(consultar(projeto), 'sem-disjuntor-nas-placas');
-    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['c1'], protecaoId: 'prot-disjuntor-cc-32' });
+    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', itens: [{ cabo: 'c1', protecaoId: 'prot-disjuntor-cc-32' }] });
   });
 });
 
@@ -589,7 +597,7 @@ describe('consultor: compatibilidade do controlador e proteções', () => {
     ]);
     projeto.cabos[2].protecoes = ['prot-fusivel-anl-150'];
     const s = da(consultar(projeto), 'sem-protecao-da-bateria');
-    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['k1'], protecaoId: 'prot-fusivel-anl-150' });
+    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', itens: [{ cabo: 'k1', protecaoId: 'prot-fusivel-anl-150' }] });
   });
 
   it('`sem-protecao-da-bateria`: dois ramos em paralelo com fusível em um só', () => {
@@ -599,7 +607,7 @@ describe('consultor: compatibilidade do controlador e proteções', () => {
     projeto.cabos[0].protecoes = ['prot-fusivel-anl-150'];
     const s = da(consultar(projeto), 'sem-protecao-da-bateria');
     // A ação vai só para o ramo que está sem: o cabo do positivo de b2.
-    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['k3'] });
+    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', itens: [{ cabo: 'k3' }] });
     projeto.cabos[2].protecoes = ['prot-fusivel-anl-150'];
     expect(regras(consultar(projeto))).not.toContain('sem-protecao-da-bateria');
   });
@@ -608,7 +616,7 @@ describe('consultor: compatibilidade do controlador e proteções', () => {
     const projeto = cenarioPlanoNoPapel();
     projeto.cabos.find((c) => c.uid === 'c3')!.protecoes = ['prot-disjuntor-ca-16'];
     const s = consultar(projeto);
-    expect(da(s, 'sem-protecao-da-bateria').acao).toMatchObject({ tipo: 'proteger-cabos', cabos: ['c3'], protecaoId: 'prot-fusivel-anl-150' });
+    expect(da(s, 'sem-protecao-da-bateria').acao).toMatchObject({ tipo: 'proteger-cabos', itens: [{ cabo: 'c3', protecaoId: 'prot-fusivel-anl-150' }] });
     const ca = da(s, 'protecao-de-ca-em-cc');
     expect(ca.nivel).toBe('erro');
     expect(ca.titulo).toBe('Disjuntor de tomada em cabo de corrente contínua');

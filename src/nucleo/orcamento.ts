@@ -41,9 +41,15 @@ export function calcularOrcamento(projeto: Projeto, catalogo: Catalogo): Orcamen
   const contagem = new Map<string, number>();
   let placas = 0;
   let inversores = 0;
+  // Acessórios soltos na casa (o quadro de energia) são equipamento de instalação, um por dispositivo.
+  const acessorios = new Map<string, number>();
   for (const d of projeto.dispositivos) {
     const item = catalogo.get(d.itemId);
     if (!item) continue;
+    if (item.categoria === 'acessorio') {
+      if (item.preco > 0) acumular(acessorios, item.id, 1);
+      continue;
+    }
     if (item.categoria === 'placa') placas += 1;
     if (item.categoria === 'inversor') inversores += 1;
     if (item.preco > 0) acumular(contagem, item.id, 1);
@@ -78,9 +84,20 @@ export function calcularOrcamento(projeto: Projeto, catalogo: Catalogo): Orcamen
     ['acc-mc4-10', placas > 0 ? 1 : 0],
     ['acc-haste', inversores > 0 ? 1 : 0],
   ];
+  // Um acessório que também é automático (ganchos, trilhos, MC4, haste) não conta em dobro: vale o maior dos dois.
+  for (const par of automaticos) {
+    const doDispositivo = acessorios.get(par[0]);
+    if (doDispositivo !== undefined) {
+      par[1] = Math.max(par[1], doDispositivo);
+      acessorios.delete(par[0]);
+    }
+  }
   for (const [id, quantidade] of automaticos) {
     const item = catalogo.get(id);
     if (item && quantidade > 0) linhas.push(criarLinha('instalacao', item, quantidade, 'un'));
+  }
+  for (const [id, quantidade] of acessorios) {
+    linhas.push(criarLinha('instalacao', catalogo.get(id)!, quantidade, 'un'));
   }
 
   const total = centavos(linhas.reduce((soma, l) => soma + l.total, 0));

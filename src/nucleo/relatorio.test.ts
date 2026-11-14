@@ -8,11 +8,11 @@ describe('relatorioDoCenario', () => {
     const texto = relatorioDoCenario(cenarioPlanoNoPapel(), CATALOGO);
     for (const regra of [
       'placas-abaixo-da-tensao', 'protecao-maior-que-o-cabo', 'autonomia-curta',
-      'carga-acima-da-bateria', 'sem-dps-nas-placas', 'sem-disjuntor-na-saida',
+      'carga-acima-da-bateria', 'sem-dps-nas-placas', 'sem-disjuntor-na-saida', 'sem-quadro',
     ]) {
       expect(texto, regra).toContain(`${regra}:`);
     }
-    expect(texto).toContain('Sugestões do consultor (6):');
+    expect(texto).toContain('Sugestões do consultor (7):');
     expect(texto).toContain('Autonomia com o que está ligado: 4,1 horas');
     expect(texto).toContain('Total: R$ 8.668,19');
   });
@@ -22,6 +22,6 @@ describe('relatorioDoCenario', () => {
     expect(texto).toContain('Sugestões do consultor (3):');
     expect(texto).toContain('21/06/2026: geração 3,9');
     expect(texto).toContain('21/12/2026: geração 5,');
-    expect(texto).toContain('Total: R$ 9.714,22');
+    expect(texto).toContain('Total: R$ 9.797,62');
   });
 });

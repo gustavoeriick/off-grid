@@ -313,7 +313,7 @@ O consumo do dia vem de 7,15 kWh em CA, com os horários típicos: modem 40 W e 
 
 `totalTipico`: 110,00 (só o cabo de bateria de 25 mm², que continua sem anúncio).
 
-"Plano corrigido": total de 9.714,22, com `totalTipico` zero. Mudam: 2 placas; 25,5 m de `cabo-solar-6`; 2 m de `cabo-bat-35` no lugar do `cabo-bat-25`; mais `prot-dps-cc-600` (63,30) e 6 `prot-disjuntor-ca-16` (18,00 cada). O kit de trilhos continua sendo um, porque atende 2 placas.
+"Plano corrigido": total de 9.797,62 (9.714,22 até a fase 1; a fase 2 acrescentou dois quadros `acc-quadro-8`, 83,40), com `totalTipico` zero. Mudam: 2 placas; 25,5 m de `cabo-solar-6`; 2 m de `cabo-bat-35` no lugar do `cabo-bat-25`; mais `prot-dps-cc-600` (63,30) e 6 `prot-disjuntor-ca-16` (18,00 cada). O kit de trilhos continua sendo um, porque atende 2 placas.
 
 ## 12. Catálogo (tarefas 1.1 e 1.2)
 

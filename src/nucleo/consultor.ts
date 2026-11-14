@@ -710,7 +710,7 @@ function regrasDeCabos(
         alvos: doCaminho.length > 0 ? doCaminho : [sistema.inversor],
       };
       if (escolhida && cabos.length > 0) {
-        s.acao = { tipo: 'proteger-cabos', rotulo: `Instalar ${minuscula(escolhida.nome)}`, cabos, protecaoId: escolhida.id };
+        s.acao = { tipo: 'proteger-cabos', rotulo: `Instalar ${minuscula(escolhida.nome)}`, itens: cabos.map((cabo) => ({ cabo, protecaoId: escolhida.id })) };
       }
       sugerir(s);
     }
@@ -871,7 +871,7 @@ function regrasDeCabos(
         alvos: circuitos.placas.map(umCabo),
       };
       if (escolhido && doPv) {
-        s.acao = { tipo: 'proteger-cabos', rotulo: `Instalar ${minuscula(escolhido.nome)}`, cabos: [doPv.uid], protecaoId: escolhido.id };
+        s.acao = { tipo: 'proteger-cabos', rotulo: `Instalar ${minuscula(escolhido.nome)}`, itens: [{ cabo: doPv.uid, protecaoId: escolhido.id }] };
       }
       sugerir(s);
     }
@@ -889,7 +889,7 @@ function regrasDeCabos(
         alvos: circuitos.placas.map(umCabo),
       };
       if (escolhido && doPv) {
-        s.acao = { tipo: 'proteger-cabos', rotulo: `Instalar ${minuscula(escolhido.nome)}`, cabos: [doPv.uid], protecaoId: escolhido.id };
+        s.acao = { tipo: 'proteger-cabos', rotulo: `Instalar ${minuscula(escolhido.nome)}`, itens: [{ cabo: doPv.uid, protecaoId: escolhido.id }] };
       }
       sugerir(s);
     }
@@ -905,8 +905,13 @@ function regrasDeCabos(
         }),
     );
     if (semDisjuntor.length > 0) {
-      const exigida = Math.max(...semDisjuntor.map((c) => 1.25 * (correntes.get(c.uid) ?? 0)));
-      const escolhido = primeiroOuMaior(protecoesDe(catalogo, ['disjuntorCA']), (p) => p.correnteA >= exigida);
+      const disjuntores = protecoesDe(catalogo, ['disjuntorCA']);
+      // Um disjuntor para cada cabo: o menor com corrente de pelo menos 1,25 vez a do cabo.
+      const itens = semDisjuntor.flatMap((c) => {
+        const exigida = 1.25 * (correntes.get(c.uid) ?? 0);
+        const escolhido = primeiroOuMaior(disjuntores, (p) => p.correnteA >= exigida);
+        return escolhido ? [{ cabo: c.uid, protecaoId: escolhido.id }] : [];
+      });
       const cabos = semDisjuntor.map((c) => c.uid);
       const s: Sugestao = {
         regra: 'sem-disjuntor-na-saida',
@@ -917,11 +922,66 @@ function regrasDeCabos(
           'Ele desliga o circuito se um aparelho entrar em curto.',
         alvos: cabos,
       };
-      if (escolhido) {
-        s.acao = { tipo: 'proteger-cabos', rotulo: 'Instalar disjuntor em cada cabo da saída', cabos, protecaoId: escolhido.id };
+      if (itens.length > 0) {
+        s.acao = { tipo: 'proteger-cabos', rotulo: 'Instalar disjuntor em cada cabo da saída', itens };
       }
       sugerir(s);
     }
+  }
+
+  regrasDoQuadro(projeto, catalogo, sugerir);
+}
+
+/** Módulos de 18 mm que a proteção ocupa no trilho do quadro; nulo se ela não vai no trilho. */
+export function modulosDaProtecao(protecao: Protecao): number | null {
+  switch (protecao.tipo) {
+    case 'disjuntorCA':
+      return 1;
+    case 'disjuntorCC':
+    case 'dps':
+      return 2;
+    case 'fusivel':
+      // O fusível ANL ou Mega da bateria tem porta-fusível próprio, desenhado no cabo. Só o de trilho ocupa módulos.
+      return /anl|mega/i.test(protecao.id) ? null : 2;
+  }
+}
+
+/** sem-quadro e quadro-cheio. */
+function regrasDoQuadro(projeto: Projeto, catalogo: Catalogo, sugerir: (s: Sugestao) => void): void {
+  const modulosDoCabo = (c: Cabo): number =>
+    c.protecoes.reduce((soma, id) => {
+      const p = catalogo.get(id);
+      return soma + (p?.categoria === 'protecao' ? (modulosDaProtecao(p) ?? 0) : 0);
+    }, 0);
+
+  const soltos = projeto.cabos.filter((c) => c.quadro === null && modulosDoCabo(c) > 0);
+  if (soltos.length > 0) {
+    sugerir({
+      regra: 'sem-quadro',
+      nivel: 'dica',
+      titulo: 'Ponha as proteções em um quadro',
+      texto:
+        'Disjuntor e DPS são feitos para ficar presos em um trilho, dentro de uma caixa fechada. ' +
+        'Soltos no cabo, ficam expostos a toque, poeira e umidade. Arraste um quadro para a parede do quartinho.',
+      alvos: soltos.map((c) => c.uid),
+      acao: { tipo: 'ver-catalogo', rotulo: 'Ver instalação', categoria: 'acessorio' },
+    });
+  }
+
+  for (const d of projeto.dispositivos) {
+    const item = catalogo.get(d.itemId);
+    if (item?.categoria !== 'acessorio' || item.tipo !== 'quadro') continue;
+    const cabos = projeto.cabos.filter((c) => c.quadro === d.uid);
+    const ocupados = cabos.reduce((soma, c) => soma + modulosDoCabo(c), 0);
+    const lugares = item.modulos ?? 0;
+    if (ocupados <= lugares) continue;
+    sugerir({
+      regra: 'quadro-cheio',
+      nivel: 'alerta',
+      titulo: 'O quadro está cheio',
+      texto: `Este quadro tem lugar para ${inteiro(lugares)} módulos e as proteções ocupam ${inteiro(ocupados)}. Use um segundo quadro.`,
+      alvos: [d.uid, ...cabos.map((c) => c.uid)],
+    });
   }
 }
 

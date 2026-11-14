@@ -189,6 +189,6 @@ export const ACESSORIOS: Acessorio[] = [
   {
     id: 'acc-quadro-8', nome: 'Quadro de sobrepor para 8 disjuntores', linha: 'plano', categoria: 'acessorio',
     detalhe: 'Quadro de distribuição de sobrepor para 8 disjuntores',
-    ...ref('MLB36945875'), tipo: 'estrutura',
+    ...ref('MLB36945875'), tipo: 'quadro', dimensoes: [0.20, 0.25, 0.09], modulos: 8, tipico: ['dimensoes'],
   },
 ];

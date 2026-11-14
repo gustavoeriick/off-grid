@@ -185,7 +185,7 @@ describe('irradianciaNasPlacas', () => {
     uso: null,
   });
   const projeto: Projeto = {
-    versao: 1,
+    versao: 2,
     nome: 'teste',
     casa: {} as Projeto['casa'],
     localId: 'rio',

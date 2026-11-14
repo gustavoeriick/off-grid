@@ -77,6 +77,19 @@ interface Comodo {
 | `sem-quadro` | dica | Há proteção de trilho instalada em cabo sem `quadro` | Ponha as proteções em um quadro | Disjuntor e DPS são feitos para ficar presos em um trilho, dentro de uma caixa fechada. Soltos no cabo, ficam expostos a toque, poeira e umidade. Arraste um quadro para a parede do quartinho. | Ver instalação |
 | `quadro-cheio` | alerta | Soma dos módulos das proteções de um quadro maior que `modulos` | O quadro está cheio | Este quadro tem lugar para {8} módulos e as proteções ocupam {10}. Use um segundo quadro. | |
 
+Detalhes da implementação:
+
+- Proteção "de trilho" é disjuntor CA, disjuntor CC e DPS. Os fusíveis do catálogo (ANL e mega) têm porta-fusível próprio e não ocupam módulo.
+- `sem-quadro` tem como alvos os cabos com proteção de trilho sem quadro, e a ação abre a aba Instalação do catálogo. `quadro-cheio` gera uma sugestão por quadro.
+- Um quadro posto na cena entra no orçamento, no grupo instalação, uma unidade por quadro.
+
+Efeito nos cenários de referência:
+
+- **Plano no papel.** O plano do Gustavo não tem quadro, então ganha a dica `sem-quadro`: 7 sugestões no lugar de 6. O total continua R$ 8.668,19.
+- **Plano corrigido.** As proteções somam 10 módulos (disjuntor CC e DPS das placas, 4; seis disjuntores de 16 A da saída, 6), mais que os 8 de um quadro. O cenário ganha dois quadros: um para as placas e um para a saída. As 3 sugestões continuam as mesmas e o total passa a R$ 9.797,62 (R$ 9.714,22 mais 2 × R$ 41,70).
+
+Paredes internas da casa inicial: nos dados elas vão até o limite da planta, para a área dos cômodos fechar; no desenho, a parede para na face interna da parede externa e é interrompida onde cruza a escada.
+
 ### 1.4 Ação de proteger cabos
 
 `Acao` do tipo `proteger-cabos` troca `cabos` e `protecaoId` por `itens: { cabo: string; protecaoId: string }[]`. Com isso `sem-disjuntor-na-saida` escolhe um disjuntor para cada cabo, como a seção 6 do consultor já pedia.

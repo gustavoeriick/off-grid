@@ -165,11 +165,14 @@ export interface Rede extends ItemBase {
   categoria: 'rede';
 }
 
-export type TipoAcessorio = 'estrutura' | 'conector' | 'aterramento' | 'medicao' | 'kit';
+export type TipoAcessorio = 'estrutura' | 'conector' | 'aterramento' | 'medicao' | 'kit' | 'quadro';
 
 export interface Acessorio extends ItemBase {
   categoria: 'acessorio';
   tipo: TipoAcessorio;
+  /** Só no quadro de energia: medidas para o desenho e lugares no trilho, em módulos de 18 mm. */
+  dimensoes?: Dimensoes;
+  modulos?: number;
 }
 
 export type Item = Placa | Bateria | Inversor | Controlador | Protecao | TipoCabo | Aparelho | Rede | Acessorio;

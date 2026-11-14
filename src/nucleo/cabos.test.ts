@@ -22,10 +22,10 @@ function montar(pecas: Record<string, string>, ligacoes: Lig[]): Projeto {
   const cabos: Cabo[] = ligacoes.map(([de, para, caboId, comprimento], i) => {
     const [dDe, tDe] = de.split('.');
     const [dPara, tPara] = para.split('.');
-    return { uid: `c${i + 1}`, de: { disp: dDe, terminal: tDe }, para: { disp: dPara, terminal: tPara }, caboId, comprimento, protecoes: [] };
+    return { uid: `c${i + 1}`, de: { disp: dDe, terminal: tDe }, para: { disp: dPara, terminal: tPara }, caboId, comprimento, protecoes: [], quadro: null };
   });
   return {
-    versao: 1,
+    versao: 2,
     nome: 'teste',
     casa: structuredClone(CASA_INICIAL),
     localId: 'rio',
@@ -115,7 +115,7 @@ describe('correntesDeProjeto: outras redes', () => {
   it('cabo que fecha laço fica com 0', () => {
     const p = tresEmendadas('cabo-solar-6');
     // Segundo cabo entre os mesmos terminais de uma emenda.
-    p.cabos.push({ uid: 'extra', de: { disp: 'p2', terminal: 'pos' }, para: { disp: 'p1', terminal: 'pos' }, caboId: 'cabo-solar-6', comprimento: 1, protecoes: [] });
+    p.cabos.push({ uid: 'extra', de: { disp: 'p2', terminal: 'pos' }, para: { disp: 'p1', terminal: 'pos' }, caboId: 'cabo-solar-6', comprimento: 1, protecoes: [], quadro: null });
     const c = correntes(p);
     expect(c.get('c3')).toBeCloseTo(53.25, 2);
     expect(c.get('c5')! + c.get('extra')!).toBeCloseTo(17.75, 2);
