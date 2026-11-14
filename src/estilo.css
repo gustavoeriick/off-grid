@@ -733,3 +733,62 @@ button:disabled {
 .painel-casa fieldset.varandas {
   order: 3;
 }
+
+/* ---------------------------------------------------------------- Catálogo por tipo */
+
+.cartao .ver-modelos {
+  margin-top: 4px;
+  padding: 3px 8px;
+  font-size: 12.5px;
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--destaque);
+  cursor: pointer;
+}
+
+.cartao .ver-modelos[aria-expanded='true'] {
+  background: #eaf2fb;
+}
+
+.modelo-atual {
+  color: var(--suave);
+  font-size: 12px;
+}
+
+.modelos-caixa {
+  margin-top: 6px;
+  cursor: default;
+}
+
+.modelos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.modelo {
+  border-top: 1px solid var(--borda);
+  padding: 5px 0 3px;
+}
+
+.modelo.escolhido {
+  background: #f1f6fc;
+}
+
+.modelo-nome {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.modelo-do-item {
+  margin: 2px 0 4px;
+}
+
+.modelo-do-item select {
+  max-width: 100%;
+}

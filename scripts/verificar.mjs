@@ -158,11 +158,54 @@ async function principal() {
     conferir(links.length > 0 && links.every(([t, r]) => t === '_blank' && r === 'noopener noreferrer'), 'links de anúncio abrem em nova aba com rel seguro');
     await captura('14-catalogo-placas');
 
+    // Catálogo por tipo: um cartão só para as placas de 585 W, com 2 modelos; os links ficam no detalhe.
+    const cartoesPlaca = pagina.locator('#lista-catalogo .cartao', { has: pagina.locator('h4', { hasText: /^Placa solar de 585 W$/ }) });
+    conferir((await cartoesPlaca.count()) === 1, 'as placas de 585 W deveriam ser um cartão só');
+    const c585 = cartoesPlaca.first();
+    conferir((await c585.getAttribute('data-modelos')) === '2', 'o cartão de 585 W deveria ter 2 modelos');
+    conferir((await c585.locator('.ver-modelos').textContent()).includes('2 modelos no mercado'), 'o cartão mostra "2 modelos no mercado"');
+    conferir((await c585.locator('a').count()) === 0 && (await c585.locator('.modelos').count()) === 0, 'fechado, o cartão de 585 W não lista modelos nem links');
+    const ordemW = await pagina.locator('#lista-catalogo .cartao h4').allTextContents();
+    const pot = ordemW.map((t) => Number(/de (\d+) W/.exec(t)?.[1]));
+    conferir(pot.every((x, i) => i === 0 || x >= pot[i - 1]), `os cartões de placa deveriam estar em ordem crescente: ${ordemW.join(' | ')}`);
+    const idReferencia = await c585.getAttribute('data-item-id');
+    await c585.locator('.ver-modelos').click();
+    conferir((await c585.locator('.modelos .modelo').count()) === 2, 'abrir o detalhe lista os 2 modelos');
+    const linksDetalhe = await c585.locator('.modelos a').evaluateAll((l) => l.map((a) => [a.textContent, a.target, a.rel]));
+    conferir(linksDetalhe.length === 2 && linksDetalhe.every(([t, a, r]) => t === 'ver anúncio' && a === '_blank' && r === 'noopener noreferrer'), 'o detalhe mostra o link "ver anúncio" de cada modelo');
+    await captura('14c-catalogo-detalhe-aberto');
+    const outro = await c585.locator('.modelos .modelo:not(.escolhido)').first().getAttribute('data-modelo-id');
+    conferir(outro && outro !== idReferencia, 'deveria haver um modelo diferente do de referência');
+    await c585.locator(`.modelo[data-modelo-id="${outro}"] .modelo-nome`).click();
+    conferir((await c585.getAttribute('data-item-id')) === outro, 'escolher o outro modelo deveria mudar o data-item-id do cartão');
+    // telaDoCartao de um item que não é o de referência: volta à referência e depois ao outro.
+    await pagina.evaluate(() => {
+      window.__arrastos = [];
+      window.addEventListener('offgrid:arrastar-item', (ev) => window.__arrastos.push(ev.detail));
+    });
+    await pagina.evaluate((id) => window.__offgrid.telaDoCartao(id), idReferencia);
+    const centroOutro = await pagina.evaluate((id) => window.__offgrid.telaDoCartao(id), outro);
+    conferir(Array.isArray(centroOutro), 'telaDoCartao de um modelo que não é o de referência deveria devolver o ponto');
+    conferir(
+      (await pagina.locator('#lista-catalogo .cartao', { has: pagina.locator('h4', { hasText: /^Placa solar de 585 W$/ }) }).getAttribute('data-item-id')) === outro,
+      'telaDoCartao deveria escolher o modelo pedido',
+    );
+    await pagina.mouse.move(centroOutro[0], centroOutro[1]);
+    await pagina.mouse.down();
+    await pagina.mouse.up();
+    const arrastoOutro = await pagina.evaluate(() => window.__arrastos);
+    conferir(arrastoOutro.length === 1 && arrastoOutro[0].itemId === outro, 'arrastar o cartão deveria usar o modelo escolhido');
+    // Apertar um link, botão ou opção dentro do cartão não inicia arraste.
+    const antesDosArrastos = arrastoOutro.length;
+    await pagina.locator('#lista-catalogo .cartao .ver-modelos').first().click();
+    await pagina.locator('#lista-catalogo .cartao .ver-modelos').first().click();
+    conferir((await pagina.evaluate(() => window.__arrastos.length)) === antesDosArrastos, 'clicar no botão "ver modelos" não deveria iniciar arraste');
+    await pagina.evaluate((id) => window.__offgrid.telaDoCartao(id), idReferencia);
+
     // O cartão arrastável avisa a cena com o evento, sem fazer mais nada.
     const idCartao = await pagina.locator('#lista-catalogo .cartao[data-arrastavel]').first().getAttribute('data-item-id');
     await pagina.evaluate(() => {
       window.__arrastos = [];
-      window.addEventListener('offgrid:arrastar-item', (ev) => window.__arrastos.push(ev.detail));
     });
     const centro = await pagina.evaluate((id) => window.__offgrid.telaDoCartao(id), idCartao);
     conferir(Array.isArray(centro), 'telaDoCartao deveria devolver o centro do cartão');
@@ -208,6 +251,21 @@ async function principal() {
     await pagina.keyboard.press('Control+Z');
     d = (await estado()).projeto.dispositivos.find((x) => x.uid === aparelho.uid);
     conferir(d.ligado === true, 'Ctrl+Z deveria desfazer');
+
+    // Item selecionado: trocar o modelo de uma placa pelo painel; Desfazer volta.
+    const placa = (await estado()).projeto.dispositivos.find((x) => x.itemId === 'placa-renepv-585' || x.itemId === 'placa-ronma-585');
+    conferir(placa, 'o cenário inicial deveria ter uma placa de 585 W');
+    await pagina.evaluate((uid) => window.__offgrid.acoes.selecionar({ tipo: 'dispositivo', uid }), placa.uid);
+    conferir((await pagina.locator('#item-selecionado h3').textContent()) === 'Placa solar de 585 W', 'o painel mostra o nome do tipo em destaque');
+    conferir((await pagina.locator('#item-selecionado .modelo-do-item').textContent()).includes('Modelo:'), 'o painel mostra "Modelo:"');
+    conferir((await pagina.locator('#item-selecionado a', { hasText: 'ver anúncio' }).count()) === 1, 'o painel mostra o link do anúncio do modelo atual');
+    const outraPlaca = placa.itemId === 'placa-renepv-585' ? 'placa-ronma-585' : 'placa-renepv-585';
+    await captura('15c-item-selecionado-modelo');
+    await pagina.locator('#item-selecionado select[data-modelo]').selectOption(outraPlaca);
+    conferir((await estado()).projeto.dispositivos.find((x) => x.uid === placa.uid).itemId === outraPlaca, 'trocar o modelo pelo painel deveria mudar o itemId');
+    await pagina.locator('#botao-desfazer').click();
+    conferir((await estado()).projeto.dispositivos.find((x) => x.uid === placa.uid).itemId === placa.itemId, 'Desfazer deveria devolver o modelo');
+    await pagina.evaluate(() => window.__offgrid.acoes.selecionar(null));
 
     // Item selecionado: um cabo.
     const cabo = (await estado()).projeto.cabos[0];

@@ -1,12 +1,12 @@
 // Painel do item selecionado (coluna direita, acima das abas). Tarefa 2.3, parte de interface.
 
-import { CATALOGO } from '../catalogo';
-import type { TipoCabo, Uso } from '../catalogo/tipos';
+import { CATALOGO, grupoDoItem } from '../catalogo';
+import type { Item, TipoCabo, Uso } from '../catalogo/tipos';
 import { acoes, assinar, estado } from '../estado';
 import { correntesDeProjeto, quedasDeTensao } from '../nucleo/cabos';
 import { comodoDe } from '../nucleo/comodos';
 import type { Cabo, Circuito, Dispositivo } from '../nucleo/tipos';
-import { avisosDoItem, blocoDePreco, el, h, num, substituir } from './formato';
+import { avisosDoItem, blocoDePreco, brl, el, h, mostrarMensagem, num, substituir } from './formato';
 
 const NOME_CIRCUITO: Record<Circuito, string> = {
   placas: 'Placas',
@@ -37,12 +37,28 @@ function seletorDeHora(rotulo: string, valor: number, de: number, ate: number, a
   return h('label', null, rotulo, s);
 }
 
+/** "Modelo:" com a lista dos modelos do mesmo tipo. Com um só, mostra o nome sem lista. */
+function modeloDoItem(d: Dispositivo, item: Item, modelos: Item[], redesenhar: () => void): Node[] {
+  if (modelos.length <= 1) return [h('span', { class: 'rotulo-modelo' }, 'Modelo: '), h('strong', null, item.nome)];
+  const lista = h('select', { 'aria-label': 'Modelo', 'data-modelo': '' });
+  for (const m of modelos) lista.append(new Option(m.preco > 0 ? `${m.nome} (${brl(m.preco)})` : m.nome, m.id, false, m.id === item.id));
+  lista.addEventListener('change', () => {
+    if (!acoes.trocarModelo(d.uid, lista.value)) {
+      mostrarMensagem('Esse modelo não tem as mesmas ligações. Nada mudou.', true);
+      redesenhar();
+    }
+  });
+  return [h('label', { class: 'campo' }, 'Modelo:', lista)];
+}
+
 function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | null {
   const item = CATALOGO.get(d.itemId);
   if (!item) return null;
   const comodo = comodoDe(estado.projeto.casa, d);
+  const grupo = grupoDoItem(CATALOGO, item.id);
   const nos: Node[] = [
-    h('h3', null, item.nome),
+    h('h3', null, grupo?.nome ?? item.nome),
+    h('div', { class: 'modelo-do-item' }, ...modeloDoItem(d, item, grupo?.itens ?? [item], redesenhar)),
     h('p', { class: 'detalhe' }, item.detalhe),
     blocoDePreco(item),
     ...avisosDoItem(item),

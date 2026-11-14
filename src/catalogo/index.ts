@@ -9,6 +9,7 @@ import { ACESSORIOS, CABOS, PROTECOES } from './instalacao';
 import type { Catalogo, Item } from './tipos';
 
 export type * from './tipos';
+export { gruposDoCatalogo, grupoDoItem, type GrupoDoCatalogo } from './grupos';
 
 const ITENS: Item[] = [
   ...PLACAS,

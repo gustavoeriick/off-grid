@@ -1,9 +1,9 @@
 // Painel Catálogo (coluna esquerda). Tarefa 2.2, parte de interface.
 // O arraste em si é da cena: aqui o cartão só avisa na `window` que o botão foi apertado.
 
-import { CATALOGO } from '../catalogo';
+import { CATALOGO, grupoDoItem, gruposDoCatalogo, type GrupoDoCatalogo } from '../catalogo';
 import type { Categoria, Item, Linha } from '../catalogo/tipos';
-import { avisosDoItem, blocoDePreco, el, h } from './formato';
+import { avisosDoItem, blocoDePreco, brl, el, h } from './formato';
 
 interface Aba {
   id: string;
@@ -62,22 +62,98 @@ function comoEntra(item: Item): string {
   return 'Entra no orçamento automaticamente.';
 }
 
-function cartao(item: Item): HTMLElement {
-  const arrasta = arrastavelParaACena(item) || item.categoria === 'protecao';
+/** Modelo escolhido em cada tipo (o que será arrastado). Sem escolha, vale o de referência. */
+const escolhidos = new Map<string, string>();
+/** Tipos com a lista de modelos aberta. */
+const abertos = new Set<string>();
+
+function naLinha(item: Item): boolean {
+  return filtro === 'todas' || item.linha === filtro;
+}
+
+/** Modelo que o cartão arrasta: o escolhido, se ainda vale no filtro; senão a referência, ou o mais barato da linha. */
+function modeloDoCartao(g: GrupoDoCatalogo): Item {
+  const id = escolhidos.get(g.chave);
+  const escolhido = id ? g.itens.find((i) => i.id === id) : undefined;
+  if (escolhido && naLinha(escolhido)) return escolhido;
+  if (naLinha(g.referencia)) return g.referencia;
+  return g.itens.find(naLinha) ?? g.referencia;
+}
+
+function blocoDePrecoDoTipo(g: GrupoDoCatalogo): HTMLElement | null {
+  const r = g.referencia;
+  if (g.itens.length === 1) return blocoDePreco(r);
+  if (r.preco === 0) return null;
+  return h(
+    'p',
+    { class: 'preco' },
+    h('strong', null, `a partir de ${brl(r.preco)}${r.categoria === 'cabo' ? ' por metro' : ''}`),
+    r.tipico?.includes('preco') ? h('span', { class: 'marca-tipico', title: 'Preço estimado: não veio de um anúncio' }, 'valor típico') : null,
+  );
+}
+
+function listaDeModelos(g: GrupoDoCatalogo, atual: Item, aoEscolher: (id: string) => void): HTMLElement {
+  const lista = h('ul', { class: 'modelos' });
+  for (const item of g.itens) {
+    const radio = h('input', { type: 'radio', name: `modelo-${g.chave}`, value: item.id, ...(item.id === atual.id ? { checked: true } : {}) });
+    radio.addEventListener('change', () => aoEscolher(item.id));
+    lista.append(
+      h(
+        'li',
+        { class: item.id === atual.id ? 'modelo escolhido' : 'modelo', 'data-modelo-id': item.id },
+        h('label', { class: 'modelo-nome' }, radio, h('span', null, item.nome)),
+        blocoDePreco(item),
+        ...avisosDoItem(item),
+      ),
+    );
+  }
+  return h('div', { class: 'modelos-caixa' }, h('p', { class: 'rotulo-secao' }, 'Modelos deste tipo. O marcado é o que você arrasta.'), lista);
+}
+
+function cartao(g: GrupoDoCatalogo): HTMLElement {
+  const atual = modeloDoCartao(g);
+  const arrasta = arrastavelParaACena(g.referencia) || g.referencia.categoria === 'protecao';
+  const aberto = abertos.has(g.chave) && g.itens.length > 1;
+  const varios = g.itens.length > 1;
   const c = h(
     'article',
-    { class: arrasta ? 'cartao arrastavel' : 'cartao', 'data-item-id': item.id, 'data-linha': item.linha, ...(arrasta ? { 'data-arrastavel': '' } : {}) },
-    h('h4', null, item.nome),
-    h('p', { class: 'detalhe' }, item.detalhe),
-    blocoDePreco(item),
-    ...avisosDoItem(item),
-    h('p', { class: 'como-entra' }, comoEntra(item)),
+    {
+      class: arrasta ? 'cartao arrastavel' : 'cartao',
+      'data-grupo': g.chave,
+      'data-item-id': atual.id,
+      'data-linha': atual.linha,
+      'data-modelos': String(g.itens.length),
+      ...(arrasta ? { 'data-arrastavel': '' } : {}),
+    },
+    h('h4', null, g.nome),
+    h('p', { class: 'detalhe' }, g.referencia.detalhe),
+    blocoDePrecoDoTipo(g),
+    ...avisosDoItem(g.referencia),
+    varios ? h('p', { class: 'modelo-atual' }, atual.id === g.referencia.id ? 'Modelo de referência.' : `Modelo escolhido: ${atual.nome}.`) : null,
+    h('p', { class: 'como-entra' }, comoEntra(g.referencia)),
   );
+  if (varios) {
+    const botaoModelos = h('button', { type: 'button', class: 'ver-modelos', 'aria-expanded': String(aberto) }, `${g.itens.length} modelos no mercado`, h('span', { 'aria-hidden': 'true' }, aberto ? ' ▴' : ' ▾'));
+    botaoModelos.addEventListener('click', () => {
+      if (abertos.has(g.chave)) abertos.delete(g.chave);
+      else abertos.add(g.chave);
+      c.replaceWith(cartao(g));
+    });
+    c.append(botaoModelos);
+    if (aberto) {
+      c.append(
+        listaDeModelos(g, atual, (id) => {
+          escolhidos.set(g.chave, id);
+          c.replaceWith(cartao(g));
+        }),
+      );
+    }
+  }
   if (arrasta) {
     c.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || (e.target as Element).closest('a')) return;
+      if (e.button !== 0 || (e.target as Element).closest('a, button, input, label, .modelos-caixa')) return;
       e.preventDefault();
-      window.dispatchEvent(new CustomEvent('offgrid:arrastar-item', { detail: { itemId: item.id, clientX: e.clientX, clientY: e.clientY } }));
+      window.dispatchEvent(new CustomEvent('offgrid:arrastar-item', { detail: { itemId: c.dataset.itemId, clientX: e.clientX, clientY: e.clientY } }));
     });
   }
   return c;
@@ -87,8 +163,10 @@ function desenhar(): void {
   const lista = el<HTMLElement>('#lista-catalogo');
   document.querySelectorAll<HTMLButtonElement>('#abas-catalogo button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.cat === aba.id)));
   document.querySelectorAll<HTMLButtonElement>('#filtro-linha button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.linha === filtro)));
-  const itens = [...CATALOGO.values()].filter((i) => aba.categorias.includes(i.categoria) && (filtro === 'todas' || i.linha === filtro));
-  lista.replaceChildren(...(itens.length ? itens.map(cartao) : [h('p', { class: 'vazio' }, 'Nenhum item nesta linha.')]));
+  const grupos = gruposDoCatalogo(CATALOGO)
+    .filter((g) => aba.categorias.includes(g.categoria) && g.itens.some(naLinha))
+    .sort((a, b) => aba.categorias.indexOf(a.categoria) - aba.categorias.indexOf(b.categoria));
+  lista.replaceChildren(...(grupos.length ? grupos.map(cartao) : [h('p', { class: 'vazio' }, 'Nenhum item nesta linha.')]));
 }
 
 /** Abre a aba que contém a categoria, mostrando todas as linhas. */
@@ -98,17 +176,16 @@ export function abrirCatalogo(categoria: Categoria): void {
   desenhar();
 }
 
-/** Centro do cartão do item, em pixels da janela. Abre a aba certa e rola até ele. */
+/** Centro do cartão do tipo do item, em pixels da janela. Abre a aba certa, escolhe aquele modelo e rola até o cartão. */
 function telaDoCartao(itemId: string): [number, number] | null {
   const item = CATALOGO.get(itemId);
-  if (!item) return null;
-  const alvo = abaDe(item.categoria);
-  if (aba !== alvo || (filtro !== 'todas' && item.linha !== filtro)) {
-    aba = alvo;
-    if (filtro !== 'todas' && item.linha !== filtro) filtro = 'todas';
-    desenhar();
-  }
-  const c = [...document.querySelectorAll<HTMLElement>('#lista-catalogo .cartao')].find((x) => x.dataset.itemId === itemId);
+  const g = grupoDoItem(CATALOGO, itemId);
+  if (!item || !g) return null;
+  if (!naLinha(item)) filtro = 'todas';
+  aba = abaDe(item.categoria);
+  escolhidos.set(g.chave, itemId);
+  desenhar();
+  const c = [...document.querySelectorAll<HTMLElement>('#lista-catalogo .cartao')].find((x) => x.dataset.grupo === g.chave);
   if (!c) return null;
   c.scrollIntoView({ block: 'nearest' });
   // Ponto do cartão que não cai em link: o meio da linha do nome, na altura do cartão.
