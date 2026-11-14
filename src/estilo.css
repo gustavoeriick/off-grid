@@ -4,8 +4,19 @@
   background: #f4f6f8;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
 }
 
 .aviso {

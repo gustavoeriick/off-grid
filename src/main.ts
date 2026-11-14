@@ -1,12 +1,7 @@
-// Ponto de entrada. O coordenador da fase 1 substitui este aviso pela montagem da cena e dos painéis.
+// Ponto de entrada. Monta a cena em tela cheia; os painéis entram depois.
+
+import { criarCena } from './cena';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
-if (app) {
-  app.innerHTML = `
-    <main class="aviso">
-      <h1>Simulador off-grid</h1>
-      <p>Em construção. O plano está em <code>docs/plano-de-desenvolvimento.md</code>.</p>
-    </main>
-  `;
-}
+if (app) criarCena(app);
