@@ -1,0 +1,132 @@
+// Inversores e estações portáteis. Especificação: docs/especificacao/catalogo.md, seções 3, 4 e 5.
+// Nenhum anúncio informa rendimento nem consumo sem carga: os dois são sempre típicos.
+
+import type { Inversor } from './tipos';
+import { ref } from './util';
+
+const T_BASE = ['rendimento', 'consumoVazioW', 'montagem', 'dimensoes'];
+const T_ESTACAO = ['onda', 'tensaoBateria', 'solar', ...T_BASE];
+
+export const INVERSORES: Inversor[] = [
+  {
+    id: 'inv-anenji-3kw-24v-127', nome: 'Anenji 3 kW 24 V 127 V', linha: 'plano', categoria: 'inversor',
+    detalhe: 'Híbrido, onda pura, 3.000 W, 24 V, saída 127 V, MPPT de 60 a 450 V (Voc até 500 V), carga solar de 100 A',
+    ...ref('MLB64151611'), precoMax: 2800,
+    obs: 'A entrada das placas trabalha de 60 a 450 V: precisa de duas ou mais placas em série e não aceita fileiras em paralelo. Um dos anúncios fala em mínimo de 90 V. Confirme com o vendedor.',
+    tipico: ['picoW', ...T_BASE],
+    onda: 'pura', potenciaW: 3000, picoW: 6000, tensaoBateria: 24, saidaV: 127, rendimento: 0.92, consumoVazioW: 45,
+    solar: { tipo: 'mppt', correnteCargaA: 100, vMin: 60, vMax: 450, vocMax: 500, potenciaMaxW: 4000, correnteEntradaMaxA: 18 },
+    carregadorRedeA: 80, montagem: 'parede', dimensoes: [0.3, 0.42, 0.12],
+  },
+  {
+    id: 'inv-jesudom-3k2-24v-220', nome: 'Jesudom 3,2 kVA 24 V 220 V', linha: 'plano', categoria: 'inversor',
+    detalhe: 'Híbrido, onda pura, 24 V, saída 220 V, MPPT de 55 a 450 V, carga solar de 80 A, 3.200 W de placas',
+    ...ref('MLB2095365216'), obs: 'Saída de 220 V. Está no catálogo para comparação.',
+    tipico: ['potenciaW', 'picoW', 'solar.vocMax', ...T_BASE],
+    onda: 'pura', potenciaW: 3000, picoW: 6000, tensaoBateria: 24, saidaV: 220, rendimento: 0.92, consumoVazioW: 45,
+    solar: { tipo: 'mppt', correnteCargaA: 80, vMin: 55, vMax: 450, vocMax: 450, potenciaMaxW: 3200 },
+    montagem: 'parede', dimensoes: [0.3, 0.42, 0.12],
+  },
+  {
+    id: 'inv-aiker-500-12v-110', nome: 'Aiker 500 W 12 V', linha: 'simples', categoria: 'inversor',
+    detalhe: 'Onda pura, 500 W, 12 V, saída 127 V',
+    ...ref('MLBU3881054827'), tipico: ['picoW', ...T_BASE],
+    onda: 'pura', potenciaW: 500, picoW: 1000, tensaoBateria: 12, saidaV: 127, rendimento: 0.88, consumoVazioW: 8,
+    montagem: 'piso', dimensoes: [0.22, 0.08, 0.12],
+  },
+  {
+    id: 'inv-knup-1000-12v-110', nome: 'Knup 1.000 W 12 V', linha: 'simples', categoria: 'inversor',
+    detalhe: 'Onda pura, 1.000 W, pico de 2.000 W, 12 V, saída 127 V',
+    ...ref('MLB35831781'), precoMax: 417.59, obs: 'O anúncio não usa a palavra contínua para os 1.000 W.', tipico: T_BASE,
+    onda: 'pura', potenciaW: 1000, picoW: 2000, tensaoBateria: 12, saidaV: 127, rendimento: 0.88, consumoVazioW: 12,
+    montagem: 'piso', dimensoes: [0.28, 0.09, 0.15],
+  },
+  {
+    id: 'inv-tataliken-1000-12v', nome: 'Tataliken "1000 W" 12 V', linha: 'simples', categoria: 'inversor',
+    detalhe: 'Onda pura, 400 W contínuos, pico de 1.000 W, 12 V, saída 127 V',
+    ...ref('MLB49678609'), obs: 'O título diz 1000 W, mas a descrição diz 400 W contínuos.', tipico: T_BASE,
+    onda: 'pura', potenciaW: 400, picoW: 1000, tensaoBateria: 12, saidaV: 127, rendimento: 0.85, consumoVazioW: 8,
+    montagem: 'piso', dimensoes: [0.22, 0.08, 0.12],
+  },
+  {
+    id: 'inv-vedo-1000-mod', nome: 'Vedo 1.000 W onda modificada', linha: 'simples', categoria: 'inversor',
+    detalhe: 'Onda modificada, 1.000 W, pico de 2.000 W, 12 V, saída 127 V',
+    ...ref('MLB43908872'), tipico: T_BASE,
+    onda: 'modificada', potenciaW: 1000, picoW: 2000, tensaoBateria: 12, saidaV: 127, rendimento: 0.85, consumoVazioW: 8,
+    montagem: 'piso', dimensoes: [0.22, 0.08, 0.12],
+  },
+  {
+    id: 'est-ecoflow-river2', nome: 'EcoFlow River 2', linha: 'simples', categoria: 'inversor',
+    detalhe: 'Estação portátil, 256 Wh, 300 W (pico 600 W), saída 127 V',
+    ...ref('MLBU3067384556'), precoMax: 2300, tipico: T_ESTACAO,
+    onda: 'pura', potenciaW: 300, picoW: 600, tensaoBateria: 24, saidaV: 127, rendimento: 0.88, consumoVazioW: 10,
+    solar: { tipo: 'mppt', correnteCargaA: 8, vMin: 11, vMax: 30, vocMax: 30, potenciaMaxW: 110 },
+    bateriaInternaWh: 256, montagem: 'piso', dimensoes: [0.25, 0.15, 0.21],
+  },
+  {
+    id: 'est-ecoflow-river2max', nome: 'EcoFlow River 2 Max', linha: 'simples', categoria: 'inversor',
+    detalhe: 'Estação portátil, 512 Wh, 500 W (pico 1.000 W), saída 127 V',
+    ...ref('MLBU5279465212'), precoMax: 4299, tipico: T_ESTACAO,
+    onda: 'pura', potenciaW: 500, picoW: 1000, tensaoBateria: 24, saidaV: 127, rendimento: 0.88, consumoVazioW: 12,
+    solar: { tipo: 'mppt', correnteCargaA: 13, vMin: 11, vMax: 50, vocMax: 50, potenciaMaxW: 220 },
+    bateriaInternaWh: 512, montagem: 'piso', dimensoes: [0.27, 0.2, 0.26],
+  },
+  {
+    id: 'est-bluetti-ac70', nome: 'Bluetti AC70', linha: 'plano', categoria: 'inversor',
+    detalhe: 'Estação portátil, 768 Wh, 1.000 W (pico 2.000 W)',
+    ...ref('MLB4079433561'), precoMax: 5224.87,
+    obs: 'A ficha diz 127 V e 220 V e a descrição diz 230 V. Confirme a versão antes de comprar.',
+    tipico: ['saidaV', ...T_ESTACAO],
+    onda: 'pura', potenciaW: 1000, picoW: 2000, tensaoBateria: 24, saidaV: 127, rendimento: 0.88, consumoVazioW: 15,
+    solar: { tipo: 'mppt', correnteCargaA: 10, vMin: 12, vMax: 58, vocMax: 58, potenciaMaxW: 500 },
+    bateriaInternaWh: 768, montagem: 'piso', dimensoes: [0.31, 0.26, 0.21],
+  },
+  {
+    id: 'est-ecoflow-delta2', nome: 'EcoFlow Delta 2', linha: 'plano', categoria: 'inversor',
+    detalhe: 'Estação portátil, 1.024 Wh, 1.800 W (pico 2.400 W), saída 127 V',
+    ...ref('MLB35823233'), precoMax: 8547.29, tipico: T_ESTACAO,
+    onda: 'pura', potenciaW: 1800, picoW: 2400, tensaoBateria: 24, saidaV: 127, rendimento: 0.88, consumoVazioW: 20,
+    solar: { tipo: 'mppt', correnteCargaA: 15, vMin: 11, vMax: 60, vocMax: 60, potenciaMaxW: 500 },
+    bateriaInternaWh: 1024, montagem: 'piso', dimensoes: [0.4, 0.28, 0.21],
+  },
+  {
+    id: 'inv-powmr-ps3k-110', nome: 'PowMr PS-3K 24 V 110 V (PWM)', linha: 'plano', categoria: 'inversor',
+    detalhe: 'Híbrido, onda pura, 2.400 W, 24 V, saída 127 V, controlador PWM de 50 A, placas até 80 V e 1.200 W',
+    preco: 2399, precoMax: 2499, coletadoEm: '2026-11-14',
+    obs: 'O título diz híbrido de 3000 W, mas a descrição diz 2,4 kW e controlador PWM. Aceita uma placa só, com desperdício.',
+    tipico: T_BASE.concat('picoW'),
+    onda: 'pura', potenciaW: 2400, picoW: 4800, tensaoBateria: 24, saidaV: 127, rendimento: 0.9, consumoVazioW: 40,
+    solar: { tipo: 'pwm', correnteCargaA: 50, vMin: 0, vMax: 80, vocMax: 80, potenciaMaxW: 1200 },
+    montagem: 'parede', dimensoes: [0.3, 0.42, 0.12],
+  },
+  {
+    id: 'inv-felicity-2kw-24v-127', nome: 'Felicity 2 kW 24 V 127 V', linha: 'plano', categoria: 'inversor',
+    detalhe: 'Híbrido, onda pura, 2.000 W, 24 V, saída 127 V, MPPT de 30 a 120 V (Voc até 145 V), 1.600 W de placas',
+    ...ref('MLB2048668646'),
+    obs: 'Funciona com uma placa só e aceita duas em série, até 1.600 W. A terceira placa não cabe. O preço é o da listagem, sem os centavos, e a ficha traz a tensão de saída com erro de digitação.',
+    tipico: ['picoW', 'carregadorRedeA', ...T_BASE],
+    onda: 'pura', potenciaW: 2000, picoW: 4000, tensaoBateria: 24, saidaV: 127, rendimento: 0.92, consumoVazioW: 35,
+    solar: { tipo: 'mppt', correnteCargaA: 60, vMin: 30, vMax: 120, vocMax: 145, potenciaMaxW: 1600 },
+    carregadorRedeA: 15, montagem: 'parede', dimensoes: [0.3, 0.42, 0.12],
+  },
+  {
+    id: 'inv-panda-1600-24v-127', nome: 'Panda 1,6 kW 24 V 127 V', linha: 'plano', categoria: 'inversor',
+    detalhe: 'Híbrido, onda pura, 1.600 W, 24 V, saída 127 V, MPPT de 30 a 145 V, carga solar de 60 A',
+    ...ref('MLBU3798704772'),
+    obs: 'Funciona com uma placa só e aceita duas em série. O anúncio não informa a potência máxima de placas. Garantia do vendedor de 6 meses.',
+    tipico: ['picoW', 'solar.vMax', 'solar.potenciaMaxW', 'rendimento', 'montagem', 'dimensoes'],
+    onda: 'pura', potenciaW: 1600, picoW: 3200, tensaoBateria: 24, saidaV: 127, rendimento: 0.92, consumoVazioW: 18,
+    solar: { tipo: 'mppt', correnteCargaA: 60, vMin: 30, vMax: 120, vocMax: 145, potenciaMaxW: 1600 },
+    montagem: 'parede', dimensoes: [0.3, 0.4, 0.12],
+  },
+  {
+    id: 'inv-felicity-5kw-48v-127', nome: 'Felicity 5 kW 48 V 127 V', linha: 'avancada', categoria: 'inversor',
+    detalhe: 'Híbrido, onda pura, 5.000 W, 48 V, saída 127 V, MPPT de 90 a 500 V, carga solar de 100 A',
+    ...ref('MLBU2738010883'), precoMax: 6000,
+    obs: 'A entrada das placas começa em 90 V: precisa de três ou mais placas em série. O mesmo vendedor anuncia o modelo por R$ 3.087 e por R$ 6.000.',
+    tipico: ['picoW', 'solar.potenciaMaxW', 'solar.vMax', 'carregadorRedeA', ...T_BASE],
+    onda: 'pura', potenciaW: 5000, picoW: 10000, tensaoBateria: 48, saidaV: 127, rendimento: 0.93, consumoVazioW: 60,
+    solar: { tipo: 'mppt', correnteCargaA: 100, vMin: 90, vMax: 450, vocMax: 500, potenciaMaxW: 6000 },
+    carregadorRedeA: 60, montagem: 'parede', dimensoes: [0.35, 0.5, 0.13],
+  },
+];
