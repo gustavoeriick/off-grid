@@ -1,6 +1,6 @@
 # Plano de desenvolvimento do simulador off-grid 3D
 
-**Estado:** proposta aguardando aprovação. Escrito em 14/11/2026.
+**Estado:** plano aprovado pelo Gustavo em 14/11/2026. Fase 0 entregue; a especificação aguarda a aprovação dele antes da fase 1.
 
 **Como usar este documento:** ele é a memória do projeto. Cada fase começa em uma sessão nova do Claude Code, que lê este plano e a especificação e não depende de conversas anteriores. Quem coordena uma fase marca aqui as tarefas concluídas.
 
@@ -65,16 +65,16 @@ Regras de convivência:
 
 Coordenação: Fable 5.2, na sessão em que este plano foi escrito, porque é ela que guarda o contexto da análise.
 
-- [ ] **0.1 Insumos no repositório.** Plano elétrico em `docs/plano-backup-off-grid.md`, pesquisa de preços em `pesquisa/precos-mercado-livre-2026-11-14.md`, prompt de coleta em `pesquisa/prompt-coleta.md`, prova de conceito da sombra em `scripts/poc/sombra-varanda.mjs`. O Gustavo copia os dois primeiros; o Fable grava os outros. Pronto quando os quatro arquivos existem.
-- [ ] **0.2 Especificação técnica** em `docs/especificacao.md`: modelo de dados, convenções, fórmulas e constantes, regras do consultor com texto e ação, regras de curadoria do catálogo, casos de teste com os números esperados. Pronto quando cada tarefa das fases 1 a 3 aponta para uma seção da especificação e para casos de teste.
-- [ ] **0.3 Contratos em código.** Tipos do projeto e do catálogo (`src/nucleo/tipos.ts`, `src/catalogo/tipos.ts`), pastas e comandos `npm`. Pronto quando `npm run typecheck` passa com o esqueleto vazio.
-- [ ] **0.4 Agentes e convenções.** Os seis arquivos em `.claude/agents/` e um `CLAUDE.md` com comandos, regras e o caminho deste plano. Pronto quando uma sessão nova consegue dizer qual é a próxima tarefa só lendo o repositório.
+- [x] **0.1 Insumos no repositório.** Plano elétrico em `docs/plano-backup-off-grid.md`, pesquisa de preços em `pesquisa/precos-mercado-livre-2026-11-14.md`, prompt de coleta em `pesquisa/prompt-coleta.md`, prova de conceito da sombra em `scripts/poc/sombra-varanda.mjs`. Os dois primeiros são cópias dos arquivos originais do Gustavo.
+- [x] **0.2 Especificação técnica** em `docs/especificacao.md` e nas partes de `docs/especificacao/`: convenções, modelo de dados, fórmulas e constantes, regras do consultor com texto e ação, catálogo, casos de teste com os números esperados. Os números saem de `scripts/referencia/valores-de-referencia.mjs`.
+- [x] **0.3 Contratos em código.** Tipos do projeto e do catálogo, os arquivos do núcleo com as assinaturas, os terminais, os dois cenários de teste e o esqueleto da página. `npm run typecheck`, `npm test` e `npm run build` passam.
+- [x] **0.4 Agentes e convenções.** Os seis arquivos em `.claude/agents/` e o `CLAUDE.md`.
 
-**Aprovação:** o Gustavo lê a especificação, principalmente as regras do consultor e os casos de teste, e aprova.
+**Aprovação:** o Gustavo lê a especificação, principalmente [as regras do consultor](especificacao/consultor.md) e [os casos de teste](especificacao/casos-de-teste.md), e aprova. Pendente.
 
 ### Fase 1: cálculo e casa, em paralelo
 
-Coordenação: Opus 5.5. Os dois trilhos não dependem um do outro.
+Coordenação: Opus 5.5. Os dois trilhos não dependem um do outro. Dentro do trilho A, o catálogo (1.1 e 1.2) vem antes das tarefas 1.4 a 1.9, que usam os itens dele nos testes; a 1.3 pode rodar junto com o catálogo.
 
 Trilho A, o núcleo de cálculo:
 
@@ -82,9 +82,9 @@ Trilho A, o núcleo de cálculo:
 |---|---|---|---|
 | 1.1 | Importador da pesquisa: lê as tabelas do `.md` e gera JSON bruto | `catalogo` (Sonnet) | Todas as seções A1 a C7 viram registros; um teste confere a contagem por seção |
 | 1.2 | Catálogo curado, com as três linhas, link, data e marcações | `catalogo` (Sonnet) | Teste de consistência passa; itens suspeitos marcados como manda a especificação |
-| 1.3 | Sol e irradiação | `nucleo` (Sonnet) | Posição do sol a menos de 0,5° dos valores de referência; energia diária no Rio a ±12% do PVGIS em todos os meses |
+| 1.3 | Sol e irradiação | `nucleo` (Sonnet) | Posição do sol igual à tabela de referência; irradiação diária no plano da placa, no Rio, a ±12% do PVGIS em todos os meses |
 | 1.4 | Topologia do circuito a partir dos cabos: série, paralelo, erros de ligação | `nucleo` (Opus) | Passam os casos: plano fase 1, 2 placas em série, 3 em paralelo, polaridade invertida, curto, 2 baterias de 12 V em série |
-| 1.5 | Modelo elétrico: placa, controlador MPPT e PWM, bateria, inversor, passo de simulação | `nucleo` (Sonnet) | Passam os casos: 1 bateria dura cerca de 4 h de dia e 6 h à noite; 1 placa em MPPT de 60 a 450 V gera zero; PWM perde cerca de 30% |
+| 1.5 | Modelo elétrico: placa, controlador MPPT e PWM, bateria, inversor, passo de simulação | `nucleo` (Sonnet) | Passam os casos: 1 bateria dura cerca de 4 h com 465 W e 6 h com 300 W; 1 placa em MPPT de 60 a 450 V gera zero; o PWM entrega 26,5% menos que o MPPT |
 | 1.6 | Cabos e proteções: capacidade, queda de tensão, fusível contra cabo | `nucleo` (Sonnet) | Cabo de 25 mm² com fusível de 150 A reprova; 35 mm² aprova |
 | 1.7 | Consultor: regras e ações | `nucleo` (Sonnet) | No cenário "plano no papel" aparecem exatamente as sugestões listadas na especificação |
 | 1.8 | Orçamento | `nucleo` (Sonnet) | O total do cenário do plano bate com a conta manual da especificação |
@@ -126,7 +126,7 @@ Coordenação: Opus 5.5.
 
 | Nº | Tarefa | Agente (modelo) | Pronto quando |
 |---|---|---|---|
-| 3.1 | Sombra por raios nas placas e céu visível, ligando a cena ao núcleo | `cena3d` (Opus) | Com a geometria da análise, perda por lado da varanda dentro da faixa: Norte 5 a 15%, Leste e Oeste 18 a 32%, Sul 30 a 48% |
+| 3.1 | Sombra por raios nas placas e céu visível, ligando a cena ao núcleo | `cena3d` (Opus) | Com a casa de teste da especificação, a perda anual por lado da varanda fica a até 5 pontos da referência (clima típico: Norte 14%, Leste e Oeste 23%, Sul 31%) |
 | 3.2 | Laço de simulação: tempo acelerado, geração, consumo, bateria, queda de luz | coordenador (Opus) | No cenário do plano a bateria esvazia no horário previsto pelo núcleo |
 | 3.3 | Painel do consultor com ações de um clique: fusível, bitola, mais bateria, mais placa, desligar aparelho | `interface` (Sonnet) | Cada ação muda a montagem e a sugestão some |
 | 3.4 | Painel de orçamento, com link e data de cada preço | `interface` (Sonnet) | Total igual ao do núcleo |
@@ -220,14 +220,16 @@ Catálogo, a partir da coleta de 14/11/2026:
 
 ## 8. Pendências
 
-Estado do repositório em 14/11/2026: existem só a base do projeto (`package.json`, `tsconfig.json`, `vite.config.ts`, `.gitignore`), as dependências instaladas e este plano. Nenhum código do simulador foi escrito.
+Estado do repositório em 14/11/2026: fase 0 entregue no ramo `dev`. Existem o plano, a especificação, os contratos do núcleo (assinaturas sem implementação), os cenários de teste, os agentes e o esqueleto da página. Nada foi enviado ao GitHub.
 
-Decisões do Gustavo:
+Decisões do Gustavo, tomadas em 14/11/2026:
 
-1. A ordem das fases e o corte da primeira versão no fim da fase 3.
-2. A divisão de modelos da seção 2.
-3. Se o coordenador pode fazer um commit por tarefa aprovada, em um ramo separado de `master`.
-4. Se ele copia os dois arquivos `.md` (plano elétrico e pesquisa de preços) para o repositório, ou se o Fable os regrava a partir da conversa.
+1. Aprovada a ordem das fases e o corte da primeira versão no fim da fase 3.
+2. Aprovada a divisão de modelos da seção 2.
+3. Autorizado um commit por tarefa aprovada, em ramo separado de `master`. O ramo é o `dev`. Push só quando ele pedir: o repositório no GitHub é público.
+4. Os dois arquivos `.md` foram trazidos para o repositório.
+
+Pendente: a aprovação da especificação, que libera a fase 1.
 
 Coleta complementar, opcional, para rodar no Claude in Chrome antes da tarefa 1.2:
 
