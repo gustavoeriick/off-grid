@@ -1,15 +1,29 @@
-// Cena 3D. Tarefas 1.10 a 1.12 e 1.15. Especificação: docs/especificacao/cena-e-interface.md, seções 2 a 4.
+// Cena 3D. Tarefas 1.10 a 1.12, 1.15 e 2.1. Especificação: docs/especificacao/cena-e-interface.md, seções 2 a 5, 8, 13 e 14,
+// e docs/especificacao/fase-2.md, seção 2.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { acoes, assinar, estado } from '../estado';
+import { CATALOGO } from '../catalogo';
+import { acoes, assinar, type Encaixe, estado } from '../estado';
 import { localPorId } from '../nucleo/irradiancia';
+import { type CamadaDeCabos, criarCamadaDeCabos } from './cabos';
 import { criarCasa } from './casa';
-import { liberar } from './malha';
+import { colocarIniciais } from './colocacao';
+import { type CamadaDeDispositivos, criarCamadaDeDispositivos } from './dispositivos';
+import { encaixar, encaixarNoToque } from './encaixe';
+import { liberarEstampas } from './estampas';
+import { liberar, type TipoSuperficie } from './malha';
 import { liberarMateriais } from './materiais';
+import { liberarModelos } from './modelos';
+import { liberarTintas } from './molde';
 import { criarChao, criarRosaDosVentos } from './mundo';
+import { liberarProtecoes } from './protecoes';
 import { criarSol } from './sol';
 
+export { comprimentoDoTrecho, corDoCabo } from './cabos';
+export type { CamadaDeCabos } from './cabos';
+export type { CamadaDeDispositivos, PassagemPeloQuadro, TerminalNaCasa } from './dispositivos';
+export { alturaDeApoio, dimensoesDe, encaixar, encaixarNoToque, normalizarGiro, superficieAceita } from './encaixe';
 export { CAMADA_SO_SOMBRA } from './malha';
 
 export interface OffgridGlobal {
@@ -26,6 +40,23 @@ export interface OffgridGlobal {
    * sem ele, mede o quadro de quando só a câmera se move.
    */
   medirQuadros?: (n: number, comSombra?: boolean) => { ms: number; chamadas: number; triangulos: number; geometrias: number; texturas: number };
+  /** Posição na janela, em pixels (`[x, y]`), do centro de um dispositivo. Nulo se ele não está na cena. */
+  telaDe?: (uid: string) => [x: number, y: number] | null;
+  /** Posição na janela, em pixels, de um terminal de um dispositivo. */
+  telaDoTerminal?: (uid: string, terminal: string) => [x: number, y: number] | null;
+  /** Posição na janela do cartão de um item do catálogo. Quem preenche é a interface (`src/ui/catalogo.ts`). */
+  telaDoCartao?: (itemId: string) => [x: number, y: number] | null;
+  /**
+   * Auxiliar de verificação: encaixe de um item em uma superfície, com o ponto e a normal em coordenadas da casa,
+   * para o roteiro montar projetos de teste. É a função `encaixar` da cena.
+   */
+  encaixar?: (itemId: string, superficie: { id: string; tipo: TipoSuperficie }, ponto: [number, number, number], normal: [number, number, number], giro?: number) => Encaixe;
+  /** Auxiliar de verificação: triângulos do modelo de cada item à mostra. */
+  triangulosDosModelos?: () => Record<string, number>;
+  /** Auxiliar de verificação: as camadas de dispositivos e de cabos da cena (rótulos, terminais, grupos). */
+  camadas?: { dispositivos: CamadaDeDispositivos; cabos: CamadaDeCabos };
+  /** Pede um quadro novo, depois de mexer nas camadas pelo roteiro. */
+  pedirQuadro?: () => void;
 }
 
 declare global {
@@ -49,6 +80,15 @@ export interface Cena {
   pedirQuadro(): void;
   /** Malhas de encaixe (`userData.superficie`) que o modo de visão atual deixa à vista. */
   superficies(): THREE.Mesh[];
+  /** Peças do projeto na cena: grupos, terminais, caixas de clique, rótulos. */
+  dispositivos: CamadaDeDispositivos;
+  /** Cabos do projeto na cena. */
+  cabos: CamadaDeCabos;
+  /** Encaixe de um item em uma superfície, em coordenadas da casa (função pura), e a versão que parte do toque de um raio. */
+  encaixar: typeof encaixar;
+  encaixarNoToque: typeof encaixarNoToque;
+  /** Posição na janela, em pixels (`[x, y]`), de um ponto dado em coordenadas da casa. */
+  naTela(pontoNaCasa: THREE.Vector3): [x: number, y: number];
   destruir(): void;
 }
 
@@ -85,7 +125,8 @@ export function criarCena(container: HTMLElement): Cena {
 
   const controles = new OrbitControls(camera, renderizador.domElement);
   controles.target.set(0, 2.5, 0);
-  controles.minDistance = 4;
+  // A especificação da fase 1 pedia 4 m; para reconhecer um borne ou um disjuntor é preciso chegar mais perto.
+  controles.minDistance = 0.8;
   controles.maxDistance = 60;
   controles.maxPolarAngle = Math.PI / 2 - 0.02;
   controles.update();
@@ -123,15 +164,49 @@ export function criarCena(container: HTMLElement): Cena {
   observador.observe(container);
   redimensionar();
 
+  const dispositivos = criarCamadaDeDispositivos(casa.grupo);
+  const cabos = criarCamadaDeCabos(casa.grupo, dispositivos);
+
+  /**
+   * Leva o estado do projeto para a cena: coloca as peças que chegaram sem posição, refaz os dispositivos e os cabos
+   * que mudaram e informa o comprimento dos cabos cujas pontas se moveram. As ações chamadas aqui avisam de novo;
+   * o pedido fica guardado e roda em seguida.
+   */
+  let sincronizando = false;
+  let pendente = false;
+  const sincronizar = (): void => {
+    if (sincronizando) {
+      pendente = true;
+      return;
+    }
+    sincronizando = true;
+    try {
+      do {
+        pendente = false;
+        const iniciais = colocarIniciais(estado.projeto, CATALOGO);
+        if (iniciais.size > 0) acoes.moverDispositivos(iniciais, { historico: false });
+        dispositivos.atualizar();
+        cabos.atualizar();
+      } while (pendente);
+    } finally {
+      sincronizando = false;
+    }
+    pedirQuadro();
+  };
+
   const caixaDaCasa = new THREE.Box3();
   const refazerCasa = (): void => {
     casa.reconstruir(estado.projeto.casa);
+    dispositivos.atualizarVisao();
+    sincronizar();
     // O mapa de sombra acompanha a casa: cobre tudo que ela tem, onde quer que o quartinho esteja.
     sol.enquadrar(caixaDaCasa.setFromObject(casa.grupo));
     pedirQuadro();
   };
   const refazerVisao = (): void => {
     casa.aplicarVisao(estado.visao);
+    dispositivos.atualizarVisao();
+    cabos.atualizar();
     pedirQuadro();
   };
   const refazerSol = (): void => {
@@ -148,6 +223,8 @@ export function criarCena(container: HTMLElement): Cena {
   const cancelar = [
     // A casa só é refeita quando as medidas ou a orientação mudam; equipamentos e cabos não passam por aqui.
     assinar('casa', refazerCasa),
+    assinar('dispositivos', sincronizar),
+    assinar('cabos', sincronizar),
     assinar('visao', refazerVisao),
     assinar('tempo', refazerSol),
     // O local do projeto pode mudar (projeto carregado): o sol acompanha.
@@ -222,7 +299,22 @@ export function criarCena(container: HTMLElement): Cena {
   };
   laco(performance.now());
 
+  const projetado = new THREE.Vector3();
+  /** Posição na janela de um ponto do mundo. */
+  const mundoNaTela = (ponto: THREE.Vector3): [number, number] => {
+    camera.updateMatrixWorld();
+    projetado.copy(ponto).project(camera);
+    const r = renderizador.domElement.getBoundingClientRect();
+    return [r.left + ((projetado.x + 1) / 2) * r.width, r.top + ((1 - projetado.y) / 2) * r.height];
+  };
+  const naTela = (pontoNaCasa: THREE.Vector3): [number, number] => {
+    casa.grupo.updateWorldMatrix(true, false);
+    return mundoNaTela(pontoNaCasa.clone().applyMatrix4(casa.grupo.matrixWorld));
+  };
+
   window.__offgrid = {
+    // A interface pode ter registrado auxiliares antes da cena (`telaDoCartao`): eles continuam.
+    ...window.__offgrid,
     pronto: true,
     estado: () => estado,
     acoes,
@@ -233,6 +325,22 @@ export function criarCena(container: HTMLElement): Cena {
       sujo = true;
     },
     superficies: () => casa.superficies().map((m) => (m.userData.superficie as { id: string }).id),
+    telaDe(uid) {
+      const d = estado.projeto.dispositivos.find((x) => x.uid === uid);
+      return d && dispositivos.grupoDe(uid) ? naTela(new THREE.Vector3(...d.pos)) : null;
+    },
+    telaDoTerminal(uid, terminal) {
+      const t = dispositivos.terminal(uid, terminal);
+      return t ? naTela(t.pos) : null;
+    },
+    encaixar(itemId, superficie, ponto, normal, giro = 0) {
+      const item = CATALOGO.get(itemId);
+      if (!item) throw new Error(`Item desconhecido no catálogo: "${itemId}"`);
+      return encaixar(item, superficie, ponto, normal, giro);
+    },
+    triangulosDosModelos: () => dispositivos.triangulos(),
+    camadas: { dispositivos, cabos },
+    pedirQuadro,
     medirQuadros(n, comSombra = true) {
       const gl = renderizador.getContext();
       const ponto = new Uint8Array(4);
@@ -260,15 +368,27 @@ export function criarCena(container: HTMLElement): Cena {
     casa: casa.grupo,
     pedirQuadro,
     superficies: () => casa.superficies(),
+    dispositivos,
+    cabos,
+    encaixar,
+    encaixarNoToque,
+    naTela,
     destruir() {
       cancelar.forEach((c) => c());
       cancelAnimationFrame(quadro);
       observador.disconnect();
       controles.dispose();
       // Geometrias, materiais, texturas e mapa de sombra de tudo: casa, terreno, rosa dos ventos e sol.
+      dispositivos.destruir();
+      cabos.destruir();
       liberar(cena, true);
       sol.destruir();
       liberarMateriais();
+      // Moldes, tintas e estampas dos equipamentos: uma cena nova os refaz.
+      liberarModelos();
+      liberarProtecoes();
+      liberarTintas();
+      liberarEstampas();
       cena.clear();
       renderizador.dispose();
       renderizador.domElement.remove();
