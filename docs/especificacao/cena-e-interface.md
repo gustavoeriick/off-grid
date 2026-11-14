@@ -58,8 +58,8 @@ O telhado da varanda e o quartinho ficam sempre visíveis. O que está escondido
 
 A cada mudança de tempo, a posição vem de `posicaoSol` e `direcaoSol`.
 
-- A luz direcional fica a 50 m na direção do sol. Mapa de sombra de 2048, cobrindo ±18 m em volta da casa. Intensidade proporcional a `máx(0; sen(elevação))`.
-- A luz de hemisfério vai de 0,12 à noite a 0,5 de dia.
+- A luz direcional fica a 50 m na direção do sol. Mapa de sombra de 2048, cobrindo ±18 m em volta da casa. Intensidade de 3,5 × `máx(0; sen(elevação))`.
+- A luz de hemisfério vai de 0,12 à noite a 2,2 de dia, para as paredes em sombra continuarem claras (cerca de `#aeb0a1` ao meio-dia).
 - A cor do fundo vai de `#0b1026` (noite) a `#9fd0f5` (dia), conforme a elevação entre −6° e +6°.
 - Uma esfera representa o sol a 45 m, e uma linha mostra o arco do sol no dia.
 

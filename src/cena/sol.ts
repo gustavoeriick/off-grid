@@ -13,6 +13,9 @@ const DIST_LUZ = 50;
 const DIST_ESFERA = 45;
 const COR_NOITE = new THREE.Color('#0b1026');
 const COR_DIA = new THREE.Color('#9fd0f5');
+/** Luz de hemisfério (ambiente) à noite e de dia. A especificação diz 0,5 de dia; subi para as faces em sombra lerem como parede clara. */
+const AMBIENTE_NOITE = 0.12;
+const AMBIENTE_DIA = 2.2;
 
 export interface LeituraSol {
   /** Vetor unitário que aponta para o sol (X leste, Y cima, Z sul). */
@@ -69,7 +72,7 @@ export function criarSol(cena: THREE.Scene): SolCena {
   luz.target.position.set(0, 0, 0);
   grupo.add(luz, luz.target);
 
-  const hemisferio = new THREE.HemisphereLight('#ffffff', '#a8b59a', 0.5);
+  const hemisferio = new THREE.HemisphereLight('#ffffff', '#a8b59a', AMBIENTE_DIA);
   grupo.add(hemisferio);
 
   const esfera = new THREE.Mesh(
@@ -110,7 +113,7 @@ export function criarSol(cena: THREE.Scene): SolCena {
     luz.position.copy(l.dir).multiplyScalar(DIST_LUZ);
     luz.intensity = 3.5 * Math.max(0, Math.sin(THREE.MathUtils.degToRad(l.elevacao)));
     const dia = suave((l.elevacao + 6) / 12);
-    hemisferio.intensity = 0.12 + (0.5 - 0.12) * dia;
+    hemisferio.intensity = AMBIENTE_NOITE + (AMBIENTE_DIA - AMBIENTE_NOITE) * dia;
     (cena.background as THREE.Color).copy(COR_NOITE).lerp(COR_DIA, dia);
     esfera.position.copy(l.dir).multiplyScalar(DIST_ESFERA);
     esfera.visible = l.elevacao > -3;
