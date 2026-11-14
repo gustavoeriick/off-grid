@@ -103,7 +103,10 @@ async function principal() {
     if (r.status() >= 400) erros.push(`HTTP ${r.status()}: ${r.url()}`);
   });
 
+  // O projeto agora fica gravado no navegador: começa sempre do zero.
   await pagina.goto(url);
+  await pagina.evaluate(() => localStorage.clear());
+  await pagina.reload();
   await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true, null, { timeout: 30000 });
 
   const estado = () => pagina.evaluate(() => JSON.parse(JSON.stringify(window.__offgrid.estado())));
@@ -133,10 +136,143 @@ async function principal() {
     await pagina.locator(seletor).press('Tab');
   };
 
+  async function verificarPaineis() {
+    const cartoes = () => pagina.locator('#lista-catalogo .cartao').count();
+    // Catálogo: cada aba lista itens; o filtro por linha esconde o que não é da linha.
+    for (const aba of ['placas', 'baterias', 'inversores', 'controladores', 'protecoes', 'aparelhos', 'instalacao']) {
+      await pagina.locator(`#abas-catalogo [data-cat="${aba}"]`).click();
+      conferir((await cartoes()) > 0, `a aba ${aba} do catálogo deveria listar itens`);
+    }
+    await pagina.locator('#abas-catalogo [data-cat="aparelhos"]').click();
+    conferir((await pagina.locator('#lista-catalogo .cartao .preco').count()) === 0, 'aparelhos não mostram preço');
+    await pagina.locator('#abas-catalogo [data-cat="instalacao"]').click();
+    conferir((await pagina.locator('#lista-catalogo .cartao[data-arrastavel]').count()) === 1, 'na aba Instalação só o quadro é arrastável');
+    await captura('14b-catalogo-instalacao');
+    await pagina.locator('#abas-catalogo [data-cat="placas"]').click();
+    const todas = await cartoes();
+    await pagina.locator('#filtro-linha [data-linha="simples"]').click();
+    const simples = await pagina.locator('#lista-catalogo .cartao').evaluateAll((l) => l.map((c) => c.dataset.linha));
+    conferir(simples.every((x) => x === 'simples') && simples.length <= todas, 'o filtro "simples" deveria mostrar só a linha simples');
+    await pagina.locator('#filtro-linha [data-linha="todas"]').click();
+    const links = await pagina.locator('#lista-catalogo .cartao a').evaluateAll((l) => l.map((a) => [a.target, a.rel]));
+    conferir(links.length > 0 && links.every(([t, r]) => t === '_blank' && r === 'noopener noreferrer'), 'links de anúncio abrem em nova aba com rel seguro');
+    await captura('14-catalogo-placas');
+
+    // O cartão arrastável avisa a cena com o evento, sem fazer mais nada.
+    const idCartao = await pagina.locator('#lista-catalogo .cartao[data-arrastavel]').first().getAttribute('data-item-id');
+    await pagina.evaluate(() => {
+      window.__arrastos = [];
+      window.addEventListener('offgrid:arrastar-item', (ev) => window.__arrastos.push(ev.detail));
+    });
+    const centro = await pagina.evaluate((id) => window.__offgrid.telaDoCartao(id), idCartao);
+    conferir(Array.isArray(centro), 'telaDoCartao deveria devolver o centro do cartão');
+    await pagina.mouse.move(centro[0], centro[1]);
+    await pagina.mouse.down();
+    await pagina.mouse.up();
+    const arrastos = await pagina.evaluate(() => window.__arrastos);
+    conferir(arrastos.length === 1 && arrastos[0].itemId === idCartao && Math.abs(arrastos[0].clientX - centro[0]) < 1, 'apertar o cartão deveria disparar offgrid:arrastar-item');
+
+    // Consultor e orçamento do cenário inicial.
+    conferir((await pagina.locator('#painel-consultor .sugestao').count()) === 7, 'o cenário inicial deveria mostrar 7 sugestões');
+    await captura('16-consultor');
+    await pagina.locator('[data-aba="orcamento"]').click();
+    const total = await pagina.locator('#total-orcamento strong').textContent();
+    conferir(total === 'R$ 8.668,19', `o total do orçamento deveria ser R$ 8.668,19, veio ${total}`);
+    await captura('17-orcamento');
+    await pagina.locator('[data-aba="sistema"]').click();
+    conferir((await pagina.locator('#painel-sistema .linha-aparelho').count()) > 0, 'a aba Sistema lista os aparelhos');
+    await captura('18-sistema');
+    await pagina.locator('[data-aba="consultor"]').click();
+
+    // Item selecionado: um aparelho.
+    const aparelho = (await estado()).projeto.dispositivos.find((d) => d.itemId.startsWith('ap-'));
+    conferir(aparelho, 'o cenário inicial deveria ter aparelhos');
+    conferir(await pagina.locator('#item-selecionado').isHidden(), 'sem seleção o painel do item fica escondido');
+    await pagina.evaluate((uid) => window.__offgrid.acoes.selecionar({ tipo: 'dispositivo', uid }), aparelho.uid);
+    conferir((await pagina.locator('#item-selecionado .comodo').textContent()).startsWith('Cômodo:'), 'o painel do aparelho mostra o cômodo');
+    await captura('15-item-selecionado');
+    // Desligar pelo painel muda o estado; Desfazer volta.
+    await pagina.locator('#item-selecionado [data-acao="ligar"]').click();
+    let d = (await estado()).projeto.dispositivos.find((x) => x.uid === aparelho.uid);
+    conferir(d.ligado === false, 'desligar pelo painel deveria mudar o estado');
+    await pagina.locator('#item-selecionado [data-acao="dia-inteiro"]').click();
+    d = (await estado()).projeto.dispositivos.find((x) => x.uid === aparelho.uid);
+    conferir(d.uso?.inicio === 0 && d.uso?.fim === 24, '"o dia inteiro" deveria gravar o uso de 0 a 24');
+    await pagina.locator('#botao-desfazer').click();
+    await pagina.locator('#botao-desfazer').click();
+    d = (await estado()).projeto.dispositivos.find((x) => x.uid === aparelho.uid);
+    conferir(d.ligado === true && d.uso === null, 'Desfazer deveria devolver o aparelho ao que era');
+    await pagina.keyboard.press('Control+Y');
+    d = (await estado()).projeto.dispositivos.find((x) => x.uid === aparelho.uid);
+    conferir(d.ligado === false, 'Ctrl+Y deveria refazer');
+    await pagina.keyboard.press('Control+Z');
+    d = (await estado()).projeto.dispositivos.find((x) => x.uid === aparelho.uid);
+    conferir(d.ligado === true, 'Ctrl+Z deveria desfazer');
+
+    // Item selecionado: um cabo.
+    const cabo = (await estado()).projeto.cabos[0];
+    await pagina.evaluate((uid) => window.__offgrid.acoes.selecionar({ tipo: 'cabo', uid }), cabo.uid);
+    const textoCabo = await pagina.locator('#item-selecionado').textContent();
+    conferir(textoCabo.includes('Corrente de projeto') && textoCabo.includes('Queda de tensão') && textoCabo.includes('Comprimento'), 'o painel do cabo mostra corrente, queda e comprimento');
+    await captura('15b-cabo-selecionado');
+    await pagina.evaluate(() => window.__offgrid.acoes.selecionar(null));
+    conferir(await pagina.locator('#item-selecionado').isHidden(), 'sem seleção o painel do item some');
+
+    // Exportar e importar: por código, e pelos botões.
+    const igual = await pagina.evaluate(() => {
+      const a = window.__offgrid.acoes;
+      const antes = a.exportarProjeto();
+      a.novoProjeto();
+      a.carregarProjeto(JSON.parse(antes));
+      return a.exportarProjeto() === antes;
+    });
+    conferir(igual, 'exportar e importar por código deveria manter o projeto');
+    const [download] = await Promise.all([pagina.waitForEvent('download'), pagina.locator('#botao-exportar').click()]);
+    conferir(download.suggestedFilename().endsWith('.json'), 'Exportar baixa um .json');
+    const caminho = join(pasta, 'exportado.json');
+    await download.saveAs(caminho);
+    const antes = JSON.stringify((await estado()).projeto);
+    await pagina.evaluate(() => window.__offgrid.acoes.definirClima('nublado'));
+    await pagina.locator('#arquivo-importar').setInputFiles(caminho);
+    await pagina.waitForFunction((x) => JSON.stringify(window.__offgrid.estado().projeto) === x, antes, { timeout: 5000 });
+    await pagina.locator('#arquivo-importar').setInputFiles({ name: 'ruim.json', mimeType: 'application/json', buffer: Buffer.from('{"versao":99}') });
+    await pagina.waitForSelector('#mensagem.erro:not([hidden])', { timeout: 5000 });
+    conferir(JSON.stringify((await estado()).projeto) === antes, 'um arquivo recusado não muda o projeto');
+    await captura('19-mensagem-de-erro');
+
+    // Novo pergunta antes.
+    pagina.once('dialog', (dlg) => dlg.dismiss());
+    await pagina.locator('#botao-novo').click();
+    conferir(JSON.stringify((await estado()).projeto) === antes, 'cancelar o "Novo" não muda o projeto');
+
+    // Editar casa: o seletor de andar aparece com 2 andares.
+    conferir(await pagina.locator('#seletor-andar').isHidden(), 'o seletor de andar começa escondido');
+    await pagina.locator('#botao-editar-casa').click();
+    conferir((await estado()).edicaoCasa.ativa === true && (await pagina.locator('#faixa-edicao').isVisible()) && (await pagina.locator('#seletor-andar').isVisible()), 'Editar casa mostra a faixa e o seletor de andar');
+    await pagina.locator('#seletor-andar [data-andar="1"]').click();
+    conferir((await estado()).edicaoCasa.andar === 1, 'o seletor deveria escolher o andar superior');
+    await captura('20-editar-casa');
+    await pagina.locator('#botao-editar-casa').click();
+    conferir((await estado()).edicaoCasa.ativa === false && (await pagina.locator('#faixa-edicao').isHidden()), 'Editar casa desliga');
+
+    // Recarregar mantém uma mudança (gravada 500 ms depois).
+    await pagina.locator('#clima').selectOption('limpo');
+    await esperar(900);
+    await pagina.reload();
+    await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true, null, { timeout: 30000 });
+    conferir((await estado()).projeto.clima === 'limpo', 'recarregar a página deveria manter a mudança');
+    await pagina.locator('#clima').selectOption('tipico');
+    await esperar(900);
+    conferir((await estado()).projeto.clima === 'tipico', 'o clima deveria voltar ao típico');
+  }
+
   // 1. Tela inicial.
   await captura('01-tela-inicial');
   let e = await estado();
   conferir(e.visao === 'completa' && e.projeto.casa.andares === 2, 'estado inicial inesperado');
+
+  // 1b. Painéis da fase 2 (catálogo, consultor, orçamento, item selecionado, barra de cima).
+  await verificarPaineis();
 
   // 2. 21/06 pelos controles: data, depois hora.
   await pagina.locator('#mes').selectOption('5');

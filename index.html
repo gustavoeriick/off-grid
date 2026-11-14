@@ -11,6 +11,23 @@
     <div id="app">
       <header id="topo">
         <h1 id="nome-projeto">Simulador off-grid</h1>
+        <div class="botoes" id="botoes-projeto" role="group" aria-label="Projeto">
+          <button type="button" id="botao-desfazer" title="Desfazer (Ctrl+Z)">Desfazer</button>
+          <button type="button" id="botao-refazer" title="Refazer (Ctrl+Y)">Refazer</button>
+        </div>
+        <div class="grupo-linha" role="group" aria-label="Arquivo">
+          <button type="button" id="botao-novo">Novo</button>
+          <button type="button" id="botao-exportar" title="Baixa o projeto em um arquivo .json">Exportar</button>
+          <button type="button" id="botao-importar" title="Abre um arquivo .json exportado antes">Importar</button>
+          <input type="file" id="arquivo-importar" accept=".json,application/json" hidden />
+        </div>
+        <div class="grupo-linha" role="group" aria-label="Editar casa">
+          <button type="button" id="botao-editar-casa" aria-pressed="false" title="Mexer no quartinho, nas varandas, nas paredes e nos cômodos">Editar casa</button>
+          <div class="botoes" id="seletor-andar" hidden>
+            <button type="button" data-andar="0" aria-pressed="true">Térreo</button>
+            <button type="button" data-andar="1" aria-pressed="false">Superior</button>
+          </div>
+        </div>
         <div class="grupo-linha" role="group" aria-label="Modo de visão">
           <span class="rotulo">Visão</span>
           <div class="botoes" id="botoes-visao">
@@ -23,11 +40,14 @@
 
       <aside id="esquerda" aria-label="Catálogo">
         <h2>Catálogo</h2>
-        <p class="vazio">As peças para arrastar para a casa aparecem aqui.</p>
+        <div class="abas abas-catalogo" id="abas-catalogo" role="tablist" aria-label="Tipos de peça"></div>
+        <div class="botoes filtro-linha" id="filtro-linha" role="group" aria-label="Filtrar por linha"></div>
+        <div id="lista-catalogo"></div>
       </aside>
 
       <main id="centro">
         <div id="cena"></div>
+        <p id="faixa-edicao" class="faixa-edicao" role="status" hidden>Editando a casa: arraste o quartinho, clique numa fachada para criar varanda, arraste no piso para desenhar parede e clique num piso para dar nome ao cômodo. Os equipamentos ficam parados.</p>
         <section id="form-casa" class="painel-casa" hidden aria-label="Medidas da casa">
           <h3>Casa</h3>
           <div class="colunas-casa">
@@ -49,35 +69,35 @@
               <legend>Varandas (uma por lado)</legend>
                 <div class="linha-varanda" data-lado="frente">
                   <label class="tem"><input type="checkbox" id="varanda-frente-tem" /> Frente</label>
-                  <label>Profundidade (m) <input type="number" id="varanda-frente-prof" min="1" max="6" step="0.5" /></label>
-                  <label>Inclinação (%) <input type="number" id="varanda-frente-inc" min="10" max="100" step="1" /></label>
+                  <label>Prof. (m) <input type="number" id="varanda-frente-prof" min="1" max="6" step="0.5" /></label>
+                  <label>Incl. (%) <input type="number" id="varanda-frente-inc" min="10" max="100" step="1" /></label>
                   <label class="tem"><input type="checkbox" id="varanda-frente-inteira" /> Fachada inteira</label>
-                  <label>Largura (m) <input type="number" id="varanda-frente-largura" min="1" step="0.5" /></label>
-                  <label>Deslocamento (m) <input type="number" id="varanda-frente-desloc" step="0.5" /></label>
+                  <label class="so-parcial">Largura (m) <input type="number" id="varanda-frente-largura" min="1" step="0.5" /></label>
+                  <label class="so-parcial">Desloc. (m) <input type="number" id="varanda-frente-desloc" step="0.5" /></label>
                 </div>
                 <div class="linha-varanda" data-lado="fundos">
                   <label class="tem"><input type="checkbox" id="varanda-fundos-tem" /> Fundos</label>
-                  <label>Profundidade (m) <input type="number" id="varanda-fundos-prof" min="1" max="6" step="0.5" /></label>
-                  <label>Inclinação (%) <input type="number" id="varanda-fundos-inc" min="10" max="100" step="1" /></label>
+                  <label>Prof. (m) <input type="number" id="varanda-fundos-prof" min="1" max="6" step="0.5" /></label>
+                  <label>Incl. (%) <input type="number" id="varanda-fundos-inc" min="10" max="100" step="1" /></label>
                   <label class="tem"><input type="checkbox" id="varanda-fundos-inteira" /> Fachada inteira</label>
-                  <label>Largura (m) <input type="number" id="varanda-fundos-largura" min="1" step="0.5" /></label>
-                  <label>Deslocamento (m) <input type="number" id="varanda-fundos-desloc" step="0.5" /></label>
+                  <label class="so-parcial">Largura (m) <input type="number" id="varanda-fundos-largura" min="1" step="0.5" /></label>
+                  <label class="so-parcial">Desloc. (m) <input type="number" id="varanda-fundos-desloc" step="0.5" /></label>
                 </div>
                 <div class="linha-varanda" data-lado="esquerda">
                   <label class="tem"><input type="checkbox" id="varanda-esquerda-tem" /> Esquerda</label>
-                  <label>Profundidade (m) <input type="number" id="varanda-esquerda-prof" min="1" max="6" step="0.5" /></label>
-                  <label>Inclinação (%) <input type="number" id="varanda-esquerda-inc" min="10" max="100" step="1" /></label>
+                  <label>Prof. (m) <input type="number" id="varanda-esquerda-prof" min="1" max="6" step="0.5" /></label>
+                  <label>Incl. (%) <input type="number" id="varanda-esquerda-inc" min="10" max="100" step="1" /></label>
                   <label class="tem"><input type="checkbox" id="varanda-esquerda-inteira" /> Fachada inteira</label>
-                  <label>Largura (m) <input type="number" id="varanda-esquerda-largura" min="1" step="0.5" /></label>
-                  <label>Deslocamento (m) <input type="number" id="varanda-esquerda-desloc" step="0.5" /></label>
+                  <label class="so-parcial">Largura (m) <input type="number" id="varanda-esquerda-largura" min="1" step="0.5" /></label>
+                  <label class="so-parcial">Desloc. (m) <input type="number" id="varanda-esquerda-desloc" step="0.5" /></label>
                 </div>
                 <div class="linha-varanda" data-lado="direita">
                   <label class="tem"><input type="checkbox" id="varanda-direita-tem" /> Direita</label>
-                  <label>Profundidade (m) <input type="number" id="varanda-direita-prof" min="1" max="6" step="0.5" /></label>
-                  <label>Inclinação (%) <input type="number" id="varanda-direita-inc" min="10" max="100" step="1" /></label>
+                  <label>Prof. (m) <input type="number" id="varanda-direita-prof" min="1" max="6" step="0.5" /></label>
+                  <label>Incl. (%) <input type="number" id="varanda-direita-inc" min="10" max="100" step="1" /></label>
                   <label class="tem"><input type="checkbox" id="varanda-direita-inteira" /> Fachada inteira</label>
-                  <label>Largura (m) <input type="number" id="varanda-direita-largura" min="1" step="0.5" /></label>
-                  <label>Deslocamento (m) <input type="number" id="varanda-direita-desloc" step="0.5" /></label>
+                  <label class="so-parcial">Largura (m) <input type="number" id="varanda-direita-largura" min="1" step="0.5" /></label>
+                  <label class="so-parcial">Desloc. (m) <input type="number" id="varanda-direita-desloc" step="0.5" /></label>
                 </div>
             </fieldset>
             <fieldset>
@@ -96,14 +116,15 @@
       </main>
 
       <aside id="direita" aria-label="Painéis">
+        <section id="item-selecionado" class="item-selecionado" aria-label="Item selecionado" hidden></section>
         <div class="abas" role="tablist">
           <button type="button" role="tab" data-aba="consultor" aria-selected="true">Consultor</button>
           <button type="button" role="tab" data-aba="orcamento" aria-selected="false">Orçamento</button>
           <button type="button" role="tab" data-aba="sistema" aria-selected="false">Sistema</button>
         </div>
-        <div class="aba-painel" role="tabpanel" data-painel="consultor"><p class="vazio">As sugestões do consultor aparecem aqui.</p></div>
-        <div class="aba-painel" role="tabpanel" data-painel="orcamento" hidden><p class="vazio">O orçamento aparece aqui.</p></div>
-        <div class="aba-painel" role="tabpanel" data-painel="sistema" hidden><p class="vazio">Geração, consumo e bateria aparecem aqui.</p></div>
+        <div class="aba-painel" role="tabpanel" data-painel="consultor" id="painel-consultor"></div>
+        <div class="aba-painel" role="tabpanel" data-painel="orcamento" id="painel-orcamento" hidden></div>
+        <div class="aba-painel" role="tabpanel" data-painel="sistema" id="painel-sistema" hidden></div>
       </aside>
 
       <footer id="base">

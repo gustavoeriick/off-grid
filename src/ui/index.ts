@@ -4,6 +4,10 @@
 import { acoes, assinar, estado, type ModoVisao } from '../estado';
 import { localPorId } from '../nucleo/irradiancia';
 import type { CasaConfig, Clima, Varanda } from '../nucleo/tipos';
+import { montarCatalogo } from './catalogo';
+import { montarPaineis } from './paineis';
+import { montarSelecionado } from './selecionado';
+import { montarTopo } from './topo';
 import { LADOS, LIMITES_VARANDA, avisoDoQuartinho, deslocamentoMaximo, inclinacaoMaxima, limitarVaranda, limitarVarandas, medidaDaFachada, novaVaranda, profundidadeMaxima } from './varandas';
 
 const MS_HORA = 3_600_000;
@@ -55,6 +59,10 @@ export function montarInterface(): void {
   montarClimaERotacao();
   montarFormularioCasa();
   montarAbas();
+  montarCatalogo();
+  montarSelecionado();
+  montarPaineis();
+  montarTopo();
   montarAvancoDoTempo();
 }
 
@@ -207,6 +215,8 @@ function montarFormularioCasa(): void {
     const sem = !v;
     ln.prof.disabled = ln.inc.disabled = ln.inteira.disabled = sem;
     ln.largura.disabled = ln.desloc.disabled = sem || ref.largura === null;
+    // Largura e deslocamento só fazem sentido quando a varanda não ocupa a fachada inteira.
+    ln.largura.closest('label')!.hidden = ln.desloc.closest('label')!.hidden = ref.largura === null;
   };
 
   const desenhar = () => {
