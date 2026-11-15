@@ -433,6 +433,38 @@ describe('consultor: regras isoladas', () => {
     expect(s.acao).toMatchObject({ tipo: 'trocar-cabos', caboId: 'cabo-solar-6' });
   });
 
+  it('`cabo-de-bateria-sobrando`: inversor de 500 W em 12 V, fusível de 100 A e cabo de 35 mm²', () => {
+    const projeto = montar({ inv: AIKER, b: 'bat-moura-12mn105' }, [
+      ['inv.batPos', 'b.pos', 'cabo-bat-35', 1], ['inv.batNeg', 'b.neg', 'cabo-bat-35', 1],
+    ]);
+    // Sem o fusível, a regra não fala: a proteção ainda vai definir o cabo.
+    expect(regras(consultar(projeto))).toContain('sem-protecao-da-bateria');
+    expect(regras(consultar(projeto))).not.toContain('cabo-de-bateria-sobrando');
+    projeto.cabos[0]!.protecoes = ['prot-fusivel-anl-100'];
+    const s = da(consultar(projeto), 'cabo-de-bateria-sobrando');
+    expect(s.nivel).toBe('dica');
+    // 16 mm² aguenta 90 A, menos que o fusível de 100 A; o de 25 mm² aguenta 125 A.
+    expect(s.texto).toContain('precisam aguentar 100 A');
+    expect(s.texto).toContain('O cabo de 25 mm² aguenta 125 A');
+    expect(s.acao).toMatchObject({ tipo: 'trocar-cabos', caboId: 'cabo-bat-25' });
+    expect(s.alvos).toHaveLength(2);
+    // Depois da troca não sobra sugestão de cabo.
+    aplicar(projeto, s.acao!);
+    const depois = regras(consultar(projeto));
+    for (const r of ['cabo-de-bateria-sobrando', 'cabo-fino', 'protecao-maior-que-o-cabo', 'queda-de-tensao']) expect(depois).not.toContain(r);
+  });
+
+  it('`cabo-de-bateria-sobrando`: não aparece quando a perda passaria do limite, nem no plano corrigido', () => {
+    const projeto = montar({ inv: AIKER, b: 'bat-moura-12mn105' }, [
+      ['inv.batPos', 'b.pos', 'cabo-bat-35', 4], ['inv.batNeg', 'b.neg', 'cabo-bat-35', 4],
+    ]);
+    projeto.cabos[0]!.protecoes = ['prot-fusivel-anl-100'];
+    const antes = consultar(projeto);
+    expect(regras(antes)).not.toContain('queda-de-tensao');
+    expect(regras(antes)).not.toContain('cabo-de-bateria-sobrando');
+    expect(regras(consultar(cenarioPlanoCorrigido()))).not.toContain('cabo-de-bateria-sobrando');
+  });
+
   it('`protecao-pequena`: disjuntor de 100 A em c3 com cabo de 35 mm²', () => {
     const projeto = cenarioPlanoNoPapel();
     for (const c of projeto.cabos) if (c.uid === 'c3' || c.uid === 'c4') c.caboId = 'cabo-bat-35';

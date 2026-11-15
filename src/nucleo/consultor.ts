@@ -705,6 +705,7 @@ function regrasDeCabos(
     );
 
   // sem-protecao-da-bateria: cada ramo precisa de fusível ou disjuntor CC no caminho do positivo dele até o inversor.
+  let bancoProtegido = false;
   if (banco !== null && sistema.banco.length > 0) {
     const caminho = caminhosAteOSorvedouro(projeto, catalogo, analise);
     const protegeCC = (c: Cabo): boolean =>
@@ -715,6 +716,7 @@ function regrasDeCabos(
     const semProtecao = sistema.banco
       .map((ramo) => ({ ramo, cabos: caminho(ramo[0], 'pos') }))
       .filter((r) => !r.cabos.some(protegeCC));
+    bancoProtegido = semProtecao.length === 0;
     if (semProtecao.length > 0) {
       const escolhida = primeiroOuMaior(
         protecoesCorrente,
@@ -869,6 +871,43 @@ function regrasDeCabos(
     const acao = acaoTrocar(cabos, novo);
     if (acao) s.acao = acao;
     sugerir(s);
+  }
+
+  // cabo-de-bateria-sobrando: só com o banco já protegido e sem nenhum outro problema nos cabos da bateria.
+  // A capacidade exigida é a maior do circuito inteiro (corrente de projeto ou proteção), não a de cada cabo.
+  if (banco !== null && bancoProtegido && circuitos.bateria.length > 0 && !quedas.some((q) => q.circuito === 'bateria')) {
+    const infos = circuitos.bateria;
+    const exigida = Math.max(...infos.map((c) => c.exigida));
+    const semOutroProblema = infos.every((c) => c.tipo.ampacidade >= c.exigida && c.tipo.cobre && c.tipo.naoRecomendado === undefined);
+    if (semOutroProblema && exigida > 0) {
+      const dentroDoLimite = (candidato: TipoCabo): { cabos: string[] } | null => {
+        const cabos = infos.filter((c) => c.tipo.uso === 'bateria' && c.tipo.secao > candidato.secao).map(umCabo);
+        if (cabos.length === 0) return null;
+        const troca = new Set(cabos);
+        const clone: Projeto = { ...projeto, cabos: projeto.cabos.map((c) => (troca.has(c.uid) ? { ...c, caboId: candidato.id } : c)) };
+        const ok = quedasDeTensao(clone, catalogo, analise).every((q) => q.circuito !== 'bateria' || q.fracao <= q.limite);
+        return ok ? { cabos } : null;
+      };
+      for (const candidato of cabosDoUso(catalogo, 'bateria')) {
+        if (candidato.ampacidade < exigida) continue;
+        const r = dentroDoLimite(candidato);
+        if (r === null) continue;
+        const s: Sugestao = {
+          regra: 'cabo-de-bateria-sobrando',
+          nivel: 'dica',
+          titulo: 'O cabo da bateria pode ser mais fino',
+          texto:
+            `Estes cabos precisam aguentar ${um(exigida)} A, que é o maior valor entre a corrente de uso e a proteção instalada. ` +
+            `O cabo de ${um(candidato.secao)} mm² aguenta ${um(candidato.ampacidade)} A e mantém a perda dentro do limite. ` +
+            'Cabo mais grosso não faz mal, só custa mais.',
+          alvos: r.cabos,
+        };
+        const acao = acaoTrocar(r.cabos, candidato);
+        if (acao) s.acao = acao;
+        sugerir(s);
+        break;
+      }
+    }
   }
 
   // Proteções das placas e da saída.

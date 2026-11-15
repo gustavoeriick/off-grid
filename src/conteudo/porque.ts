@@ -230,6 +230,11 @@ export const PORQUE: Record<string, PorQue> = {
       'O cobre tem uma resistência pequena, e a corrente que passa por ela vira calor; o calor cresce com o quadrado da corrente, então o dobro da corrente esquenta quatro vezes mais. Cabo mais grosso tem menos resistência e esquenta menos. Em 24 V as correntes são altas: os 3.000 W puxam cerca de 127 A da bateria, enquanto nas tomadas de 127 V bastam 2,5 mm². O plano previa 25 mm² da bateria ao inversor, que aguenta 125 A: fica no limite, e por isso o simulador aponta 35 mm².',
     termos: ['bitola', 'corrente', 'queda-de-tensao'],
   },
+  'cabo-de-bateria-sobrando': {
+    texto:
+      'O cabo é escolhido pela corrente que precisa aguentar: a maior entre a corrente de uso e a da proteção instalada, porque a proteção tem de abrir antes de o cabo esquentar. Depois se confere a queda de tensão, que na bateria deve ficar em até 2%. Passando nas duas contas, um cabo mais grosso não deixa o sistema mais seguro, só mais caro e mais difícil de dobrar e de prensar no terminal. Se você pretende trocar o inversor por um maior no futuro, vale manter o cabo grosso.',
+    termos: ['bitola', 'corrente', 'queda-de-tensao', 'fusivel'],
+  },
   'protecao-pequena': {
     texto:
       'A proteção abre quando a corrente passa do valor dela por tempo suficiente. Se esse valor fica abaixo do que o circuito puxa no uso máximo, ela abre justo quando tudo está ligado. Na bateria, a conta pede 10% de folga acima da corrente de projeto, porque fusível trabalhando perto do limite esquenta e envelhece. O conserto é subir a proteção só até onde o cabo aguenta; se não couber, o cabo sobe também.',

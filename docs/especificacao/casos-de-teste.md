@@ -273,6 +273,8 @@ Regras isoladas, cada uma com um projeto mínimo que a dispara:
 | `sem-protecao-da-bateria` | "Plano no papel" sem o fusível em `c3`; a ação instala `prot-fusivel-anl-150` |
 | `cabo-fino` | 3 Renepv em paralelo em um só par de `cabo-solar-4` no `ctl-epever-xtra4210n`: 53,3 A contra 42 A |
 | `protecao-pequena` | `prot-disjuntor-cc-100` em `c3`, com `cabo-bat-35` |
+| `cabo-de-bateria-sobrando` | `inv-aiker-500-12v-110` e `bat-moura-12mn105`, par de `cabo-bat-35` de 1 m + 1 m, `prot-fusivel-anl-100` no positivo: a ação troca por `cabo-bat-25` (o de 16 mm² aguenta 90 A, menos que o fusível). Sem o fusível não aparece |
+| `cabo-de-bateria-sobrando` não aparece | O mesmo sistema com 4 m + 4 m: com 25 mm² a queda passaria de 2%. Também não aparece no "plano corrigido" |
 | `queda-de-tensao` | 3 `placa-resun-155` em paralelo em um só par de `cabo-solar-6`, 20 m + 20 m, no `ctl-pwm-30a` |
 | `placa-na-sombra` | `estimativas.perdaSombra` de 0,31 em uma placa |
 | `rede-desligada` | "Plano no papel" sem `c5` |
