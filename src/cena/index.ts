@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOGO } from '../catalogo';
 import { acoes, assinar, type Encaixe, estado, recalcularAgora, registrarAmbiente } from '../estado';
-import { localPorId } from '../nucleo/irradiancia';
+import { localDoProjeto } from '../nucleo/irradiancia';
 import { type CamadaDeCabos, criarCamadaDeCabos } from './cabos';
 import { criarCasa } from './casa';
 import { colocarIniciais } from './colocacao';
@@ -297,7 +297,7 @@ export function criarCena(container: HTMLElement): Cena {
     pedirQuadro();
   };
   const refazerSol = (): void => {
-    const local = localPorId(estado.projeto.localId);
+    const local = localDoProjeto(estado.projeto);
     if (!local) throw new Error(`Local desconhecido no projeto: "${estado.projeto.localId}"`);
     sol.atualizar(estado.tempo.msUtc, local);
     pedirQuadro();

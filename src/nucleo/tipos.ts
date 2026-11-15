@@ -86,7 +86,7 @@ export interface Dispositivo {
   quat: Quat;
   /** `id` da superfície em que a peça está encaixada. */
   superficie: string | null;
-  /** Giro em torno da normal da superfície: 0, 90, 180 ou 270. */
+  /** Giro em torno da normal da superfície: 0, 90, 180 ou 270. No terreno, ângulo livre em torno da vertical, em passos de 15. */
   giro: number;
   /** Aparelhos: ligado ou desligado. Nas demais peças, sempre verdadeiro. */
   ligado: boolean;
