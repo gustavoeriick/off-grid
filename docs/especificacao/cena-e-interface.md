@@ -145,6 +145,16 @@ Proteções são arrastadas para cima de um cabo: o cabo sob o ponteiro acende e
 - O comprimento passa a ser a soma de `(|dx| + |dy| + |dz|) × 1,1` de cada trecho, com o mesmo mínimo e o mesmo arredondamento.
 - Apagar o cabo apaga os grampos dele; apagar um grampo solta o cabo naquele ponto. Quem cuida disso é o estado.
 
+**Arrumar os cabos.** Pedido do Gustavo em 15/11/2026: os cabos soltos e pendurados ficam feios. O botão "Arrumar os cabos", na barra do alto, põe os grampos sozinho; o botão "Soltar os cabos" tira todos. Cada um é um passo só de desfazer (`acoes.definirGramposDosCabos`).
+
+- Cada cabo passa a correr rente às superfícies, em trechos retos: desce ou sobe pela parede na vertical, corre na horizontal, e muda de superfície pela quina (parede com piso, parede com parede). Nada de diagonal em parede.
+- Cabos que seguem o mesmo trajeto correm lado a lado, com um espaço pequeno entre eles, sem se cruzar à toa; o par positivo e negativo de uma mesma ligação fica junto.
+- O cabo não atravessa peça, porta nem janela, e não passa por dentro de parede: para ir de um cômodo a outro ou de dentro para fora, usa a porta ou contorna. Quando não há caminho razoável pelas superfícies (da casa ao quartinho, do telhado ao chão), o cabo fica preso nas duas pontas do vão e cruza o vão em linha reta.
+- Os grampos ficam nas mudanças de direção e, em trecho reto longo, a cada 1,5 m no máximo.
+- Arrumar de novo depois de mover uma peça refaz o trajeto. Grampo posto à mão em um cabo é trocado pelo trajeto novo.
+- O comprimento de cada cabo é remedido pelo trajeto, como com os grampos postos à mão.
+- Cabo novo nasce solto; arruma-se depois, com o botão.
+
 **Proteções no cabo.** Cubos de 0,07 ao longo do cabo, a partir de 25% do comprimento: fusível amarelo, disjuntor branco, DPS verde.
 
 ## 9. Sombra para o cálculo (`cena/sombra.ts`)

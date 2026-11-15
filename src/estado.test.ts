@@ -292,6 +292,26 @@ describe('grampo de parede', () => {
     expect(acoes.adicionarGrampo('nao-existe', 0, em(3))).toBeNull();
   });
 
+  it('arrumar os cabos troca os grampos de vários cabos em um passo só de desfazer', () => {
+    const [c1, c2] = [estado.projeto.cabos[0]!.uid, estado.projeto.cabos[1]!.uid];
+    const pecas = estado.projeto.dispositivos.length;
+    const velho = acoes.adicionarGrampo(c1, 0, em(0))!;
+    const antes = JSON.stringify(estado.projeto);
+    acoes.definirGramposDosCabos(new Map([[c1, [em(1), em(2)]], [c2, [em(3)]], ['nao-existe', [em(4)]]]));
+    const cabo = (uid: string) => estado.projeto.cabos.find((x) => x.uid === uid)!;
+    expect(cabo(c1).grampos).toHaveLength(2);
+    expect(cabo(c2).grampos).toHaveLength(1);
+    expect(cabo(c1).grampos).not.toContain(velho);
+    expect(estado.projeto.dispositivos).toHaveLength(pecas + 3);
+    expect(new Set(estado.projeto.dispositivos.map((d) => d.uid)).size).toBe(pecas + 3);
+    acoes.desfazer();
+    expect(JSON.stringify(estado.projeto)).toBe(antes);
+    // Lista vazia solta o cabo.
+    acoes.definirGramposDosCabos(new Map([[c1, []]]));
+    expect(cabo(c1).grampos).toEqual([]);
+    expect(estado.projeto.dispositivos).toHaveLength(pecas);
+  });
+
   it('apagar o grampo solta o cabo naquele ponto; apagar o cabo leva os grampos; desfazer devolve', () => {
     const cabo = estado.projeto.cabos[0]!.uid;
     const pecas = estado.projeto.dispositivos.length;

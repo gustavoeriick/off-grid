@@ -763,6 +763,33 @@ export const acoes = {
     return uid;
   },
 
+  /**
+   * "Arrumar os cabos": troca de uma vez os grampos de cada cabo listado pelos grampos dados, na ordem de `de` para `para`.
+   * Lista vazia solta o cabo. É um passo só de desfazer. Cabo que não existe é ignorado.
+   */
+  definirGramposDosCabos(rotas: ReadonlyMap<string, Encaixe[]>, itemId = 'acc-grampo'): void {
+    const item = CATALOGO.get(itemId);
+    if (item?.categoria !== 'acessorio' || item.tipo !== 'grampo') throw new Error(`Não é um grampo: "${itemId}"`);
+    mudar(['dispositivos', 'cabos'], undefined, (p) => {
+      const usados = new Set(p.dispositivos.map((d) => d.uid));
+      const antigos = new Set<string>();
+      const novos: Projeto['dispositivos'] = [];
+      p.cabos = p.cabos.map((c) => {
+        const rota = rotas.get(c.uid);
+        if (!rota) return c;
+        (c.grampos ?? []).forEach((g) => antigos.add(g));
+        const grampos = rota.map((encaixe) => {
+          const uid = novoUid('d', usados);
+          usados.add(uid);
+          novos.push({ uid, itemId, ...encaixe, ligado: true, uso: null });
+          return uid;
+        });
+        return { ...c, grampos };
+      });
+      p.dispositivos = [...p.dispositivos.filter((d) => !antigos.has(d.uid)), ...novos];
+    });
+  },
+
   moverDispositivo(uid: string, encaixe: Encaixe, opcoes?: OpcoesMudanca): void {
     mudar(['dispositivos'], opcoes, (p) => {
       p.dispositivos = p.dispositivos.map((d) => (d.uid === uid ? { ...d, ...encaixe } : d));
