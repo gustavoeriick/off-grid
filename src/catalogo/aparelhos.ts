@@ -77,8 +77,8 @@ export const APARELHOS: Aparelho[] = [
     forma: 'notebook', dimensoes: [0.36, 0.25, 0.25],
   }),
   aparelho({
-    id: 'ap-notebook-gamer', nome: 'Notebook com placa de vídeo', detalhe: '180 W, 120 W de média em jogo, das 19 às 23 h',
-    potenciaW: 180, mediaW: 120, picoW: 230, uso: [19, 23], tensao: 'bivolt', motor: false, eletronico: true,
+    id: 'ap-notebook-gamer', nome: 'Notebook com placa de vídeo', detalhe: '190 W, 150 W de média em jogo, das 19 às 23 h. Referência: Asus TUF Gaming F16 com RTX 5050, fonte de 280 W',
+    potenciaW: 190, mediaW: 150, picoW: 280, uso: [19, 23], tensao: 'bivolt', motor: false, eletronico: true,
     forma: 'notebook', dimensoes: [0.38, 0.27, 0.27],
   }),
   // Geladeiras.

@@ -291,9 +291,9 @@ Esses seis somam 465 W de média e são os do cenário "plano no papel". A gelad
 | `ap-pc-escritorio` | PC de trabalho, sem placa de vídeo | 90 | 60 | 150 | 8 às 18 | `pc` | 0,20 × 0,45 × 0,45 |
 | `ap-pc-gamer` | PC gamer, com placa de vídeo | 450 | 350 | 600 | 19 às 23 | `pc` | 0,22 × 0,50 × 0,48 |
 | `ap-notebook` | Notebook de trabalho | 65 | 45 | 65 | 8 às 18 | `notebook` | 0,36 × 0,25 × 0,25 |
-| `ap-notebook-gamer` | Notebook com placa de vídeo | 180 | 120 | 230 | 19 às 23 | `notebook` | 0,38 × 0,27 × 0,27 |
+| `ap-notebook-gamer` | Notebook com placa de vídeo | 190 | 150 | 280 | 19 às 23 | `notebook` | 0,38 × 0,27 × 0,27 |
 
-Todos bivolt, eletrônicos, sem motor. No PC gamer e no notebook com placa de vídeo, a média é a de jogo; em uso de escritório consomem perto do que consomem os modelos de trabalho.
+Todos bivolt, eletrônicos, sem motor. No PC gamer e no notebook com placa de vídeo, a média é a de jogo; em uso de escritório consomem perto do que consomem os modelos de trabalho. O notebook com placa de vídeo tem como referência o Asus TUF Gaming F16 (FX608JHR) com Core i5-14450HX e RTX 5050: fonte de 280 W e placa de vídeo de até 115 W, da ficha da Asus. O pico é o da fonte. A potência e a média em jogo são estimativas: não há medição na tomada desse modelo, e o modelo irmão FX610JH, com a placa de vídeo em 85 W, mediu 119 W em jogo (Notebookcheck).
 
 ### Geladeiras
 
