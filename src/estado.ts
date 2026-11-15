@@ -603,6 +603,12 @@ export const acoes = {
     guardarNoHistorico();
   },
 
+  /** Cancela um arraste: volta ao ponto marcado por `marcarHistorico`, sem deixar nada para refazer. */
+  cancelarArraste(): void {
+    const anterior = passado.pop();
+    if (anterior) trocarProjeto(JSON.parse(anterior) as Projeto);
+  },
+
   desfazer(): void {
     const anterior = passado.pop();
     if (!anterior) return;
