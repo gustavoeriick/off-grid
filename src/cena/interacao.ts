@@ -43,6 +43,8 @@ export interface PartesDaCena {
 export interface Interacao {
   /** Para o roteiro de verificação: o que o ponteiro está fazendo e se soltar agora daria certo. */
   situacao(): { modo: string; valido: boolean | null; motivo: string | null };
+  /** `id` das superfícies sobre as quais uma peça está sendo arrastada (do catálogo ou movida): a apontada e a do encaixe. Vazio fora de um arraste. */
+  superficiesDoArraste(): string[];
   destruir(): void;
 }
 
@@ -390,12 +392,21 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   /** Giro, no quadro da casa, da placa que chega ao terreno sem direção escolhida: a face olha para o norte do mundo (no hemisfério norte, para o sul). */
   const giroPadraoNoChao = (): number => giroParaOAzimute(estado.projeto.casa.orientacaoGraus, azimutePadrao(estado.projeto));
 
+  /** Superfície para a qual o ponteiro aponta durante um arraste de peça (pode não ser a do encaixe: a geladeira apontada para a parede vai para o piso). */
+  let apontada: string | null = null;
+
   function candidatoSob(item: Item, giro: number, chao: NoChao, x: number, y: number, ignorar?: ReadonlySet<string>): Candidato | null {
+    apontada = null;
     if (!sobreACena(x, y)) return null;
     mirar(x, y);
     let toque: Toque | null = c.lugares.toque(raio, c.superficies());
+    apontada = toque?.marca.id ?? null;
     // Peça de piso apontada para uma parede: vale o piso ao pé dela, e a peça encosta na parede.
     if (toque?.marca.tipo === 'parede' && superficieAceita(item) === 'piso') toque = c.lugares.pisoAoPe(toque, c.superficies()) ?? toque;
+    // Lâmpada ou chuveiro apontado para um piso de dentro: vale a parede mais próxima, na altura em que eles ficam.
+    else if (toque?.marca.tipo === 'piso' && toque.marca.id !== ID_TERRENO && item.categoria === 'aparelho' && superficieAceita(item) === 'parede') {
+      toque = c.lugares.paredeAoLado(toque, c.superficies(), raio.ray.direction) ?? toque;
+    }
     if (!toque) return null;
     // Placa no terreno: fica sobre o suporte, com a direção e a inclinação dela.
     if (toque.marca.id === ID_TERRENO && item.categoria === 'placa') {
@@ -935,6 +946,11 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       if (m.tipo === 'protecao') return { modo: m.tipo, valido: m.cabo !== null, motivo: null };
       if (m.tipo === 'cabo') return { modo: m.tipo, valido: m.para !== null, motivo: m.motivo };
       return { modo: m.tipo, valido: null, motivo: null };
+    },
+    superficiesDoArraste() {
+      const m = modo;
+      if (m.tipo !== 'catalogo' && m.tipo !== 'mover') return [];
+      return [apontada, m.candidato?.encaixe.superficie ?? null].filter((id): id is string => id !== null);
     },
     destruir() {
       cancelarAssinaturas.forEach((f) => f());

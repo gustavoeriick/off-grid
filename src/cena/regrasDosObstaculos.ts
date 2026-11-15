@@ -67,10 +67,14 @@ export function pegadaDoObstaculo(o: Omit<Obstaculo, 'uid'>, soTronco = false): 
 
 /** Chão ocupado pela casa: a planta, cada varanda e o quartinho. */
 export function pegadasDaCasa(casa: CasaConfig): Pegada[] {
-  const lista: Pegada[] = [{ x: 0, z: 0, largura: casa.largura, profundidade: casa.profundidade, giro: 0 }];
-  for (const v of casa.varandas) {
-    const r = plantaDaVaranda(v, casa);
-    lista.push({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, largura: r.x1 - r.x0, profundidade: r.z1 - r.z0, giro: 0 });
+  const lista: Pegada[] = [];
+  // No tutorial (`soQuartinho`) o corpo da casa e as varandas não existem: só o quartinho ocupa chão.
+  if (!casa.soQuartinho) {
+    lista.push({ x: 0, z: 0, largura: casa.largura, profundidade: casa.profundidade, giro: 0 });
+    for (const v of casa.varandas) {
+      const r = plantaDaVaranda(v, casa);
+      lista.push({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, largura: r.x1 - r.x0, profundidade: r.z1 - r.z0, giro: 0 });
+    }
   }
   const q = casa.quartinho;
   lista.push({ x: q.x, z: q.z, largura: q.largura, profundidade: q.profundidade, giro: q.giro });
@@ -130,6 +134,10 @@ export function novoObstaculo(tipo: TipoObstaculo, projeto: Pick<Projeto, 'casa'
   const L = LIMITES_OBSTACULO;
   const outros = (projeto.obstaculos ?? []).map((o) => pegadaDoObstaculo(o));
   const paraFora = (v: number): number => Math.sign(v) * Math.ceil(Math.abs(v) / L.passo - 1e-9) * L.passo;
+  // No tutorial o obstáculo nasce em volta do quartinho, que é a única construção.
+  const q = casa.quartinho;
+  const meioQ = Math.hypot(q.largura, q.profundidade) / 2;
+  const [cx, cz, meiaL, meiaP] = casa.soQuartinho ? [q.x, q.z, meioQ, meioQ] : [0, 0, casa.largura / 2, casa.profundidade / 2];
   let reserva: Omit<Obstaculo, 'uid'> | null = null;
   for (let extra = 0; extra <= 24; extra += 1) {
     for (const [dx, dz] of LADOS_DE_NASCER[tipo]) {
@@ -139,8 +147,8 @@ export function novoObstaculo(tipo: TipoObstaculo, projeto: Pick<Projeto, 'casa'
       const meiaZ = (giro === 90 ? m.largura : m.profundidade) / 2;
       const candidato = limitarObstaculo({
         tipo,
-        x: centavos(paraFora(dx * (casa.largura / 2 + m.distancia + extra + meiaX))),
-        z: centavos(paraFora(dz * (casa.profundidade / 2 + m.distancia + extra + meiaZ))),
+        x: centavos(cx + paraFora(dx * (meiaL + m.distancia + extra + meiaX))),
+        z: centavos(cz + paraFora(dz * (meiaP + m.distancia + extra + meiaZ))),
         largura: m.largura,
         profundidade: m.profundidade,
         altura: m.altura,

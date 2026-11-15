@@ -89,6 +89,13 @@ export interface Lugares {
    * até a parede a encosta nela. Nulo se não há piso à vista ali.
    */
   pisoAoPe(toque: Toque, malhas: THREE.Object3D[]): Toque | null;
+  /**
+   * Para a lâmpada e o chuveiro apontados para um piso: a parede mais próxima em volta desse ponto do piso, na altura
+   * em que eles ficam. Assim, soltar a lâmpada dentro do quartinho a prende na parede mais perto. Com `olhar` (direção
+   * do raio do ponteiro, no mundo), a parede que está de frente para quem olha vale antes da que é vista por trás.
+   * Nulo se não há parede à vista ali.
+   */
+  paredeAoLado(toque: Toque, malhas: THREE.Object3D[], olhar?: THREE.Vector3): Toque | null;
   /** Encaixe da peça sob o ponteiro, com tudo o que a especificação pede: tipo de superfície, grade, borda, vizinhas. */
   candidato(item: Item, giro: number, toque: Toque, opcoes?: OpcoesDeAssento): Candidato;
   /** Encaixe da peça no ponto (u, v) do quadro, cortado para caber. */
@@ -571,8 +578,39 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
     return null;
   }
 
+  function paredeAoLado(t: Toque, malhas: THREE.Object3D[], olhar?: THREE.Vector3): Toque | null {
+    casa.updateWorldMatrix(true, false);
+    inversaDaCasa.copy(casa.matrixWorld).invert();
+    const piso = quadro(t.marca.id);
+    if (!piso) return null;
+    // Raios na horizontal, na altura em que a peça fica, ao longo dos dois eixos do piso e das diagonais.
+    const naCasa = t.ponto.clone().addScaledVector(CIMA, ALTURA_DE_LAMPADA);
+    const origem = naCasa.clone().applyMatrix4(casa.matrixWorld);
+    const horizontal = new THREE.Raycaster(origem, new THREE.Vector3(), 0, 8);
+    const olharNaCasa = olhar ? olhar.clone().transformDirection(inversaDaCasa) : null;
+    let melhor: Toque | null = null;
+    let menor = Infinity;
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const direcao = piso.u.clone().multiplyScalar(Math.cos(a)).addScaledVector(piso.v, Math.sin(a)).transformDirection(casa.matrixWorld);
+      horizontal.set(origem, direcao);
+      const achado = toque(horizontal, malhas);
+      if (!achado || achado.marca.tipo !== 'parede') continue;
+      // Vale a parede cujo plano está mais perto do ponto, e nela o ponto bem em frente ao do piso.
+      // Parede vista por trás (a peça ficaria escondida atrás dela) só vale se não houver outra: perde por 100 m.
+      const deCostas = olharNaCasa !== null && achado.normal.dot(olharNaCasa) > 0;
+      const distancia = naCasa.clone().sub(achado.ponto).dot(achado.normal);
+      if (distancia + (deCostas ? 100 : 0) < menor - 1e-6) {
+        menor = distancia + (deCostas ? 100 : 0);
+        melhor = { marca: achado.marca, ponto: naCasa.clone().addScaledVector(achado.normal, -distancia), normal: achado.normal };
+      }
+    }
+    return melhor;
+  }
+
   return {
     pisoAoPe,
+    paredeAoLado,
     invalidar() {
       quadros.clear();
       porId = null;

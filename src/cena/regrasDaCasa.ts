@@ -142,6 +142,8 @@ function quartinhoCruza(q: CasaConfig['quartinho'], r: Retangulo): boolean {
 
 /** A varanda, com estas medidas, ficaria em cima do quartinho. */
 export function varandaSobreOQuartinho(casa: CasaConfig, v: Varanda): boolean {
+  // No tutorial só existe o quartinho: não há varanda para ficar em cima dele.
+  if (casa.soQuartinho) return false;
   return quartinhoCruza(casa.quartinho, plantaDaVaranda(v, casa));
 }
 
@@ -150,6 +152,8 @@ export const LIMITES_QUARTINHO = { posicaoMax: 15, passo: 0.5 } as const;
 
 /** Texto do aviso quando o quartinho está em cima da casa ou de uma varanda; nulo quando está livre. */
 export function avisoDoQuartinho(casa: CasaConfig): string | null {
+  // No tutorial o corpo da casa não existe: as medidas dele continuam no projeto, mas não valem nada.
+  if (casa.soQuartinho) return null;
   const planta: Retangulo = { x0: -casa.largura / 2, x1: casa.largura / 2, z0: -casa.profundidade / 2, z1: casa.profundidade / 2 };
   const retangulos = [planta, ...casa.varandas.map((v) => plantaDaVaranda(v, casa))];
   return retangulos.some((r) => quartinhoCruza(casa.quartinho, r)) ? 'O quartinho está em cima da casa ou da varanda.' : null;

@@ -1,5 +1,5 @@
 // Cena 3D. Tarefas 1.10 a 1.12, 1.15 e 2.1 a 2.4. Especificação: docs/especificacao/cena-e-interface.md, seções 2 a 8, 13 e 14,
-// e docs/especificacao/fase-2.md, seções 2 e 3.
+// e docs/especificacao/fase-2.md, seções 2 e 3. Modo tutorial (tarefa 7.3): docs/especificacao/tutorial.md, seção 3.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -9,6 +9,7 @@ import { localDoProjeto } from '../nucleo/irradiancia';
 import { type CamadaDeCabos, criarCamadaDeCabos } from './cabos';
 import { criarCasa } from './casa';
 import { colocarIniciais } from './colocacao';
+import { criarCamadaDeDestaques, type DestaqueNaCena } from './destaques';
 import { type CamadaDeDispositivos, criarCamadaDeDispositivos } from './dispositivos';
 import { criarEdicao } from './edicao';
 import { encaixar, encaixarNoToque } from './encaixe';
@@ -32,6 +33,7 @@ export type { CamadaDeCabos } from './cabos';
 export type { CamadaDeDispositivos, PassagemPeloQuadro, TerminalNaCasa } from './dispositivos';
 export { alturaDeApoio, dimensoesDe, encaixar, encaixarNoToque, normalizarGiro, superficieAceita } from './encaixe';
 export { CAMADA_SO_SOMBRA } from './malha';
+export type { DestaqueNaCena } from './destaques';
 
 export interface OffgridGlobal {
   pronto: boolean;
@@ -82,6 +84,11 @@ export interface OffgridGlobal {
   telaDaAlca?: (id: string) => [x: number, y: number] | null;
   /** Posição e alvo da câmera, no mundo. */
   camera?: () => { pos: [number, number, number]; alvo: [number, number, number] };
+  /**
+   * O que o passo a passo está realçando de fato na cena (`estado.destaques` menos o que não existe ou está escondido):
+   * `{ tipo: 'superficie', id }`, `{ tipo: 'terminal', id: '{disp}:{terminal}', disp, terminal }` ou `{ tipo: 'cabo', id: uid, uid }`.
+   */
+  destaquesNaCena?: () => DestaqueNaCena[];
 }
 
 declare global {
@@ -129,6 +136,10 @@ const QUADRO_FOLGADO_MS = 20;
 const NITIDEZ_ECONOMICA = 0.5;
 /** No modo econômico, intervalo mínimo entre duas renovações do mapa de sombra. */
 const SOMBRA_ECONOMICA_MS = 200;
+/** Em aparelho lento, intervalo mínimo entre dois quadros desenhados só para o realce do passo a passo pulsar. */
+const PULSO_ECONOMICO_MS = 150;
+/** Vista de abertura do tutorial: ângulo para o lado da frente do quartinho, altura do olhar e folga em volta dele. */
+const VISTA_DO_QUARTINHO = { ladoGraus: 28, alturaGraus: 24, folga: 1.1 } as const;
 
 export function criarCena(container: HTMLElement): Cena {
   const renderizador = new THREE.WebGLRenderer({ antialias: true });
@@ -267,9 +278,40 @@ export function criarCena(container: HTMLElement): Cena {
     sol.enquadrar(caixaDaSombra);
   };
 
+  /**
+   * Vista de abertura. Da casa: a frente, de cima e de lado. No tutorial (só o quartinho): a frente dele, de lado e
+   * um pouco de cima, de modo que apareçam a porta aberta, o piso lá dentro e o telhado, onde vai a placa.
+   */
+  const irParaAVistaInicial = (): void => {
+    const q = estado.projeto.casa.quartinho;
+    if (estado.projeto.casa.soQuartinho) {
+      casa.grupo.updateWorldMatrix(true, false);
+      const doQuartinho = new THREE.Matrix4().makeRotationY(THREE.MathUtils.degToRad(q.giro)).setPosition(q.x, 0, q.z).premultiply(casa.grupo.matrixWorld);
+      // Esfera em volta do quartinho com as folhas da porta abertas; a distância é a que a põe inteira na tela.
+      const raio = Math.hypot(q.largura / 2 + 0.9, q.altura / 2 + 0.3, q.profundidade / 2 + 0.5);
+      const meioCampoV = THREE.MathUtils.degToRad(camera.fov / 2);
+      const meioCampo = Math.min(meioCampoV, Math.atan(Math.tan(meioCampoV) * camera.aspect));
+      const distancia = THREE.MathUtils.clamp((raio / Math.sin(meioCampo)) * VISTA_DO_QUARTINHO.folga, controles.minDistance + 1, controles.maxDistance);
+      const lado = THREE.MathUtils.degToRad(VISTA_DO_QUARTINHO.ladoGraus);
+      const altura = THREE.MathUtils.degToRad(VISTA_DO_QUARTINHO.alturaGraus);
+      // O alvo fica abaixo do meio: o quartinho sobe na tela e o cartão do passo a passo, embaixo, não cobre a porta.
+      const alvo = new THREE.Vector3(0, q.altura * 0.25, 0);
+      const olho = new THREE.Vector3(Math.sin(lado) * Math.cos(altura), Math.sin(altura), Math.cos(lado) * Math.cos(altura)).multiplyScalar(distancia).add(alvo);
+      camera.position.copy(olho.applyMatrix4(doQuartinho));
+      controles.target.copy(alvo.applyMatrix4(doQuartinho));
+    } else {
+      camera.position.set(-14, 11, -16);
+      controles.target.set(0, 2.5, 0);
+    }
+    controles.update();
+    sujo = true;
+  };
+
   /** Medidas da casa e projeto vistos na última reconstrução, para saber quando as peças têm de acompanhar a casa. */
   let medidasVistas = '';
   let projetoVisto: typeof estado.projeto | null = null;
+  /** Se a última casa construída era a do tutorial. Nulo antes da primeira. */
+  let tutorialVisto: boolean | null = null;
   const refazerCasa = (): void => {
     // Os obstáculos (muro, vizinho, árvore) contam como parte da casa: uma peça no terreno sai de baixo deles.
     const medidas = JSON.stringify([{ ...estado.projeto.casa, orientacaoGraus: 0 }, estado.projeto.obstaculos ?? []]);
@@ -292,6 +334,15 @@ export function criarCena(container: HTMLElement): Cena {
     medirCasa();
     enquadrarSombra();
     pedirQuadro();
+    // Entrar no tutorial ou sair dele troca a casa inteira: a câmera vai para a vista de abertura da que chegou.
+    const tutorial = estado.projeto.casa.soQuartinho === true;
+    if (tutorial !== tutorialVisto) {
+      const abrindo = tutorialVisto === null;
+      tutorialVisto = tutorial;
+      // "Editar casa" não acompanha a troca: a vista de cima dela foi enquadrada para a outra casa.
+      if (!abrindo && estado.edicaoCasa.ativa) acoes.definirEdicaoDaCasa(false);
+      irParaAVistaInicial();
+    }
   };
   const refazerVisao = (): void => {
     casa.aplicarVisao(estado.visao);
@@ -353,8 +404,16 @@ export function criarCena(container: HTMLElement): Cena {
   };
 
   let quadro = 0;
+  let ultimoPulso = 0;
+  /** Tempo que o último quadro de pulso levou até o laço voltar, e se esse tempo ainda está para ser medido. */
+  let custoDoPulso = 0;
+  let pulsoPendente = false;
+  /** Realce do passo a passo. É criado depois da interação, mais abaixo; o laço começa antes. */
+  let destaques: ReturnType<typeof criarCamadaDeDestaques> | null = null;
   const laco = (agora: number): void => {
     quadro = requestAnimationFrame(laco);
+    // O realce do passo a passo pulsa: enquanto ele está na tela, saem quadros mesmo com a cena parada.
+    const pulsando = destaques?.animar(agora) ?? false;
     if (!sujo) {
       seguidos = 0;
       lentos = 0;
@@ -364,12 +423,25 @@ export function criarCena(container: HTMLElement): Cena {
         sondado = true;
         aparelhoLento = cronometrar() > QUADRO_LENTO_MS;
       }
-      if (!economico) return;
-      // O movimento parou: volta a nitidez inteira e sai o quadro final.
-      economico = false;
-      renderizador.setPixelRatio(nitidezCheia);
-      sombraSuja = true;
+      if (economico) {
+        // O movimento parou: volta a nitidez inteira e sai o quadro final.
+        economico = false;
+        renderizador.setPixelRatio(nitidezCheia);
+        sombraSuja = true;
+      } else {
+        // Quadro só para o pulso: não conta como movimento (não liga o modo econômico). Em aparelho lento sai mais
+        // espaçado, a três vezes o tempo que o quadro de pulso anterior levou, para o ponteiro não engasgar.
+        if (!pulsando) return;
+        if (pulsoPendente) {
+          custoDoPulso = Math.min(500, agora - ultimoPulso);
+          pulsoPendente = false;
+        }
+        if (aparelhoLento && agora - ultimoPulso < Math.max(PULSO_ECONOMICO_MS, 3 * custoDoPulso)) return;
+        ultimoPulso = agora;
+        pulsoPendente = true;
+      }
     } else {
+      pulsoPendente = false;
       if (seguidos > 0) {
         const intervalo = agora - anterior;
         lentos = intervalo > QUADRO_MUITO_LENTO_MS ? 3 : intervalo > QUADRO_LENTO_MS ? lentos + 1 : 0;
@@ -423,7 +495,8 @@ export function criarCena(container: HTMLElement): Cena {
     const toque = raioDoFoco.intersectObjects([casa.grupo, chao], true).find((t) => aVista(t.object) && t.distance < 200);
     if (!toque) return;
     const direcao = camera.position.clone().sub(controles.target).normalize();
-    const distancia = THREE.MathUtils.clamp(toque.distance * 0.6, 2, 14);
+    // No tutorial tudo é pequeno e fica perto: o duplo clique chega mais perto da peça.
+    const distancia = THREE.MathUtils.clamp(toque.distance * 0.6, estado.projeto.casa.soQuartinho ? 1.2 : 2, 14);
     controles.target.copy(toque.point);
     camera.position.copy(toque.point).addScaledVector(direcao, distancia);
     controles.update();
@@ -431,10 +504,7 @@ export function criarCena(container: HTMLElement): Cena {
   };
   const vistaInicial = (): void => {
     if (estado.edicaoCasa.ativa) return;
-    camera.position.set(-14, 11, -16);
-    controles.target.set(0, 2.5, 0);
-    controles.update();
-    sujo = true;
+    irParaAVistaInicial();
   };
   renderizador.domElement.addEventListener('dblclick', focar);
   window.addEventListener('offgrid:vista-inicial', vistaInicial);
@@ -453,6 +523,18 @@ export function criarCena(container: HTMLElement): Cena {
     pedirQuadroLeve,
     naTela,
   });
+
+  destaques = criarCamadaDeDestaques({
+    casa: casa.grupo,
+    camera,
+    canvas: renderizador.domElement,
+    superficies: () => casa.superficies(),
+    dispositivos,
+    cabos,
+    superficiesDoArraste: () => interacao.superficiesDoArraste(),
+    pedirQuadroLeve,
+  });
+  const camadaDeDestaques = destaques;
 
   const edicao = criarEdicao({
     container,
@@ -501,6 +583,7 @@ export function criarCena(container: HTMLElement): Cena {
     edicao: () => edicao.situacao(),
     telaDaAlca: (id) => edicao.telaDaAlca(id),
     camera: () => ({ pos: camera.position.toArray(), alvo: controles.target.toArray() }),
+    destaquesNaCena: () => camadaDeDestaques.naCena(),
     recalcular: recalcularAgora,
     ambiente: () => sombra.ambiente,
     resumoDaSombra: () => sombra.resumo(),
@@ -543,6 +626,7 @@ export function criarCena(container: HTMLElement): Cena {
     destruir() {
       cancelar.forEach((c) => c());
       registrarAmbiente(null);
+      camadaDeDestaques.destruir();
       interacao.destruir();
       edicao.destruir();
       cancelAnimationFrame(quadro);

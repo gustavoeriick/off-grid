@@ -388,7 +388,21 @@ export function criarCasa(): CasaCena {
     return todas;
   }
 
+  /** Tutorial: só o quartinho, com a calçadinha dele, e o terreno. Não há corpo da casa, varandas, cômodos nem calçada. */
+  function construirSoQuartinho(casa: CasaConfig): void {
+    superior = new THREE.Group();
+    superior.name = 'andar-superior';
+    telhado = new THREE.Group();
+    telhado.name = 'telhado';
+    nomes = [];
+    const quartinho = construirQuartinho(casa);
+    telhadoQuartinho = quartinho.getObjectByName('telhado-quartinho') ?? null;
+    estrutura.add(quartinho);
+    estrutura.add(criarTerreno());
+  }
+
   function construir(casa: CasaConfig): void {
+    if (casa.soQuartinho) return construirSoQuartinho(casa);
     const { largura: W, profundidade: D, peDireito: pd, andares } = casa;
     const t = ESPESSURA_PAREDE;
     const hTopo = andares * pd;
@@ -590,6 +604,7 @@ export function criarCasa(): CasaCena {
     estrutura = new THREE.Group();
     estrutura.name = 'estrutura';
     todas = null;
+    encaixes = null;
     grupo.add(estrutura);
     construir(casa);
     aplicarVisao(modo);

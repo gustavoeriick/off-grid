@@ -344,13 +344,15 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     }
     const casa = estado.projeto.casa;
     const s = estado.selecao;
+    // No tutorial só existe o quartinho, e ele fica onde está: não há volume para agarrá-lo nem alças de varanda.
+    const soQuartinho = casa.soQuartinho === true;
 
     // ---- Quartinho: volume de clique e contorno quando está sob o ponteiro ou selecionado.
     const q = casa.quartinho;
     const giro = THREE.MathUtils.degToRad(q.giro);
     const alturaQ = q.altura + 0.75;
-    volume({ tipo: 'quartinho', y: 0 }, q.x, alturaQ / 2, q.z, q.largura + 0.4, alturaQ, q.profundidade + 0.4, giro);
-    const quartinhoAceso = s?.tipo === 'quartinho' || sobre === 'quartinho' || modo.tipo === 'quartinho';
+    if (!soQuartinho) volume({ tipo: 'quartinho', y: 0 }, q.x, alturaQ / 2, q.z, q.largura + 0.4, alturaQ, q.profundidade + 0.4, giro);
+    const quartinhoAceso = !soQuartinho && (s?.tipo === 'quartinho' || sobre === 'quartinho' || modo.tipo === 'quartinho');
     if (quartinhoAceso) {
       // Na altura do telhado: é ele que aparece na vista de cima.
       const g = contorno(s?.tipo === 'quartinho' || modo.tipo === 'quartinho' ? matSelecao : matSobre, q.largura + 0.5, q.profundidade + 0.5, q.altura + 0.3);
@@ -373,8 +375,8 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     }
 
     // ---- Varandas: em cada fachada, o botão de criar ou as alças da borda de fora e das pontas.
-    const medidas = medirVarandas(casa);
-    for (const lado of LADOS) {
+    const medidas = soQuartinho ? [] : medirVarandas(casa);
+    for (const lado of soQuartinho ? [] : LADOS) {
       const m = medidas.find((v) => v.lado === lado);
       if (!m) {
         const [x, z] = paraACasa(casa, lado, 0, 1.7);
@@ -404,7 +406,7 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
 
     // ---- Paredes internas do andar: a selecionada e a que está sob o ponteiro acendem, com as pontas à mostra.
     const { yTeto } = alturasDoAndar(casa, estado.edicaoCasa.andar);
-    for (const p of paredesDoAndar()) {
+    for (const p of soQuartinho ? [] : paredesDoAndar()) {
       const selecionada = s?.tipo === 'parede' && s.uid === p.uid;
       if (!selecionada && sobre !== `parede-${p.uid}`) continue;
       const [d0, d1] = trechoAVista(p);
@@ -889,18 +891,20 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     const casa = estado.projeto.casa;
     // Enquadra a casa, as varandas, os botões de criar varanda e o quartinho.
     const folga = 3.2;
-    let x0 = -casa.largura / 2 - folga;
-    let x1 = casa.largura / 2 + folga;
-    let z0 = -casa.profundidade / 2 - folga;
-    let z1 = casa.profundidade / 2 + folga;
-    for (const v of medirVarandas(casa)) {
+    // No tutorial não há corpo da casa: o enquadramento parte do quartinho.
+    const soQuartinho = casa.soQuartinho === true;
+    let x0 = soQuartinho ? Infinity : -casa.largura / 2 - folga;
+    let x1 = soQuartinho ? -Infinity : casa.largura / 2 + folga;
+    let z0 = soQuartinho ? Infinity : -casa.profundidade / 2 - folga;
+    let z1 = soQuartinho ? -Infinity : casa.profundidade / 2 + folga;
+    for (const v of soQuartinho ? [] : medirVarandas(casa)) {
       x0 = Math.min(x0, v.planta.x0 - 1);
       x1 = Math.max(x1, v.planta.x1 + 1);
       z0 = Math.min(z0, v.planta.z0 - 1);
       z1 = Math.max(z1, v.planta.z1 + 1);
     }
     const q = casa.quartinho;
-    const r = Math.hypot(q.largura, q.profundidade) / 2 + 1;
+    const r = Math.hypot(q.largura, q.profundidade) / 2 + (soQuartinho ? 2.5 : 1);
     x0 = Math.min(x0, q.x - r);
     x1 = Math.max(x1, q.x + r);
     z0 = Math.min(z0, q.z - r);
