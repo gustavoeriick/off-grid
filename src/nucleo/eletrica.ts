@@ -216,7 +216,7 @@ export function estadoInicial(): EstadoSim {
 
 function saidaVazia(estado: EstadoSim, avisos: AvisoPasso[] = [], cargaPedidaW = 0): SaidaPasso {
   return {
-    pvW: 0, pvTensao: 0, cargaPedidaW, cargaAtendidaW: 0, bateriaW: 0, redeW: 0,
+    pvW: 0, pvDisponivelW: 0, pvTensao: 0, cargaPedidaW, cargaAtendidaW: 0, bateriaW: 0, redeW: 0,
     origem: 'nenhuma', estado: { ...estado }, avisos,
   };
 }
@@ -361,6 +361,7 @@ export function passoSimulacao(
 
   return {
     pvW,
+    pvDisponivelW: pvDisp,
     pvTensao: arranjo.v,
     cargaPedidaW: pedidaW,
     cargaAtendidaW,

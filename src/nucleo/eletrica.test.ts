@@ -341,6 +341,18 @@ describe('passoSimulacao: plano corrigido com sol', () => {
     expect(s.estado.soc).toBeGreaterThan(0.5);
   });
 
+  it('rede primeiro com bateria cheia: pvW fica em espera, pvDisponivelW mostra o sol', () => {
+    const p = cenarioPlanoCorrigido();
+    p.prioridade = 'rede';
+    const dia = passoSimulacao(p, CATALOGO, analise, estadoInicial(), entrada({ placas: sol, redeDisponivel: true }));
+    expect(dia.origem).toBe('rede');
+    expect(dia.pvW).toBeLessThan(50);
+    expect(dia.pvDisponivelW).toBeGreaterThan(500);
+    const noite = passoSimulacao(p, CATALOGO, analise, estadoInicial(), entrada({ redeDisponivel: true }));
+    expect(noite.pvDisponivelW).toBe(0);
+    expect(noite.pvW).toBe(0);
+  });
+
   it('com sol e o inversor cortado, nada é atendido e a origem é nenhuma', () => {
     // soc 0,10 < 0,15: o inversor segue cortado; o sol só carrega a bateria.
     const s = passoSimulacao(projeto, CATALOGO, analise, { soc: 0.1, cortado: true, emRede: false }, entrada({ placas: sol }));

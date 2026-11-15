@@ -272,6 +272,8 @@ export type OrigemEnergia = 'rede' | 'bateria' | 'solar' | 'nenhuma';
 export interface SaidaPasso {
   /** Potência das placas aproveitada, em W. */
   pvW: number;
+  /** O que as placas poderiam entregar agora, mesmo que não seja aproveitado, em W. */
+  pvDisponivelW: number;
   pvTensao: number;
   /** Soma da potência média das cargas ligadas, em W. */
   cargaPedidaW: number;

@@ -221,7 +221,7 @@ Passos:
    - `liquido < 0`: `falta = −liquido`. Se `falta / tensaoRef > descargaMaxA`: aviso `'bms'`, nenhuma carga atendida, bateria parada. Senão, a energia disponível é `(soc − socMin) × wh × rendDescarga`. Se ela cobre `falta × dt`, `soc` desce `falta × dt / (wh × rendDescarga)` e as cargas são atendidas. Se não cobre, a bateria vai a `socMin`, `cortado = true`, aviso `'bateria-vazia'`, e as cargas são atendidas só na fração coberta. `origem: 'bateria'`.
 9. `soc` fica entre 0 e 1.
 
-Na `SaidaPasso`, `bateriaW` é positivo quando carrega e negativo quando descarrega.
+Na `SaidaPasso`, `bateriaW` é positivo quando carrega e negativo quando descarrega. `pvDisponivelW` é o que as placas poderiam entregar naquele passo (o `p` de `saidaArranjo`), mesmo que não seja aproveitado, e vale zero sem sistema, sem banco ou sem fileiras.
 
 ## 8. Circuito (`circuito.ts`)
 

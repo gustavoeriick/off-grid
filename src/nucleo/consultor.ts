@@ -445,19 +445,35 @@ export function analisarConsultor(
   }
 
   // Vale para qualquer placa do projeto, mesmo fora de fileira: o aviso é útil antes de puxar o cabo.
+  const placasNaSombra: string[] = [];
+  let maiorPerdaSombra = 0;
   for (const d of projeto.dispositivos) {
     if (catalogo.get(d.itemId)?.categoria !== 'placa') continue;
     const perda = estimativas.perdaSombra.get(d.uid) ?? 0;
     if (perda > 0.2) {
-      sugerir({
-        regra: 'placa-na-sombra',
-        nivel: 'alerta',
-        titulo: `Esta placa perde ${inteiro(perda * 100)}% da geração para a sombra`,
-        texto:
-          'A sombra da casa ou do que está em volta dela cobre a placa em parte do dia. Mude a placa de lugar ou gire a casa para testar outra posição do telhado.',
-        alvos: [d.uid],
-      });
+      placasNaSombra.push(d.uid);
+      maiorPerdaSombra = Math.max(maiorPerdaSombra, perda);
     }
+  }
+  if (placasNaSombra.length === 1) {
+    sugerir({
+      regra: 'placa-na-sombra',
+      nivel: 'alerta',
+      titulo: `Esta placa perde ${inteiro(maiorPerdaSombra * 100)}% da geração para a sombra`,
+      texto:
+        'A sombra da casa ou do que está em volta dela cobre a placa em parte do dia. Mude a placa de lugar ou gire a casa para testar outra posição do telhado.',
+      alvos: placasNaSombra,
+    });
+  } else if (placasNaSombra.length > 1) {
+    sugerir({
+      regra: 'placa-na-sombra',
+      nivel: 'alerta',
+      titulo: `${placasNaSombra.length} placas perdem geração para a sombra`,
+      texto:
+        `A mais afetada perde ${inteiro(maiorPerdaSombra * 100)}%. A sombra da casa ou do que está em volta dela cobre essas placas em parte do dia. ` +
+        'Mude as placas de lugar ou gire a casa para testar outra posição.',
+      alvos: placasNaSombra,
+    });
   }
 
   const problemaDePlaca = analise.problemas.some(
@@ -592,7 +608,9 @@ export function analisarConsultor(
       regra: 'autonomia-curta',
       nivel: 'alerta',
       titulo: `Com o que está ligado, a bateria dura ${horas(autonomia)} horas`,
-      texto: partes.join(' '),
+      texto:
+        partes.join(' ') +
+        ' Essa conta supõe tudo ligado ao mesmo tempo; em uma queda de luz de verdade costuma durar mais, porque nem tudo fica ligado o tempo todo.',
       alvos: bateriasDoBanco,
     };
     if (temRamo && porRamo === 1) s.acao = { tipo: 'mais-bateria', rotulo: 'Acrescentar bateria em paralelo' };

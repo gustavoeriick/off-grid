@@ -145,6 +145,7 @@ describe('consultor: "plano no papel"', () => {
     expect(s.titulo).toBe('Com o que está ligado, a bateria dura 4,1 horas');
     expect(s.texto).toContain('a autonomia vai para 8,2 horas');
     expect(s.texto).toContain('Desligar PC de trabalho do plano (RX 580) sozinho leva a 5,6 horas.');
+    expect(s.texto.endsWith(' Essa conta supõe tudo ligado ao mesmo tempo; em uma queda de luz de verdade costuma durar mais, porque nem tudo fica ligado o tempo todo.')).toBe(true);
     expect(s.acao?.tipo).toBe('mais-bateria');
   });
 
@@ -480,6 +481,21 @@ describe('consultor: regras isoladas', () => {
     expect(regras(aoLimite)).not.toContain('placa-na-sombra');
   });
 
+  it('`placa-na-sombra`: uma só sugestão para várias placas', () => {
+    const projeto = cenarioPlanoCorrigido();
+    const e = analisar(projeto).estimativas;
+    const uids = projeto.dispositivos.filter((d) => CATALOGO.get(d.itemId)?.categoria === 'placa').map((d) => d.uid);
+    expect(uids.length).toBeGreaterThan(1);
+    const perdas = new Map(uids.map((u, i) => [u, i === 0 ? 0.71 : 0.4] as [string, number]));
+    const lista = consultar(projeto, { ...e, perdaSombra: perdas }).filter((s) => s.regra === 'placa-na-sombra');
+    expect(lista).toHaveLength(1);
+    expect(lista[0].titulo).toBe(`${uids.length} placas perdem geração para a sombra`);
+    expect(lista[0].texto).toBe(
+      'A mais afetada perde 71%. A sombra da casa ou do que está em volta dela cobre essas placas em parte do dia. Mude as placas de lugar ou gire a casa para testar outra posição.',
+    );
+    expect([...lista[0].alvos].sort()).toEqual([...uids].sort());
+  });
+
   it('`rede-desligada`: "plano no papel" sem c5', () => {
     const projeto = cenarioPlanoNoPapel();
     projeto.cabos = projeto.cabos.filter((c) => c.uid !== 'c5');
@@ -705,7 +721,8 @@ describe('consultor: banco com mais de uma bateria por ramo', () => {
     // Um ramo a mais soma 100 Ah aos 100 Ah do banco: a autonomia dobra, de 4,0 para 8,0 horas.
     const s = da(consultar(projeto, { ...e, autonomiaHoras: 4 }), 'autonomia-curta');
     expect(s.texto).toBe(
-      'Para atravessar uma noite são umas 12 horas. Com mais um ramo igual, de 2 baterias em série, em paralelo, a autonomia vai para 8,0 horas.',
+      'Para atravessar uma noite são umas 12 horas. Com mais um ramo igual, de 2 baterias em série, em paralelo, a autonomia vai para 8,0 horas.' +
+        ' Essa conta supõe tudo ligado ao mesmo tempo; em uma queda de luz de verdade costuma durar mais, porque nem tudo fica ligado o tempo todo.',
     );
     expect(s.acao).toBeUndefined();
   });
