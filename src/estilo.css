@@ -1862,3 +1862,56 @@ body {
   line-height: 1.2;
   color: var(--suave);
 }
+
+/* ---------------------------------------------------------------- Medidas da casa em coluna estreita
+   O formulário fica encostado à esquerda da cena, em uma coluna só, com rolagem: a casa continua à vista
+   enquanto se mexe nas medidas. */
+.painel-casa {
+  width: 310px;
+}
+
+.colunas-casa {
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.painel-casa fieldset:not(.varandas) {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.painel-casa fieldset:not(.varandas) input[type='number'] {
+  width: 52px;
+}
+
+.painel-casa fieldset.varandas {
+  flex: none;
+  order: 0;
+  gap: 0;
+}
+
+.linha-varanda {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 12px;
+  padding: 4px 0;
+}
+
+.linha-varanda + .linha-varanda {
+  border-top: 1px solid var(--borda);
+}
+
+.linha-varanda label {
+  justify-content: space-between;
+}
+
+.linha-varanda label.tem {
+  justify-content: flex-start;
+  order: -1;
+}
+
+.painel-casa .linha-varanda input[type='number'] {
+  width: 48px;
+}
