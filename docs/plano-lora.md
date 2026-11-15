@@ -1,6 +1,6 @@
 # Plano do simulador de rádio LoRa
 
-**Estado em 15/11/2026:** proposta, aguardando a aprovação do Gustavo. Nenhum código foi escrito.
+**Estado em 15/11/2026:** plano e as seis decisões da seção 4 aprovados pelo Gustavo. Fase L0 (especificação) feita, em [especificacao/lora.md](especificacao/lora.md), aguardando a aprovação dele para começar a fase L1. Nenhum código do simulador foi escrito; existe só o roteiro que calcula os números dos testes.
 
 **Pedido:** separar a simulação de painel solar da de LoRa, em dois ambientes de simulação. No ambiente de LoRa, testar comunicação à distância e saber se no meio do caminho é preciso uma antena ou algo semelhante. A pergunta concreta: dá para falar com os pais, a 20 km, e com o sogro, a 40 km?
 
@@ -34,13 +34,15 @@ Não basta uma linha reta livre entre as antenas. O sinal ocupa um volume em for
 
 Contas: a curva é `d1·d2 / (2·k·R)`, com `k = 4/3` e `R = 6.371 km`; o raio da zona de Fresnel é `17,32·√(d1·d2 / (GHz·d))`, em metros com distâncias em km.
 
-Antena no telhado de um sobrado fica a 6 ou 8 m. Então, **em terreno plano, nem os 20 km fecham direto de telhado a telhado**. A folga de 30 dB da tabela anterior ajuda a atravessar um obstáculo raso, mas não um bairro inteiro de prédios e árvores.
+Antena no telhado de um sobrado fica a 6 ou 8 m, bem abaixo disso. Mas caminho sem a zona livre não é caminho fechado: o sinal contorna o obstáculo e perde força (difração). Pela conta da norma ITU-R P.526, em terreno liso e sem nada em cima, antenas a 8 m perdem cerca de 12 dB a mais em 20 km e 19 dB em 40 km. Sobra folga de uns 24 dB em 20 km e de uns 10 dB em 40 km.
+
+Dois avisos sobre esses números. Primeiro, a conta usada é a parte simples do método e **subestima a perda em caminho liso**, como sobre o mar ou a baía; a correção entra na tarefa L1.4. Segundo, terreno liso e vazio quase não existe: o que derruba o enlace na prática são os prédios, as árvores e os morros do caminho, e a folga de 10 a 24 dB some com um bairro no meio.
 
 ### 1.4 A resposta honesta à pergunta, por enquanto
 
 Sem saber onde ficam as três casas e o relevo entre elas, não dá para afirmar. O que a pesquisa permite dizer:
 
-- **Pais, 20 km:** direto, só se uma das pontas estiver em lugar alto com vista para a outra. O mais provável é precisar de **um repetidor** em um ponto alto que enxergue as duas casas.
+- **Pais, 20 km:** direto, se uma das pontas estiver em lugar alto com vista para a outra, ou se o caminho for aberto (sobre água, por exemplo). Com cidade e morro no meio, o mais provável é precisar de **um repetidor** em um ponto alto que enxergue as duas casas.
 - **Sogro, 40 km:** quase certamente **um ou dois repetidores** em pontos altos.
 - **O relevo do Rio joga dos dois lados:** um maciço entre as casas bloqueia tudo; um morro com vista para as duas resolve com um repetidor só. É exatamente isso que o simulador tem de mostrar.
 - **O limite de saltos não atrapalha:** o Meshtastic repassa a mensagem por 3 rádios por padrão, e por até 7.
@@ -53,7 +55,7 @@ Relatos de uso real, de fóruns e guias (qualidade variável): 1 a 3 km em cidad
 
 - LoRa em 902 a 907,5 MHz e 915 a 928 MHz é equipamento de **radiação restrita**: não precisa de licença de operação, mas o aparelho precisa ser **homologado pela Anatel**, e não tem proteção contra interferência.
 - A regra está no Ato nº 14.448/2017 da Anatel, alterado pelos Atos 4776/2020 e 1306/2021.
-- **Potência:** até 1 W na saída do transmissor, com redução quando a antena tem ganho alto. As fontes divergem sobre a partir de quanto ganho (2 dBi em uma cópia antiga do ato, 6 dBi em fontes mais recentes). **Não consegui ler o texto oficial vigente:** o site da Anatel estava em manutenção. Esse número tem de ser conferido antes de o simulador afirmar qualquer limite.
+- **Potência:** até 1 W na saída do transmissor; com antena de ganho acima de 6 dBi, a potência cai o mesmo tanto que o ganho passar de 6 dBi. Há ainda um limite de densidade (8 dBm em cada 3 kHz), que na prática segura a potência em cerca de 27 dBm no modo padrão. Li isso em uma cópia do ato com data de 2018; o ato foi alterado em 2020 e 2021, e **não consegui ler o texto vigente:** o site da Anatel estava em manutenção até segunda-feira.
 - Um rádio comum transmite com 22 dBm (0,16 W) e antena de 3 a 6 dBi, bem abaixo do limite.
 - **Região no Meshtastic:** a tabela oficial tem `BR_902` (902 a 907,5 MHz) e `ANZ` (915 a 928 MHz), as duas com 30 dBm e sem limite de tempo de transmissão. A comunidade brasileira (MeshBrasil) padronizou a `ANZ`. Rádios em regiões diferentes não se falam.
 
@@ -96,7 +98,7 @@ Fica para depois, se fizer sentido: mapa de cobertura (a mancha de onde o sinal 
 
 | # | Decisão | Minha recomendação |
 |---|---|---|
-| 1 | **Privacidade do relevo.** Para saber a altura do terreno, o simulador precisa consultar um serviço de fora. Um serviço por pontos (Open-Meteo) recebe as coordenadas exatas do caminho entre as casas. Um serviço por blocos de mapa (os mesmos blocos da AWS que o planejador do Meshtastic usa) só revela a região, com dezenas de quilômetros de lado | Blocos de mapa. Preciso confirmar que o endereço deles ainda funciona antes de fechar |
+| 1 | **Privacidade do relevo.** Para saber a altura do terreno, o simulador precisa consultar um serviço de fora. Um serviço por pontos (Open-Meteo) recebe as coordenadas exatas do caminho entre as casas. Um serviço por blocos de mapa (os mesmos blocos da AWS que o planejador do Meshtastic usa) só revela a região | Blocos de mapa. **Aprovado.** O endereço foi conferido e funciona; cada bloco tem cerca de 18 km de lado, e o simulador pede também os vizinhos |
 | 2 | **Mapa de fundo.** Ruas e nomes vêm do OpenStreetMap. Desenhar o mapa pede uma biblioteca nova (Leaflet ou MapLibre), e o projeto hoje não aceita dependência nova sem a sua aprovação | Aprovar o MapLibre, que também serve ao relevo 3D depois |
 | 3 | **Firmware de referência** para os modos do rádio e o limite de saltos | Meshtastic, por ser o da comunidade brasileira. MeshCore como opção depois |
 | 4 | **Modelo de propagação** (a conta de quanto o relevo atrapalha) | Começar com ar livre mais difração em obstáculos (norma ITU-R P.526), que é aberta e explicável. Conferir os resultados contra o planejador do Meshtastic. O modelo ITM fica para depois |
@@ -107,18 +109,21 @@ Fica para depois, se fizer sentido: mapa de cobertura (a mancha de onde o sinal 
 
 Segue o formato do plano principal: o Fable especifica, revisa e faz o que é visual; o Sonnet constrói o cálculo e os painéis contra testes; o Haiku roda as verificações.
 
+As seis decisões da seção 4 foram aprovadas em 15/11/2026, todas como recomendado. Um limite de privacidade apareceu na fase L0 e não tem como evitar: o serviço que desenha o mapa de fundo (OpenStreetMap) fica sabendo a área que está na tela, e com zoom alto essa área é pequena. Os pontos e o projeto nunca saem do navegador.
+
 ### Fase L0: especificação
 
-- [ ] **L0.1 Especificação do núcleo de rádio.** Fórmulas, constantes com a fonte de cada uma, tabela dos modos do Meshtastic e casos de teste com os números esperados. Fable.
-- [ ] **L0.2 Conferir a regra da Anatel no texto oficial** e registrar o limite de potência e a regra do ganho de antena. Fable.
-- [ ] **L0.3 Conferir os serviços de relevo e de mapa:** endereço, formato, limite de uso, se o navegador consegue acessar. Fable.
-- [ ] **L0.4 Especificação da tela.** Fable.
+- [x] **L0.1 Especificação do núcleo de rádio.** Fórmulas, constantes com a fonte de cada uma, tabela dos modos do Meshtastic e casos de teste com os números esperados. Fable.
+- [ ] **L0.2 Conferir a regra da Anatel no texto oficial** e registrar o limite de potência e a regra do ganho de antena. Fable. Feito pela metade: li o item 10 em uma cópia de 2018; falta o texto vigente, com o site da Anatel fora do ar até 17/11/2026.
+- [x] **L0.3 Conferir os serviços de relevo e de mapa:** endereço, formato, limite de uso, se o navegador consegue acessar. Fable.
+- [x] **L0.4 Especificação da tela.** Fable.
 
 ### Fase L1: cálculo e relevo
 
 - [ ] **L1.1 Núcleo de rádio:** perda no ar livre, curva da Terra, zona de Fresnel, difração em obstáculos, conta do enlace e veredito. `nucleo` (Sonnet).
 - [ ] **L1.2 Relevo:** baixar e guardar os blocos, altura de um ponto e perfil entre dois pontos. `nucleo` (Sonnet).
 - [ ] **L1.3 Página `lora.html`, seletor de ambiente e projetos de LoRa.** Coordenador.
+- [ ] **L1.4 Correção de Terra esférica** (ITU-R P.526, § 4.5.2 e § 3.2), para a perda em caminho liso (mar, baía, planície) não sair subestimada. As equações têm de ser lidas nas páginas da norma, não no texto extraído, e conferidas contra uma implementação aberta. Fable.
 
 ### Fase L2: mapa e enlace (primeira versão utilizável)
 
