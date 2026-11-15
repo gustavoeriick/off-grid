@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOGO } from '../catalogo';
+import { criarArrumador, type ResultadoDeArrumar } from './arrumar';
 import { acoes, assinar, type Encaixe, estado, recalcularAgora, registrarAmbiente } from '../estado';
 import { localDoProjeto } from '../nucleo/irradiancia';
 import { type CamadaDeCabos, criarCamadaDeCabos } from './cabos';
@@ -34,6 +35,7 @@ export type { CamadaDeDispositivos, PassagemPeloQuadro, TerminalNaCasa } from '.
 export { alturaDeApoio, dimensoesDe, encaixar, encaixarNoToque, normalizarGiro, superficieAceita } from './encaixe';
 export { CAMADA_SO_SOMBRA } from './malha';
 export type { DestaqueNaCena } from './destaques';
+export type { ResultadoDeArrumar } from './arrumar';
 
 export interface OffgridGlobal {
   pronto: boolean;
@@ -89,6 +91,15 @@ export interface OffgridGlobal {
    * `{ tipo: 'superficie', id }`, `{ tipo: 'terminal', id: '{disp}:{terminal}', disp, terminal }` ou `{ tipo: 'cabo', id: uid, uid }`.
    */
   destaquesNaCena?: () => DestaqueNaCena[];
+  /**
+   * "Arrumar os cabos": põe os grampos sozinho, com cada cabo rente às superfícies (cena-e-interface.md, seção 8).
+   * Um passo só de desfazer. Devolve quantos cabos foram arrumados e os que ficaram sem caminho pelas superfícies.
+   */
+  arrumarCabos?: () => ResultadoDeArrumar;
+  /** "Soltar os cabos": tira os grampos de todos os cabos, em um passo só de desfazer. Devolve quantos cabos foram soltos. */
+  soltarCabos?: () => number;
+  /** Auxiliar de verificação: as medidas da cena (faces, caixas das peças, telhados) que a conta do trajeto dos cabos recebe. */
+  mundoDosCabos?: () => import('./trajeto').Mundo;
 }
 
 declare global {
@@ -213,6 +224,7 @@ export function criarCena(container: HTMLElement): Cena {
   const dispositivos = criarCamadaDeDispositivos(casa.grupo);
   const cabos = criarCamadaDeCabos(casa.grupo, dispositivos);
   const lugares = criarLugares(casa.grupo, () => casa.todasAsSuperficies());
+  const arrumador = criarArrumador(casa.grupo, dispositivos, lugares);
 
   /**
    * Leva o estado do projeto para a cena: coloca as peças que chegaram sem posição, refaz os dispositivos e os cabos
@@ -584,6 +596,9 @@ export function criarCena(container: HTMLElement): Cena {
     telaDaAlca: (id) => edicao.telaDaAlca(id),
     camera: () => ({ pos: camera.position.toArray(), alvo: controles.target.toArray() }),
     destaquesNaCena: () => camadaDeDestaques.naCena(),
+    arrumarCabos: () => arrumador.arrumar(),
+    soltarCabos: () => arrumador.soltar(),
+    mundoDosCabos: () => arrumador.medir(),
     recalcular: recalcularAgora,
     ambiente: () => sombra.ambiente,
     resumoDaSombra: () => sombra.resumo(),
