@@ -12,6 +12,8 @@ import type { Dispositivo } from '../nucleo/tipos';
 import { encaixar, superficieAceita } from './encaixe';
 import type { Marca, TipoSuperficie } from './malha';
 import { modeloDe } from './modelos';
+import { type Pegada, terrenoLivre } from './regrasDosObstaculos';
+import { aceitaNoTerreno, encaixarNoTerreno, ID_TERRENO, inclinacaoPadrao, pegadaDaPlacaNoChao } from './terreno';
 
 /** Folga entre placas vizinhas. */
 export const FOLGA_ENTRE_PLACAS = 0.02;
@@ -58,6 +60,8 @@ export interface OpcoesDeAssento {
   pecas?: readonly Dispositivo[];
   /** Prende a placa à grade das vizinhas (ou à do centro da água). */
   prender?: boolean;
+  /** Placa no terreno: inclinação do suporte, em graus. O padrão é a latitude do local. Nela, `giro` é o ângulo em torno da vertical. */
+  inclinacao?: number;
 }
 
 export interface OpcoesDaBusca extends OpcoesDeAssento {
@@ -100,7 +104,9 @@ export interface Lugares {
    */
   lugarEmOutraAgua(item: Item, giro: number, centro: THREE.Vector3, fora: string | null, opcoes?: OpcoesDeAssento): Encaixe | null;
   /** Medida da peça ao longo de u e de v, com o giro dado. */
-  medida(item: Item, giro: number, q: Quadro): [u: number, v: number];
+  medida(item: Item, giro: number, q: Quadro, opcoes?: OpcoesDeAssento): [u: number, v: number];
+  /** Peça no terreno que ficou em cima da casa, de uma varanda, do quartinho ou de um obstáculo. */
+  terrenoOcupado(item: Item, encaixe: Encaixe): boolean;
   /** `uid` de uma peça da mesma superfície que a caixa desta cruzaria. Nulo se não cruza. */
   vizinhaCruzada(item: Item, encaixe: Encaixe, opcoes?: OpcoesDeAssento): string | null;
   /** Ids das superfícies de um tipo, com as que o modo de visão esconde. */
@@ -372,16 +378,38 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
     return null;
   }
 
-  function medida(item: Item, giro: number, q: Quadro): [number, number] {
-    const e = encaixar(item, q.marca, noPlano(q, 0, 0), q.n, giro);
+  /** Encaixe no ponto dado do quadro: a placa no terreno vai sobre o suporte inclinado; o resto segue a regra da superfície. */
+  function encaixarNo(item: Item, q: Quadro, ponto: THREE.Vector3, giro: number, opcoes: OpcoesDeAssento): Encaixe {
+    if (q.marca.id === ID_TERRENO && item.categoria === 'placa') return encaixarNoTerreno(item, ponto, giro, opcoes.inclinacao ?? inclinacaoPadrao(estado.projeto));
+    // `inclinacaoGraus` vai sem valor para apagar o da placa que saiu do terreno.
+    return { ...encaixar(item, q.marca, ponto, q.n, giro), inclinacaoGraus: undefined };
+  }
+
+  /** Chão que a peça ocupa no terreno. */
+  function pegadaNoTerreno(item: Item, e: Encaixe): Pegada {
+    if (item.categoria === 'placa') return pegadaDaPlacaNoChao(item, e);
+    const caixa = caixaDe(item);
+    const t = caixa ? caixa.getSize(new THREE.Vector3()) : new THREE.Vector3();
+    return { x: e.pos[0], z: e.pos[2], largura: t.x, profundidade: t.z, giro: e.giro };
+  }
+
+  function terrenoOcupado(item: Item, e: Encaixe): boolean {
+    return !terrenoLivre(estado.projeto, pegadaNoTerreno(item, e));
+  }
+
+  function medida(item: Item, giro: number, q: Quadro, opcoes: OpcoesDeAssento = {}): [number, number] {
+    const e = encaixarNo(item, q, noPlano(q, 0, 0), giro, opcoes);
     const [a0, a1, b0, b1] = pegada(item, quatDe(e), q);
     return [a1 - a0, b1 - b0];
   }
 
   function assentar(item: Item, giro: number, q: Quadro, pu: number, pv: number, opcoes: OpcoesDeAssento = {}): Candidato {
-    const aceita = superficieAceita(item) === q.marca.tipo;
-    let e = encaixar(item, q.marca, noPlano(q, pu, pv), q.n, giro);
+    const terreno = q.marca.id === ID_TERRENO;
+    const aceita = terreno ? aceitaNoTerreno(item) : superficieAceita(item) === q.marca.tipo;
+    let e = encaixarNo(item, q, noPlano(q, pu, pv), giro, opcoes);
     if (!aceita) {
+      if (terreno) return { encaixe: e, valido: false, motivo: 'No terreno só ficam placas (sobre suporte) e estação portátil. Leve esta peça para dentro da casa ou do quartinho.' };
+      if (item.categoria === 'placa') return { encaixe: e, valido: false, motivo: 'Placa fica em um telhado ou no terreno, sobre suporte.' };
       const onde = superficieAceita(item);
       // Com a casa inteira à vista, o telhado tapa os pisos e as paredes de dentro: a dica diz como chegar neles.
       const tapado = q.marca.tipo === 'telhado' && estado.visao === 'completa' ? ' Para ver dentro da casa, troque a visão para "Sem telhado".' : '';
@@ -389,7 +417,7 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
     }
     const [a0, a1, b0, b1] = pegada(item, quatDe(e), q);
 
-    if (item.categoria === 'placa' && opcoes.prender) {
+    if (item.categoria === 'placa' && opcoes.prender && !terreno) {
       // Grade alinhada à água: parte da placa vizinha mais próxima de mesma medida; sem vizinha, do centro da água.
       const passoU = a1 - a0 + FOLGA_ENTRE_PLACAS;
       const passoV = b1 - b0 + FOLGA_ENTRE_PLACAS;
@@ -422,7 +450,7 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
     pu = cortar(pu, q.u0 - a0, q.u1 - a1);
     pv = cortar(pv, q.v0 - b0, q.v1 - b1);
     const ponto = noPlano(q, pu, pv);
-    e = encaixar(item, q.marca, ponto, q.n, giro);
+    e = encaixarNo(item, q, ponto, giro, opcoes);
 
     // Encostar na parede: a peça para na face dela em vez de entrar.
     let atravessa: THREE.Vector3 | null = null;
@@ -431,16 +459,17 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
         atravessa = paredeCruzada(item, e);
         if (!atravessa) break;
         ponto.add(atravessa);
-        e = encaixar(item, q.marca, ponto, q.n, giro);
+        e = encaixarNo(item, q, ponto, giro, opcoes);
       }
       if (atravessa) atravessa = paredeCruzada(item, e);
     }
 
     let motivo: string | null = null;
     if (atravessa) motivo = 'Atravessa uma parede';
+    else if (terreno && terrenoOcupado(item, e)) motivo = 'Aqui não dá: fica em cima da casa, da varanda, do quartinho, de um muro, do vizinho ou do tronco de uma árvore';
     else if (vizinhaCruzada(item, e, opcoes)) motivo = item.categoria === 'placa' ? 'Fica em cima de outra placa (deixe 2 cm de folga)' : 'Já tem uma peça neste lugar';
     else if (!cabe(item, e, q)) {
-      motivo = q.marca.tipo === 'telhado' ? 'Passa da borda do telhado' : q.marca.tipo === 'parede' ? 'Não cabe aqui: tem porta, janela ou o fim da parede' : 'Passa da borda do piso';
+      motivo = q.marca.tipo === 'telhado' ? 'Passa da borda do telhado' : q.marca.tipo === 'parede' ? 'Não cabe aqui: tem porta, janela ou o fim da parede' : terreno ? 'Longe demais da casa' : 'Passa da borda do piso';
     }
     return { encaixe: limpo(e), valido: motivo === null, motivo };
   }
@@ -453,9 +482,9 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
   }
 
   function lugarLivre(item: Item, giro: number, q: Quadro, pu: number, pv: number, opcoes: OpcoesDaBusca = {}): Encaixe | null {
-    const [l, a] = medida(item, giro, q);
+    const [l, a] = medida(item, giro, q, opcoes);
     const placa = item.categoria === 'placa';
-    const [passoU, passoV] = opcoes.passo ?? (placa ? [l + FOLGA_ENTRE_PLACAS, a + FOLGA_ENTRE_PLACAS] : [0.1, 0.1]);
+    const [passoU, passoV] = opcoes.passo ?? (placa ? [l + FOLGA_ENTRE_PLACAS, a + FOLGA_ENTRE_PLACAS] : q.marca.id === ID_TERRENO ? [0.25, 0.25] : [0.1, 0.1]);
     const nu = Math.min(40, Math.ceil((q.u1 - q.u0) / passoU) + 1);
     const nv = Math.min(40, Math.ceil((q.v1 - q.v0) / passoV) + 1);
     const casas: [number, number, number][] = [];
@@ -557,6 +586,7 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
     lugarLivre,
     lugarEmOutraAgua,
     medida,
+    terrenoOcupado,
     vizinhaCruzada,
     idsDoTipo,
   };

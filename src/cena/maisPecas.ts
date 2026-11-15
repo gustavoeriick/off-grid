@@ -91,9 +91,10 @@ export function acrescentarPlaca(lugares: Lugares, cabos: CamadaDeCabos): Result
   let encaixe: Encaixe | null = null;
   const q = lugares.quadroDaPeca(ultima);
   const centro = new THREE.Vector3(...ultima.pos);
-  if (q) encaixe = lugares.lugarLivre(item, ultima.giro, q, centro.dot(q.u), centro.dot(q.v), { pularOrigem: true });
+  // Ao lado de uma placa no terreno, a nova fica sobre suporte com a mesma inclinação e a mesma direção.
+  if (q) encaixe = lugares.lugarLivre(item, ultima.giro, q, centro.dot(q.u), centro.dot(q.v), { pularOrigem: true, ...(ultima.inclinacaoGraus === undefined ? {} : { inclinacao: ultima.inclinacaoGraus }) });
   encaixe ??= lugares.lugarEmOutraAgua(item, ultima.giro, centro, ultima.superficie);
-  if (!encaixe) return { uid: null, motivo: 'Não há lugar livre no telhado para mais uma placa deste tamanho.' };
+  if (!encaixe) return { uid: null, motivo: 'Não há lugar livre para mais uma placa deste tamanho.' };
 
   // ---- Projeto novo.
   const projeto = structuredClone(atual);

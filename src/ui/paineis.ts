@@ -6,6 +6,8 @@ import { acoes, assinar, estado } from '../estado';
 import { comodoDe } from '../nucleo/comodos';
 import type { Acao, GrupoOrcamento, Nivel, Sugestao } from '../nucleo/tipos';
 import { abrirCatalogo } from './catalogo';
+import { blocoPorQue } from './aprender';
+import { rodapeDeLimite } from './avisos';
 import { brl, dataBr, el, h, num, substituir } from './formato';
 
 const NIVEIS: Record<Nivel, string> = { erro: 'Erro', alerta: 'Alerta', dica: 'Dica' };
@@ -54,6 +56,8 @@ function cartaoDeSugestao(s: Sugestao): HTMLElement {
     });
     c.append(b);
   }
+  const porque = blocoPorQue(s.regra);
+  if (porque) c.append(...porque);
   return c;
 }
 
@@ -115,6 +119,7 @@ function desenharOrcamento(): void {
       ? [h('p', { class: 'detalhe' }, datas[0] === datas[datas.length - 1] ? `Preços coletados em ${dataBr(datas[0])}.` : `Preços coletados entre ${dataBr(datas[0])} e ${dataBr(datas[datas.length - 1])}.`)]
       : []),
     h('p', { class: 'detalhe' }, 'Preços mudam: confira o anúncio antes de comprar.'),
+    rodapeDeLimite(),
   );
   substituir(el('#painel-orcamento'), nos);
 }
@@ -152,8 +157,7 @@ function desenharSistema(): void {
       ),
     );
   }
-  nos.push(h('p', { class: 'detalhe' }, 'Os mostradores ao vivo da bateria e da rede chegam na fase 3.'));
-  substituir(el('#painel-sistema'), nos);
+  substituir(el('#sistema-estimativas'), nos);
 }
 
 export function montarPaineis(): void {

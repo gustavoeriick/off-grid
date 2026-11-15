@@ -792,3 +792,507 @@ button:disabled {
 .modelo-do-item select {
   max-width: 100%;
 }
+
+/* ---------------------------------------------------------------- Editar casa: recado da faixa, painéis e nome do cômodo */
+
+.faixa-edicao.recado {
+  background: #e3f2fd;
+  border-color: #90caf9;
+  color: #0d47a1;
+  font-weight: 600;
+}
+
+.campos-casa {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  margin: 6px 0;
+}
+
+.campo-casa {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--suave);
+}
+
+.campo-casa input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.campo-comodo {
+  position: absolute;
+  z-index: 3;
+  width: 280px;
+  padding: 10px 12px;
+  background: var(--painel);
+  border: 1px solid var(--destaque);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.campo-comodo label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.campo-comodo .linha-comodo {
+  display: flex;
+  gap: 6px;
+}
+
+.campo-comodo .linha-comodo input {
+  flex: 1;
+  min-width: 0;
+}
+
+.campo-comodo button.principal {
+  background: var(--destaque);
+  border-color: var(--destaque);
+  color: #fff;
+}
+
+.campo-comodo .sugestoes-comodo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 4px;
+}
+
+.campo-comodo .sugestoes-comodo button {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.campo-comodo .detalhe {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--suave);
+}
+
+/* ---------------------------------------------------------------- Mostradores, queda de luz, gráfico, glossário e segurança (tarefas 3.5, 4.2 e 4.3) */
+
+#mostradores {
+  position: sticky;
+  top: -12px;
+  z-index: 2;
+  margin: -12px -12px 10px;
+  padding: 10px 12px 8px;
+  background: var(--painel);
+  border-bottom: 1px solid var(--borda);
+}
+
+.m-grade {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.mostrador {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.m-rotulo {
+  font-size: 11px;
+  color: var(--suave);
+}
+
+.m-valor {
+  font-size: 16px;
+}
+
+.m-nota {
+  font-size: 11px;
+  color: var(--suave);
+}
+
+.mostrador.desligado .m-valor,
+.mostrador[data-estado='queda'] .m-valor {
+  color: #c62828;
+}
+
+.mostrador[data-estado='solta'] .m-valor {
+  color: #ef6c00;
+  font-size: 13px;
+}
+
+.barra {
+  display: block;
+  height: 8px;
+  margin: 2px 0;
+  background: #e6eaee;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.barra-cheia {
+  display: block;
+  height: 100%;
+  background: #2e7d32;
+  transition: width 0.15s linear;
+}
+
+#m-bateria[data-cor='amarela'] .barra-cheia {
+  background: #f9a825;
+}
+
+#m-bateria[data-cor='vermelha'] .barra-cheia {
+  background: #c62828;
+}
+
+#m-bateria[data-cor='vermelha'] .m-valor {
+  color: #c62828;
+}
+
+.m-origem {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.m-avisos {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.m-avisos li {
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #fff3e0;
+  border-left: 3px solid #ef6c00;
+  border-radius: 3px;
+}
+
+#botao-queda.queda-ativa {
+  background: #c62828;
+  border-color: #c62828;
+  color: #fff;
+}
+
+.faixa-queda {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  max-width: min(42rem, calc(100% - 24px));
+  margin: 0;
+  padding: 8px 14px;
+  background: #c62828;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+#faixa-edicao:not([hidden]) ~ .faixa-queda {
+  top: 64px;
+}
+
+/* Gráfico da bateria e controles do sistema */
+
+.caixa-grafico {
+  width: 100%;
+}
+
+#grafico-bateria {
+  display: block;
+  width: 100%;
+}
+
+.legenda-grafico {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 4px 0 10px;
+  font-size: 11px;
+  color: var(--suave);
+}
+
+.legenda-grafico span::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.legenda-grafico .l-bateria::before { background: #1b7f3b; }
+.legenda-grafico .l-geracao::before { background: rgba(239, 160, 0, 0.5); }
+.legenda-grafico .l-consumo::before { background: rgba(21, 101, 192, 0.45); }
+.legenda-grafico .l-queda::before { background: rgba(198, 40, 40, 0.25); }
+.legenda-grafico .l-minimo::before { background: none; border-top: 2px dashed #c62828; border-radius: 0; height: 0; }
+
+#painel-sistema .detalhe {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: var(--suave);
+}
+
+/* "Por quê?" no consultor */
+
+.porque-botao {
+  margin: 6px 6px 0 0;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.porque-texto {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: #f4f6f8;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.porque-texto p {
+  margin: 0 0 6px;
+}
+
+.veja-tambem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--suave);
+}
+
+.etiqueta-termo {
+  padding: 1px 8px;
+  font-size: 12px;
+  border-radius: 12px;
+  color: var(--destaque);
+  border-color: var(--destaque);
+  background: #fff;
+}
+
+/* Painéis sobrepostos: glossário e segurança */
+
+.painel-sobreposto {
+  position: fixed;
+  z-index: 20;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(44rem, calc(100vw - 32px));
+  max-height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.painel-sobreposto[hidden] {
+  display: none;
+}
+
+.sobreposto-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--borda);
+}
+
+.sobreposto-titulo h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.sobreposto-topo {
+  padding: 8px 14px 0;
+}
+
+.sobreposto-topo:empty {
+  display: none;
+}
+
+.sobreposto-topo input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+}
+
+.sobreposto-corpo {
+  padding: 8px 14px 14px;
+  overflow-y: auto;
+}
+
+.termo {
+  border-bottom: 1px solid var(--borda);
+  padding: 4px 0;
+}
+
+.termo[hidden] {
+  display: none;
+}
+
+.termo-titulo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  gap: 2px;
+  padding: 4px 0;
+  text-align: left;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.termo-curto {
+  font-size: 12px;
+  color: var(--suave);
+}
+
+.termo-detalhe {
+  padding: 2px 0 6px;
+}
+
+.termo-detalhe p {
+  margin: 0 0 6px;
+}
+
+.tema-seguranca h4 {
+  margin: 14px 0 4px;
+  font-size: 14px;
+}
+
+.aviso-lista {
+  margin: 6px 0;
+  padding: 8px 10px;
+  background: #fff8e1;
+  border-left: 4px solid #ef6c00;
+  border-radius: 4px;
+}
+
+.aviso-lista h5 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.aviso-lista p {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Avisos de segurança no momento certo */
+
+#avisos-seguranca {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.aviso-seguranca {
+  pointer-events: auto;
+  padding: 8px 12px 10px;
+  background: #fff8e1;
+  border: 1px solid #f0c36d;
+  border-left: 4px solid #ef6c00;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.aviso-seguranca h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.aviso-seguranca p {
+  margin: 0 0 6px;
+}
+
+.aviso-seguranca .aviso-selo {
+  margin: 0 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #ef6c00;
+}
+
+.limite-simulador {
+  position: sticky;
+  bottom: -12px;
+  margin: 12px -12px -12px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #5d4300;
+  background: #fff8e1;
+  border-top: 1px solid #f0c36d;
+}
+
+/* O aviso no canto não captura o ponteiro: só o botão "Entendi" responde. */
+.aviso-seguranca {
+  pointer-events: none;
+}
+
+.aviso-seguranca .entendi {
+  pointer-events: auto;
+}
+
+/* ---------------------------------------------------------------- Obstáculos que fazem sombra e placa no chão (tarefas 5.2 e 5.3) */
+
+.barra-obstaculos {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+
+.barra-obstaculos[hidden] {
+  display: none;
+}
+
+.barra-obstaculos span {
+  color: var(--suave);
+}
+
+.sombra-da-placa {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.sombra-da-placa.sombra-alta {
+  color: #b3541e;
+  font-weight: 600;
+}

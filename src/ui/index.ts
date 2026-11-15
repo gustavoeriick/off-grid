@@ -4,11 +4,17 @@
 import { acoes, assinar, estado, type ModoVisao } from '../estado';
 import { localPorId } from '../nucleo/irradiancia';
 import type { CasaConfig, Clima, Varanda } from '../nucleo/tipos';
+import { montarGlossario } from './aprender';
+import { montarAvisos, reiniciarAvisosVistos } from './avisos';
 import { montarCatalogo } from './catalogo';
+import { montarCampoDoComodo } from './comodos';
+import { montarGrafico } from './grafico';
+import { montarMostradores } from './mostradores';
+import { montarBarraDeObstaculos } from './obstaculos';
 import { montarPaineis } from './paineis';
 import { montarSelecionado } from './selecionado';
 import { montarTopo } from './topo';
-import { LADOS, LIMITES_VARANDA, avisoDoQuartinho, deslocamentoMaximo, inclinacaoMaxima, limitarVaranda, limitarVarandas, medidaDaFachada, novaVaranda, profundidadeMaxima } from './varandas';
+import { LADOS, LIMITES_VARANDA, avisoDoQuartinho, deslocamentoMaximo, inclinacaoMaxima, limitarVaranda, limitarVarandas, medidaDaFachada, novaVaranda, profundidadeMaxima } from '../cena/regrasDaCasa';
 
 const MS_HORA = 3_600_000;
 const MS_DIA = 24 * MS_HORA;
@@ -63,7 +69,21 @@ export function montarInterface(): void {
   montarSelecionado();
   montarPaineis();
   montarTopo();
+  montarCampoDoComodo();
   montarAvancoDoTempo();
+  montarMostradores();
+  montarGrafico();
+  montarGlossario();
+  montarAvisos();
+  montarBarraDeObstaculos();
+  registrarAuxiliaresDeVerificacao();
+}
+
+/** Acrescenta ao `window.__offgrid`, que a cena cria, o que o roteiro de verificação usa para os avisos. */
+function registrarAuxiliaresDeVerificacao(): void {
+  const w = window as unknown as { __offgrid?: Record<string, unknown> };
+  if (w.__offgrid) w.__offgrid.reiniciarAvisosVistos = reiniciarAvisosVistos;
+  else requestAnimationFrame(registrarAuxiliaresDeVerificacao);
 }
 
 // ---------------------------------------------------------------- Modo de visão
@@ -131,10 +151,11 @@ function montarAvancoDoTempo(): void {
     anterior = agora;
     const v = estado.tempo.velocidade;
     if (v > 0 && dt > 0) {
-      let novo = estado.tempo.msUtc + v * 60_000 * dt;
+      // Avança simulando: geração, consumo e bateria andam junto com o relógio.
+      acoes.avancarTempo(v * dt);
       // Passou do fim de 2026: volta ao começo do ano.
-      if (novo >= FIM_ANO_MS) novo = INICIO_ANO_MS + ((novo - FIM_ANO_MS) % MS_DIA);
-      acoes.definirTempo(novo);
+      const agoraMs = estado.tempo.msUtc;
+      if (agoraMs >= FIM_ANO_MS) acoes.definirTempo(INICIO_ANO_MS + ((agoraMs - FIM_ANO_MS) % MS_DIA));
     }
     requestAnimationFrame(passo);
   };

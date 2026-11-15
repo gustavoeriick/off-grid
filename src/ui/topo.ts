@@ -64,11 +64,39 @@ export function montarTopo(): void {
   botao.addEventListener('click', () => acoes.definirEdicaoDaCasa(!estado.edicaoCasa.ativa));
   andares.forEach((b) => b.addEventListener('click', () => acoes.definirEdicaoDaCasa(true, Number(b.dataset.andar) as 0 | 1)));
 
+  // A faixa explica o modo em uma frase; um recado da cena (cômodos que se juntaram) toma o lugar dela por alguns segundos.
+  const instrucao = faixa.textContent ?? '';
+  let esperaDoRecado: ReturnType<typeof setTimeout> | null = null;
+  const mostrarInstrucao = (): void => {
+    if (esperaDoRecado) clearTimeout(esperaDoRecado);
+    esperaDoRecado = null;
+    faixa.textContent = instrucao;
+    faixa.classList.remove('recado');
+  };
+  window.addEventListener('offgrid:aviso-edicao', (e) => {
+    const texto = (e as CustomEvent<{ texto: string }>).detail?.texto;
+    if (!texto) return;
+    if (esperaDoRecado) clearTimeout(esperaDoRecado);
+    faixa.textContent = texto;
+    faixa.classList.add('recado');
+    esperaDoRecado = setTimeout(mostrarInstrucao, 9000);
+  });
+
+  // Uma mudança seguinte na casa (outra edição, um desfazer) deixa o recado velho: volta a instrução.
+  // O recado chega depois do aviso da mudança que o causou, então não é apagado por ela.
+  assinar('casa', () => {
+    if (esperaDoRecado) mostrarInstrucao();
+  });
+
+  let ativaAntes = false;
   const desenhar = (): void => {
     const { ativa, andar } = estado.edicaoCasa;
     // Casa de um andar não tem "Superior": volta ao térreo.
     if (ativa && andar === 1 && estado.projeto.casa.andares < 2) return acoes.definirEdicaoDaCasa(true, 0);
+    if (ativa !== ativaAntes) mostrarInstrucao();
+    ativaAntes = ativa;
     botao.setAttribute('aria-pressed', String(ativa));
+    botao.textContent = ativa ? 'Sair da edição' : 'Editar casa';
     faixa.hidden = !ativa;
     seletor.hidden = !ativa || estado.projeto.casa.andares < 2;
     andares.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.andar) === andar)));

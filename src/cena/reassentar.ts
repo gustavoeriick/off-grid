@@ -10,6 +10,7 @@ import { type Encaixe, estado } from '../estado';
 import type { Dispositivo } from '../nucleo/tipos';
 import { colocarIniciais } from './colocacao';
 import type { Lugares } from './lugares';
+import { ID_TERRENO } from './terreno';
 
 /** Lugar de uma peça dentro da superfície dela, em metros. */
 interface Lembranca {
@@ -73,6 +74,14 @@ export function reassentar(lugares: Lugares, memoria: Memoria): Map<string, Enca
     }
     const u = (q.u0 + q.u1) / 2 + m.du;
     const v = q.marca.tipo === 'parede' ? q.v0 + m.dvDoPe : (q.v0 + q.v1) / 2 + m.dvDoMeio;
+    if (m.superficie === ID_TERRENO) {
+      // Peça no terreno não acompanha a casa: só sai do lugar se a casa, uma varanda, o quartinho ou um obstáculo veio para cima dela.
+      const aqui: Encaixe = { pos: d.pos, quat: d.quat, superficie: ID_TERRENO, giro: d.giro, inclinacaoGraus: d.inclinacaoGraus };
+      if (!lugares.terrenoOcupado(item, aqui)) continue;
+      const livre = lugares.lugarLivre(item, d.giro, q, u, v, { ignorar: new Set([d.uid]), pecas: atuais, inclinacao: d.inclinacaoGraus, passo: [0.25, 0.25] });
+      if (livre) fixar(d, livre);
+      continue;
+    }
     const c = lugares.assentar(item, d.giro, q, u, v, { ignorar: 'todas' });
     // O que não cabe (vão de janela, parede no caminho) procura o lugar válido mais perto; sem lugar, fica cortado para a borda.
     let encaixe = c.valido ? c.encaixe : lugares.lugarLivre(item, d.giro, q, u, v, { ignorar: 'todas' });
@@ -110,7 +119,7 @@ export function reassentar(lugares: Lugares, memoria: Memoria): Map<string, Enca
   const vistas = new Set<string>();
   for (const d of atuais) {
     const item = CATALOGO.get(d.itemId);
-    if (item?.categoria !== 'placa' || d.superficie === null) continue;
+    if (item?.categoria !== 'placa' || d.superficie === null || d.superficie === ID_TERRENO) continue;
     const q = lugares.quadroDaPeca(d);
     if (q) {
       const outras = atuais.filter((x) => vistas.has(x.uid));

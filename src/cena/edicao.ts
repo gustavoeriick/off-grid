@@ -1,5 +1,6 @@
-// Modo "Editar casa": mover o quartinho, criar e esticar varandas, desenhar paredes internas e dar nome aos cômodos,
-// tudo com o ponteiro. Especificação: docs/especificacao/fase-2.md, seção 4. Tarefas 2.6 e 2.7b.
+// Modo "Editar casa": mover o quartinho, criar e esticar varandas, desenhar paredes internas, dar nome aos cômodos
+// e mover os obstáculos que fazem sombra (muro, vizinho, árvore), tudo com o ponteiro.
+// Especificação: docs/especificacao/fase-2.md, seção 4. Tarefas 2.6, 2.7b e 5.2.
 //
 // Só responde com `estado.edicaoCasa.ativa`; fora do modo, quem trata o ponteiro é interacao.ts.
 // A cena não muda o projeto direto: tudo aqui termina em uma ação de `src/estado.ts`.
@@ -11,7 +12,7 @@
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { acoes, assinar, estado, type ModoVisao } from '../estado';
-import type { CasaConfig, LadoCasa, ParedeInterna, Varanda } from '../nucleo/tipos';
+import type { CasaConfig, LadoCasa, Obstaculo, ParedeInterna, Varanda } from '../nucleo/tipos';
 import type { CamadaDeCabos } from './cabos';
 import { alturasDoAndar, vaoDaEscada } from './casa';
 import type { Marca } from './malha';
@@ -19,6 +20,7 @@ import {
   alternarPassagem, atravessa, avisoDoQuartinho, comprimentoDaParede, distanciaDaParede, LADOS, LARGURA_DA_PASSAGEM, limparComodos, naPlanta, novaVaranda,
   paralelaAX, paredeEntre, paredeEsticada, paredeMovida, type Ponto, quartinhoEm, varandaComPonta, varandaComProfundidade, varandaSobreOQuartinho,
 } from './regrasDaCasa';
+import { NOME_DO_OBSTACULO, obstaculoEm, obstaculoLivre } from './regrasDosObstaculos';
 import { medirVarandas, naFachada, paraACasa } from './varanda';
 
 export interface PartesDaEdicao {
@@ -47,6 +49,7 @@ type Alvo =
   | { tipo: 'alca-ponta'; lado: LadoCasa; ponta: -1 | 1; y: number }
   | { tipo: 'varanda'; lado: LadoCasa }
   | { tipo: 'quartinho'; y: number }
+  | { tipo: 'obstaculo'; uid: string; y: number }
   | { tipo: 'ponta-parede'; uid: string; ponta: 'de' | 'para'; y: number }
   | { tipo: 'parede'; uid: string; d: number; y: number }
   | { tipo: 'piso'; x: number; z: number };
@@ -64,6 +67,7 @@ type Modo =
   /** Arraste que não é da edição: a órbita da câmera. */
   | { tipo: 'alheio' }
   | ({ tipo: 'quartinho'; y: number; desvio: Ponto; valido: boolean } & Arraste)
+  | ({ tipo: 'obstaculo'; uid: string; y: number; desvio: Ponto; valido: boolean } & Arraste)
   | ({ tipo: 'profundidade'; lado: LadoCasa; base: Varanda; y: number; valido: boolean } & Arraste)
   | ({ tipo: 'ponta-varanda'; lado: LadoCasa; ponta: -1 | 1; base: Varanda; y: number; valido: boolean } & Arraste)
   | { tipo: 'desenhar'; de: Ponto; parede: { de: Ponto; para: Ponto } | null; motivo: string | null }
@@ -210,6 +214,10 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
 
   const paredesDoAndar = (): ParedeInterna[] => estado.projeto.casa.paredesInternas.filter((p) => p.andar === estado.edicaoCasa.andar);
   const paredeDe = (uid: string): ParedeInterna | undefined => estado.projeto.casa.paredesInternas.find((p) => p.uid === uid);
+  const obstaculoDe = (uid: string): Obstaculo | undefined => (estado.projeto.obstaculos ?? []).find((o) => o.uid === uid);
+  /** Medidas de um obstáculo no chão, antes do giro: na árvore, o quadrado em volta da copa. */
+  const ladosDe = (o: Obstaculo): [largura: number, profundidade: number, giro: number] =>
+    o.tipo === 'arvore' ? [o.largura, o.largura, 0] : [o.largura, o.profundidade, THREE.MathUtils.degToRad(o.giro)];
 
   /** Trecho da parede que aparece: as pontas que vão até o limite da planta ficam dentro da parede de fora. */
   function trechoAVista(p: ParedeInterna): [d0: number, d1: number] {
@@ -349,6 +357,19 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
       variavel.add(g);
     }
 
+    // ---- Obstáculos (muro, vizinho, árvore): volume de clique e contorno no alto, como o quartinho.
+    for (const o of estado.projeto.obstaculos ?? []) {
+      const [lx, lz, giroDoObstaculo] = ladosDe(o);
+      // Muro fino: o volume de clique tem pelo menos 0,6 m, para ser agarrado na vista de cima.
+      volume({ tipo: 'obstaculo', uid: o.uid, y: 0 }, o.x, o.altura / 2, o.z, Math.max(lx, 0.6), o.altura, Math.max(lz, 0.6), giroDoObstaculo);
+      const selecionado = (s?.tipo === 'obstaculo' && s.uid === o.uid) || (modo.tipo === 'obstaculo' && modo.uid === o.uid);
+      if (!selecionado && sobre !== `obstaculo-${o.uid}`) continue;
+      const g = contorno(selecionado ? matSelecao : matSobre, Math.max(lx, 0.3) + 0.2, Math.max(lz, 0.3) + 0.2, o.altura + 0.05, 0.09);
+      g.position.set(o.x, 0, o.z);
+      g.rotation.y = giroDoObstaculo;
+      variavel.add(g);
+    }
+
     // ---- Varandas: em cada fachada, o botão de criar ou as alças da borda de fora e das pontas.
     const medidas = medirVarandas(casa);
     for (const lado of LADOS) {
@@ -433,6 +454,16 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     c.pedirQuadroLeve();
   }
 
+  function mostrarFantasmaDoObstaculo(o: Obstaculo): void {
+    const [lx, lz, giro] = ladosDe(o);
+    fantasma.position.set(o.x, o.altura / 2, o.z);
+    fantasma.rotation.y = giro;
+    fantasma.scale.set(lx + 0.05, o.altura, lz + 0.05);
+    matFantasma.color.set(COR_INVALIDO);
+    fantasma.visible = true;
+    c.pedirQuadroLeve();
+  }
+
   function esconderFantasma(): void {
     if (!fantasma.visible) return;
     fantasma.visible = false;
@@ -474,7 +505,7 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     if (!t) return null;
     const p = paraACasaDoMundo(t.point);
     const doVolume = t.object.userData.edicao as Alvo | undefined;
-    if (doVolume) return doVolume.tipo === 'quartinho' ? { tipo: 'quartinho', y: p.y } : doVolume;
+    if (doVolume) return doVolume.tipo === 'quartinho' ? { tipo: 'quartinho', y: p.y } : doVolume.tipo === 'obstaculo' ? { ...doVolume, y: p.y } : doVolume;
     const id = (t.object.userData.superficie as Marca | undefined)?.id ?? '';
     const andar = estado.edicaoCasa.andar;
     const mpp = metrosPorPixel(t.distance);
@@ -499,6 +530,7 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
   const chaveDoAlvo = (a: Alvo | null): string | null =>
     !a ? null
     : a.tipo === 'quartinho' ? 'quartinho'
+    : a.tipo === 'obstaculo' ? `obstaculo-${a.uid}`
     : a.tipo === 'parede' || a.tipo === 'ponta-parede' ? `parede-${a.uid}`
     : a.tipo === 'varanda' || a.tipo === 'alca-borda' || a.tipo === 'alca-ponta' ? `varanda-${a.lado}`
     : null;
@@ -518,6 +550,7 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
       : alvo.tipo === 'alca-ponta' ? 'Arraste para mudar a largura da varanda'
       : alvo.tipo === 'varanda' ? 'Clique para ver as medidas da varanda'
       : alvo.tipo === 'quartinho' ? 'Arraste para mudar o quartinho de lugar'
+      : alvo.tipo === 'obstaculo' ? `${NOME_DO_OBSTACULO[obstaculoDe(alvo.uid)?.tipo ?? 'muro']}: arraste para mudar de lugar, clique para ver as medidas`
       : alvo.tipo === 'ponta-parede' ? 'Arraste a ponta para encurtar ou esticar a parede'
       : alvo.tipo === 'parede' ? (selecionada ? 'Clique para pôr ou tirar uma passagem aqui. Arraste para mover a parede.' : 'Arraste para mover a parede. Clique para selecionar.')
       : 'Arraste para desenhar uma parede. Clique para dar nome ao cômodo.';
@@ -540,7 +573,9 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
 
   // ---------------------------------------------------------------- Arrastes
 
-  const arraste = (): Arraste => ({ inicio: JSON.stringify(estado.projeto.casa), marcado: false });
+  /** A casa e os obstáculos como estão, para saber se um arraste mudou alguma coisa. */
+  const retrato = (): string => JSON.stringify([estado.projeto.casa, estado.projeto.obstaculos ?? []]);
+  const arraste = (): Arraste => ({ inicio: retrato(), marcado: false });
 
   /** Marca o ponto de desfazer do arraste, uma vez só, na primeira mudança. */
   function marcar(m: Arraste): void {
@@ -570,6 +605,12 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
       if (!p) return void (modo = { tipo: 'alheio' });
       modo = { tipo: 'quartinho', y: alvo.y, desvio: [casa.quartinho.x - p[0], casa.quartinho.z - p[1]], valido: true, ...arraste() };
       if (estado.selecao?.tipo !== 'quartinho') acoes.selecionar({ tipo: 'quartinho' });
+    } else if (alvo.tipo === 'obstaculo') {
+      const o = obstaculoDe(alvo.uid);
+      const p = pontoNaAltura(x, y, alvo.y);
+      if (!o || !p) return void (modo = { tipo: 'alheio' });
+      modo = { tipo: 'obstaculo', uid: o.uid, y: alvo.y, desvio: [o.x - p[0], o.z - p[1]], valido: true, ...arraste() };
+      if (estado.selecao?.tipo !== 'obstaculo' || estado.selecao.uid !== o.uid) acoes.selecionar({ tipo: 'obstaculo', uid: o.uid });
     } else if (alvo.tipo === 'alca-borda' || alvo.tipo === 'alca-ponta') {
       const base = casa.varandas.find((v) => v.lado === alvo.lado);
       if (!base) return void (modo = { tipo: 'alheio' });
@@ -615,6 +656,36 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     if (novo.x === casa.quartinho.x && novo.z === casa.quartinho.z) return;
     marcar(m);
     acoes.alterarCasa({ quartinho: novo }, { historico: false });
+  }
+
+  function atualizarObstaculo(m: Modo & { tipo: 'obstaculo' }, x: number, y: number): void {
+    const p = pontoNaAltura(x, y, m.y);
+    const atual = obstaculoDe(m.uid);
+    if (!p || !atual) return;
+    const novo = obstaculoEm(atual, p[0] + m.desvio[0], p[1] + m.desvio[1]);
+    m.valido = obstaculoLivre(estado.projeto.casa, novo);
+    if (!m.valido) {
+      // O obstáculo fica no último lugar válido; o vulto vermelho mostra o lugar pedido.
+      mostrarFantasmaDoObstaculo(novo);
+      mostrarDica('Aqui não dá: ficaria em cima da casa, de uma varanda ou do quartinho', x, y, 'ruim');
+      return;
+    }
+    esconderFantasma();
+    mostrarDica(`${NOME_DO_OBSTACULO[novo.tipo]} em x ${metros(novo.x)} m, z ${metros(novo.z)} m`, x, y, 'bom');
+    if (novo.x === atual.x && novo.z === atual.z) return;
+    marcar(m);
+    acoes.alterarObstaculo(m.uid, { x: novo.x, z: novo.z }, { historico: false });
+  }
+
+  /** Tecla R: gira 90° o muro ou o vizinho selecionado, se couber girado. */
+  function girarObstaculo(): void {
+    const s = estado.selecao;
+    const o = s?.tipo === 'obstaculo' ? obstaculoDe(s.uid) : undefined;
+    if (!o || o.tipo === 'arvore') return;
+    let giro = (((o.giro + 90) % 360) + 360) % 360;
+    if (giro > 180) giro -= 360;
+    if (obstaculoLivre(estado.projeto.casa, { ...o, giro })) acoes.alterarObstaculo(o.uid, { giro });
+    else avisarNaFaixa(`Girado, o ${o.tipo === 'muro' ? 'muro' : 'vizinho'} ficaria em cima da casa, de uma varanda ou do quartinho. Afaste-o primeiro.`);
   }
 
   function atualizarVaranda(m: Modo & { tipo: 'profundidade' | 'ponta-varanda' }, x: number, y: number): void {
@@ -682,6 +753,7 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     const m = modo;
     if (m.tipo === 'ocioso') pairar(x, y);
     else if (m.tipo === 'quartinho') atualizarQuartinho(m, x, y);
+    else if (m.tipo === 'obstaculo') atualizarObstaculo(m, x, y);
     else if (m.tipo === 'profundidade' || m.tipo === 'ponta-varanda') atualizarVaranda(m, x, y);
     else if (m.tipo === 'mover-parede' || m.tipo === 'esticar') atualizarParede(m, x, y);
     else if (m.tipo === 'desenhar') atualizarDesenho(m, x, y);
@@ -700,7 +772,7 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
   function fecharArraste(m: Arraste): void {
     if (!m.marcado) return;
     c.cabos.adiarComprimentos(false);
-    if (JSON.stringify(estado.projeto.casa) === m.inicio) acoes.cancelarArraste();
+    if (retrato() === m.inicio) acoes.cancelarArraste();
   }
 
   /** Desiste do arraste em andamento. Verdadeiro se havia um. */
@@ -733,6 +805,8 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
       acoes.selecionar({ tipo: 'varanda', lado: alvo.lado });
     } else if (alvo.tipo === 'quartinho') {
       acoes.selecionar({ tipo: 'quartinho' });
+    } else if (alvo.tipo === 'obstaculo') {
+      acoes.selecionar({ tipo: 'obstaculo', uid: alvo.uid });
     } else if (alvo.tipo === 'ponta-parede') {
       acoes.selecionar({ tipo: 'parede', uid: alvo.uid });
     } else if (alvo.tipo === 'parede') {
@@ -774,6 +848,7 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
       return;
     }
     if (m.tipo === 'quartinho') atualizarQuartinho(m, x, y);
+    else if (m.tipo === 'obstaculo') atualizarObstaculo(m, x, y);
     else if (m.tipo === 'profundidade' || m.tipo === 'ponta-varanda') atualizarVaranda(m, x, y);
     else atualizarParede(m, x, y);
     fecharArraste(m);
@@ -797,6 +872,8 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
       const n = pecasEm([`telhado-varanda-${s.lado}`, `piso-varanda-${s.lado}`]);
       if (n > 0 && !window.confirm(`Esta varanda tem ${quantos(n)}. Remover a varanda remove também o que está nela e os cabos ligados. Remover?`)) return;
       acoes.removerVaranda(s.lado);
+    } else if (s?.tipo === 'obstaculo') {
+      acoes.removerObstaculo(s.uid);
     }
   }
 
@@ -826,10 +903,21 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     x1 = Math.max(x1, q.x + r);
     z0 = Math.min(z0, q.z - r);
     z1 = Math.max(z1, q.z + r);
+    // Os obstáculos também: é na vista de cima que eles são postos no lugar.
+    let maisAlto = 0;
+    for (const o of estado.projeto.obstaculos ?? []) {
+      const [lx, lz] = ladosDe(o);
+      const ro = Math.hypot(lx, lz) / 2 + 1;
+      x0 = Math.min(x0, o.x - ro);
+      x1 = Math.max(x1, o.x + ro);
+      z0 = Math.min(z0, o.z - ro);
+      z1 = Math.max(z1, o.z + ro);
+      maisAlto = Math.max(maisAlto, o.altura);
+    }
     const tangente = Math.tan(THREE.MathUtils.degToRad(c.camera.fov / 2));
     // Os telhados das varandas e do quartinho ficam uns 3 m mais perto da câmera e aparecem maiores: a altura conta a partir deles.
     // A faixa de instrução cobre o alto da cena: sobra um pouco mais em cima.
-    const altura = Math.min(c.controles.maxDistance - 1, Math.max(((z1 - z0) / 2 / tangente) * 1.16, (x1 - x0) / 2 / (tangente * c.camera.aspect)) + 3.5);
+    const altura = Math.min(c.controles.maxDistance - 1, Math.max(((z1 - z0) / 2 / tangente) * 1.16, (x1 - x0) / 2 / (tangente * c.camera.aspect)) + Math.max(3.5, maisAlto));
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2 - altura * tangente * 0.1;
     c.casa.updateWorldMatrix(true, false);
@@ -928,6 +1016,10 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
       if (!cancelar() && modo.tipo === 'ocioso') acoes.definirEdicaoDaCasa(false);
       return;
     }
+    if ((e.key === 'r' || e.key === 'R') && modo.tipo === 'ocioso') {
+      girarObstaculo();
+      return;
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && modo.tipo === 'ocioso' && estado.selecao) apagarSelecionado();
   }
 
@@ -966,7 +1058,7 @@ export function criarEdicao(c: PartesDaEdicao): Edicao {
     situacao() {
       const m = modo;
       if (m.tipo === 'desenhar') return { modo: m.tipo, valido: m.parede !== null && m.motivo === null, motivo: m.motivo };
-      if (m.tipo === 'quartinho' || m.tipo === 'mover-parede' || m.tipo === 'esticar' || m.tipo === 'profundidade' || m.tipo === 'ponta-varanda') return { modo: m.tipo, valido: m.valido, motivo: null };
+      if (m.tipo === 'quartinho' || m.tipo === 'obstaculo' || m.tipo === 'mover-parede' || m.tipo === 'esticar' || m.tipo === 'profundidade' || m.tipo === 'ponta-varanda') return { modo: m.tipo, valido: m.valido, motivo: null };
       return { modo: m.tipo, valido: null, motivo: null };
     },
     telaDaAlca(id) {

@@ -28,6 +28,10 @@
             <button type="button" data-andar="1" aria-pressed="false">Superior</button>
           </div>
         </div>
+        <div class="grupo-linha" role="group" aria-label="Aprender">
+          <button type="button" id="botao-glossario" title="Explica os termos de eletricidade">Glossário</button>
+          <button type="button" id="botao-seguranca" title="Avisos para não se machucar">Segurança</button>
+        </div>
         <div class="grupo-linha" role="group" aria-label="Modo de visão">
           <span class="rotulo">Visão</span>
           <div class="botoes" id="botoes-visao">
@@ -47,7 +51,13 @@
 
       <main id="centro">
         <div id="cena"></div>
-        <p id="faixa-edicao" class="faixa-edicao" role="status" hidden>Editando a casa: arraste o quartinho, clique numa fachada para criar varanda, arraste no piso para desenhar parede e clique num piso para dar nome ao cômodo. Os equipamentos ficam parados.</p>
+        <p id="faixa-edicao" class="faixa-edicao" role="status" hidden>Editando a casa: arraste o quartinho para mudar de lugar, clique em “+ Varanda” para criar uma varanda (e arraste as bolinhas azuis para mudar o tamanho), arraste no piso para desenhar uma parede e clique no piso para dar nome ao cômodo; Esc sai.</p>
+        <div id="barra-obstaculos" class="barra-obstaculos" role="group" aria-label="Acrescentar o que faz sombra em volta da casa" hidden>
+          <span title="O que faz sombra em volta da casa. Depois de criar, arraste para o lugar e ajuste as medidas no painel.">Acrescentar:</span>
+          <button type="button" data-obstaculo="muro">Muro</button>
+          <button type="button" data-obstaculo="vizinho">Vizinho</button>
+          <button type="button" data-obstaculo="arvore">Árvore</button>
+        </div>
         <section id="form-casa" class="painel-casa" hidden aria-label="Medidas da casa">
           <h3>Casa</h3>
           <div class="colunas-casa">
@@ -124,7 +134,11 @@
         </div>
         <div class="aba-painel" role="tabpanel" data-painel="consultor" id="painel-consultor"></div>
         <div class="aba-painel" role="tabpanel" data-painel="orcamento" id="painel-orcamento" hidden></div>
-        <div class="aba-painel" role="tabpanel" data-painel="sistema" id="painel-sistema" hidden></div>
+        <div class="aba-painel" role="tabpanel" data-painel="sistema" id="painel-sistema" hidden>
+          <div id="sistema-grafico"></div>
+          <div id="sistema-projeto"></div>
+          <div id="sistema-estimativas"></div>
+        </div>
       </aside>
 
       <footer id="base">
@@ -146,6 +160,13 @@
             <button type="button" data-vel="1">1 min/s</button>
             <button type="button" data-vel="10">10 min/s</button>
             <button type="button" data-vel="60">60 min/s</button>
+          </div>
+        </div>
+        <div class="grupo">
+          <span class="rotulo">Rede</span>
+          <div class="botoes" id="botoes-queda">
+            <button type="button" id="botao-queda" aria-pressed="false" title="Simula a falta de luz da rua: a casa passa a viver só da bateria e das placas">Queda de luz</button>
+            <button type="button" id="botao-bateria-cheia" title="Volta a carga da bateria para 100%">Bateria cheia</button>
           </div>
         </div>
         <div class="grupo">

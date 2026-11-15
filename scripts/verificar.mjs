@@ -758,6 +758,410 @@ async function principal() {
   }
   await verificarInteracao();
 
+  // 9. "Editar casa" com o ponteiro de verdade (tarefas 2.6 e 2.7b): parede interna, cômodos, varanda pela alça e quartinho.
+  async function verificarEdicaoDaCasa() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const casa = async () => (await estado()).projeto.casa;
+    const selecao = () => og(() => window.__offgrid.estado().selecao);
+    const telaDoPonto = (p) => og((q) => window.__offgrid.telaDoPonto(q), p);
+    const alca = async (id) => {
+      const a = await og((i) => window.__offgrid.telaDaAlca(i), id);
+      conferir(Array.isArray(a), `a alça ${id} deveria estar na cena`);
+      return a;
+    };
+    const noMundo = (p) => [-p[0], p[1], -p[2]];
+    /** Espera a cena tratar o último movimento do ponteiro e devolve o que a edição está fazendo. */
+    const parado = async () => {
+      await esperar(300);
+      await og(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return og(() => window.__offgrid.edicao());
+    };
+    const levar = async (de, ate) => {
+      await pagina.mouse.move(de[0], de[1]);
+      await esperar(150);
+      await pagina.mouse.down();
+      await pagina.mouse.move(ate[0], ate[1], { steps: 10 });
+      return parado();
+    };
+    const soltar = async () => {
+      await pagina.mouse.up();
+      await parado();
+    };
+    const clicar = async (p) => {
+      await pagina.mouse.move(p[0], p[1]);
+      await esperar(150);
+      await pagina.mouse.down();
+      await pagina.mouse.up();
+      await parado();
+    };
+    const desfazer = async () => {
+      await pagina.keyboard.press('Control+Z');
+      await parado();
+    };
+    const igual = (a, b) => Math.abs(a - b) < 1e-6;
+    const mesmoPonto = (a, b) => igual(a[0], b[0]) && igual(a[1], b[1]);
+
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
+    await esperar(400);
+    const inicial = await casa();
+
+    // ---- Entrar no modo: a faixa explica, a visão passa para o térreo visto de cima.
+    await pagina.locator('#botao-editar-casa').click();
+    await parado();
+    let e9 = await estado();
+    conferir(e9.edicaoCasa.ativa === true && e9.edicaoCasa.andar === 0 && e9.visao === 'terreo', `Editar casa deveria abrir o térreo sem o andar de cima: ${JSON.stringify([e9.edicaoCasa, e9.visao])}`);
+    conferir((await pagina.locator('#faixa-edicao').textContent()).includes('Editando a casa'), 'a faixa deveria explicar o modo de edição');
+    const deCima = await og(() => window.__offgrid.camera());
+    conferir(deCima.pos[1] > 15 && Math.hypot(deCima.pos[0] - deCima.alvo[0], deCima.pos[2] - deCima.alvo[2]) < 0.1, `a câmera deveria olhar a casa de cima: ${JSON.stringify(deCima)}`);
+    await captura('32-editar-casa-de-cima');
+
+    // ---- Desenhar uma parede no térreo, dos fundos até a parede do meio: gruda no limite da planta e na outra parede.
+    let s = await levar(await telaDoPonto([-1, 0.05, -3.2]), await telaDoPonto([-1.05, 0.05, -0.8]));
+    conferir(s.modo === 'desenhar' && s.valido === true, `arrastar no piso deveria desenhar uma parede: ${JSON.stringify(s)}`);
+    conferir(((await pagina.locator('[data-offgrid-medida]').textContent()) ?? '').includes('2,8 m'), 'a medida da parede deveria aparecer perto do ponteiro');
+    await captura('33-desenhando-parede');
+    await soltar();
+    let c9 = await casa();
+    const parede = c9.paredesInternas[c9.paredesInternas.length - 1];
+    conferir(
+      c9.paredesInternas.length === inicial.paredesInternas.length + 1 && parede.andar === 0 && mesmoPonto(parede.de, [-1, -3.5]) && mesmoPonto(parede.para, [-1, -0.7]) && parede.passagens.length === 0,
+      `a parede desenhada deveria ir de (-1; -3,5) a (-1; -0,7): ${JSON.stringify(parede)}`,
+    );
+    conferir((await selecao())?.tipo === 'parede' && (await selecao()).uid === parede.uid, 'a parede criada deveria ficar selecionada');
+    conferir((await pagina.locator('#item-selecionado h3').textContent()) === 'Parede interna', 'o painel deveria mostrar a parede selecionada');
+
+    // Parede curta demais: fantasma vermelho, nada criado.
+    s = await levar(await telaDoPonto([2, 0.05, 1.5]), await telaDoPonto([2.3, 0.05, 1.5]));
+    conferir(s.modo === 'desenhar' && s.valido === false, `uma parede de 0,3 m deveria ser recusada: ${JSON.stringify(s)}`);
+    await soltar();
+    conferir((await casa()).paredesInternas.length === inicial.paredesInternas.length + 1, 'a parede curta demais não deveria ser criada');
+
+    // Clicar na parede selecionada põe uma passagem de 0,8 m; clicar na passagem a tira.
+    await clicar(await telaDoPonto([-1, 0.05, -3]));
+    conferir((await selecao())?.uid === parede.uid, 'clicar na parede deveria selecioná-la');
+    await clicar(await telaDoPonto([-1, 0.05, -2]));
+    let passagens = (await casa()).paredesInternas.find((w) => w.uid === parede.uid).passagens;
+    conferir(passagens.length === 1 && igual(passagens[0], 1.5), `clicar na parede selecionada deveria pôr uma passagem a 1,5 m da ponta: ${JSON.stringify(passagens)}`);
+    await captura('34-parede-com-passagem');
+    await desfazer();
+    conferir((await casa()).paredesInternas.find((w) => w.uid === parede.uid).passagens.length === 0, 'Ctrl+Z deveria tirar a passagem');
+
+    // ---- Dar nome aos dois cômodos que a parede separou.
+    await clicar(await telaDoPonto([-2.8, 0.05, -1.4]));
+    conferir(await pagina.locator('#campo-comodo').isVisible(), 'clicar no piso deveria abrir o campo do nome do cômodo');
+    conferir((await pagina.locator('#campo-comodo .sugestoes-comodo button').count()) === 7, 'o campo deveria ter as 7 sugestões de nome');
+    await captura('35-campo-do-nome-do-comodo');
+    await pagina.keyboard.press('Escape');
+    conferir((await pagina.locator('#campo-comodo').isHidden()) && (await estado()).edicaoCasa.ativa === true, 'Esc no campo deveria fechar só o campo');
+    await clicar(await telaDoPonto([-2.8, 0.05, -1.4]));
+    await pagina.locator('#campo-comodo [data-nome="Banheiro"]').click();
+    await parado();
+    c9 = await casa();
+    const banheiro = c9.comodos.find((x) => x.nome === 'Banheiro');
+    conferir(banheiro && banheiro.andar === 0 && banheiro.ponto[0] < -1 && banheiro.ponto[1] < -0.7, `o cômodo à esquerda da parede deveria se chamar Banheiro: ${JSON.stringify(c9.comodos)}`);
+    // O lado direito já era a Cozinha: o nome novo reaproveita o cômodo dela.
+    await clicar(await telaDoPonto([1.5, 0.05, -2.4]));
+    conferir((await pagina.locator('#nome-comodo').inputValue()) === 'Cozinha', 'o campo deveria abrir com o nome atual da área');
+    await pagina.locator('#nome-comodo').fill('Copa');
+    await pagina.keyboard.press('Enter');
+    await parado();
+    c9 = await casa();
+    conferir(
+      c9.comodos.length === inicial.comodos.length + 1 && c9.comodos.find((x) => x.uid === 'cm-cozinha')?.nome === 'Copa' && !c9.comodos.some((x) => x.nome === 'Cozinha'),
+      `a Cozinha deveria virar Copa, no mesmo cômodo: ${JSON.stringify(c9.comodos)}`,
+    );
+    await captura('36-comodos-nomeados');
+
+    // ---- Esc sai do modo e a visão volta a ser a de antes.
+    await pagina.keyboard.press('Escape');
+    await parado();
+    e9 = await estado();
+    const depois = await og(() => window.__offgrid.camera());
+    conferir(e9.edicaoCasa.ativa === false && e9.visao === 'completa' && Math.abs(depois.pos[1] - CAMERA_INICIAL.pos[1]) < 1e-6, 'Esc deveria sair do modo de edição e devolver a visão e a câmera');
+
+    // ---- Um aparelho do catálogo em cada cômodo: o painel do item mostra o nome novo.
+    await pagina.getByRole('button', { name: 'Só térreo', exact: true }).click();
+    await mudarCamera(noMundo([0, 16, -3.2]), noMundo([0, 0, -1.2]));
+    await esperar(300);
+    const interacao = async () => {
+      await esperar(300);
+      await og(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return og(() => window.__offgrid.interacao());
+    };
+    for (const [itemId, lugar, nome] of [
+      ['ap-ventilador', [-1.9, 0.05, -1.5], 'Banheiro'],
+      ['ap-microondas', [1.6, 0.05, -2.2], 'Copa'],
+    ]) {
+      const cartao = await og((id) => window.__offgrid.telaDoCartao(id), itemId);
+      const destino = await telaDoPonto(lugar);
+      await pagina.mouse.move(cartao[0], cartao[1]);
+      await esperar(150);
+      await pagina.mouse.down();
+      await pagina.mouse.move(destino[0], destino[1], { steps: 10 });
+      s = await interacao();
+      conferir(s.modo === 'catalogo' && s.valido === true, `${itemId} deveria caber no piso do cômodo ${nome}: ${JSON.stringify(s)}`);
+      await pagina.mouse.up();
+      await esperar(300);
+      const novo = (await estado()).projeto.dispositivos.at(-1);
+      conferir(novo.itemId === itemId && (await selecao())?.uid === novo.uid, `soltar ${itemId} deveria criar o aparelho e selecioná-lo`);
+      const texto = await pagina.locator('#item-selecionado .comodo').textContent();
+      conferir(texto === `Cômodo: ${nome}`, `o painel do aparelho deveria mostrar "Cômodo: ${nome}", mostrou "${texto}"`);
+      if (nome === 'Copa') await captura('37-aparelho-no-comodo-nomeado');
+    }
+    await pagina.locator('[data-aba="sistema"]').click();
+    const linhas = await pagina.locator('#painel-sistema .linha-aparelho').allTextContents();
+    conferir(linhas.some((t) => t.includes('Cômodo: Copa')) && linhas.some((t) => t.includes('Cômodo: Banheiro')), 'a aba Sistema deveria mostrar os cômodos novos dos aparelhos');
+    await pagina.locator('[data-aba="consultor"]').click();
+    await desfazer();
+    await desfazer();
+    conferir((await estado()).projeto.dispositivos.length === 10, 'dois Ctrl+Z deveriam tirar os dois aparelhos');
+    await og(() => window.__offgrid.acoes.selecionar(null));
+
+    // ---- De volta à edição: varanda lateral pela alça. Do lado direito o quartinho está no caminho e a varanda é recusada.
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await pagina.locator('#botao-editar-casa').click();
+    await parado();
+    await clicar(await alca('nova-direita'));
+    conferir((await casa()).varandas.length === 1 && (await pagina.locator('#faixa-edicao').textContent()).includes('no caminho'), 'a varanda em cima do quartinho deveria ser recusada, com o recado na faixa');
+    await clicar(await alca('nova-esquerda'));
+    let ve = (await casa()).varandas.find((v) => v.lado === 'esquerda');
+    conferir(ve && ve.profundidade === 3 && ve.inclinacaoPct === 30 && ve.largura === null, `a alça da esquerda deveria criar uma varanda de 3 m e 30%: ${JSON.stringify(ve)}`);
+    conferir((await selecao())?.tipo === 'varanda' && (await pagina.locator('#item-selecionado h3').textContent()) === 'Varanda da esquerda', 'a varanda criada deveria ficar selecionada, com o painel dela');
+    await captura('38-varanda-criada-pela-alca');
+    // Arrastar a borda de fora até 4 m da fachada: a inclinação cai para a beira ficar a 2 m.
+    const borda = await alca('borda-esquerda');
+    const yBeira = c9.peDireito + 0.25 - 3 * 0.3;
+    s = await levar(borda, await telaDoPonto([-c9.largura / 2 - 4, yBeira, 0]));
+    conferir(s.modo === 'profundidade' && s.valido === true, `arrastar a borda da varanda deveria mudar a profundidade: ${JSON.stringify(s)}`);
+    await captura('39-arrastando-a-borda-da-varanda');
+    await soltar();
+    ve = (await casa()).varandas.find((v) => v.lado === 'esquerda');
+    conferir(ve.profundidade === 4 && ve.inclinacaoPct === 26, `a varanda deveria ficar com 4 m e 26%: ${JSON.stringify(ve)}`);
+    conferir(c9.peDireito + 0.25 - (ve.profundidade * ve.inclinacaoPct) / 100 >= 2 - 1e-6, 'a beira da varanda não deveria ficar abaixo de 2 m');
+    // Arrastar uma ponta estreita a varanda.
+    await levar(await alca('ponta-esquerda-a'), await telaDoPonto([-c9.largura / 2 - 2, 2.5, -1.5]));
+    await soltar();
+    ve = (await casa()).varandas.find((v) => v.lado === 'esquerda');
+    conferir(igual(ve.largura, 5) && igual(ve.deslocamento, 1), `a ponta arrastada deveria deixar a varanda com 5 m, deslocada 1 m: ${JSON.stringify(ve)}`);
+    // Cada arraste é um passo só do desfazer.
+    await desfazer();
+    ve = (await casa()).varandas.find((v) => v.lado === 'esquerda');
+    conferir(ve.largura === null && ve.profundidade === 4, 'um Ctrl+Z deveria desfazer o arraste da ponta');
+    await desfazer();
+    conferir((await casa()).varandas.find((v) => v.lado === 'esquerda').profundidade === 3, 'outro Ctrl+Z deveria desfazer o arraste da borda');
+    await desfazer();
+    conferir(!(await casa()).varandas.some((v) => v.lado === 'esquerda'), 'mais um Ctrl+Z deveria tirar a varanda criada');
+
+    // ---- Arrastar o quartinho: preso à grade de 0,5 m, com as peças dele junto.
+    const doQuartinho = async () => (await estado()).projeto.dispositivos.filter((d) => d.superficie?.includes('quartinho')).map((d) => [d.uid, d.pos]);
+    const q0 = (await casa()).quartinho;
+    const pecas0 = await doQuartinho();
+    conferir(pecas0.length >= 3, 'o cenário deveria ter inversor, bateria e tomada no quartinho');
+    s = await levar(await telaDoPonto([q0.x, 2.6, q0.z]), await telaDoPonto([q0.x + 1, 2.6, q0.z - 2]));
+    conferir(s.modo === 'quartinho' && s.valido === true, `arrastar o quartinho deveria movê-lo: ${JSON.stringify(s)}`);
+    await soltar();
+    const q1 = (await casa()).quartinho;
+    conferir(igual(q1.x, q0.x + 1) && igual(q1.z, q0.z - 2), `o quartinho deveria ir para (${q0.x + 1}; ${q0.z - 2}): ${JSON.stringify(q1)}`);
+    const pecas1 = await doQuartinho();
+    conferir(
+      pecas1.length === pecas0.length && pecas1.every(([uid, pos]) => {
+        const antes = pecas0.find((x) => x[0] === uid)[1];
+        return Math.abs(pos[0] - antes[0] - 1) < 1e-3 && Math.abs(pos[1] - antes[1]) < 1e-3 && Math.abs(pos[2] - antes[2] + 2) < 1e-3;
+      }),
+      `as peças do quartinho deveriam ir junto: ${JSON.stringify([pecas0, pecas1])}`,
+    );
+    conferir((await selecao())?.tipo === 'quartinho' && (await pagina.locator('#item-selecionado h3').textContent()) === 'Quartinho', 'o quartinho arrastado deveria ficar selecionado, com o painel dele');
+    conferir(Number(await pagina.locator('#item-selecionado [data-campo="x"]').inputValue()) === q1.x, 'o painel do quartinho deveria mostrar a posição nova');
+    await captura('40-quartinho-arrastado');
+
+    // Em cima da casa não fica: vulto vermelho e, ao soltar, o último lugar válido.
+    s = await levar(await telaDoPonto([q1.x, 2.6, q1.z]), await telaDoPonto([0, 2.6, 0]));
+    conferir(s.modo === 'quartinho' && s.valido === false, `o quartinho em cima da casa deveria ficar vermelho: ${JSON.stringify(s)}`);
+    await captura('41-quartinho-em-cima-da-casa');
+    await soltar();
+    const q2 = (await casa()).quartinho;
+    const fora = Math.abs(q2.x) - q2.largura / 2 >= c9.largura / 2 - 1e-6 || Math.abs(q2.z) - q2.profundidade / 2 >= c9.profundidade / 2 - 1e-6;
+    conferir(fora && (await pagina.locator('#aviso-quartinho').textContent()) === '', `o quartinho não deveria ficar em cima da casa: ${JSON.stringify(q2)}`);
+    await desfazer();
+    conferir(JSON.stringify((await casa()).quartinho) === JSON.stringify(q1), 'um Ctrl+Z deveria desfazer o segundo arraste do quartinho');
+    await desfazer();
+    conferir(JSON.stringify((await casa()).quartinho) === JSON.stringify(q0) && JSON.stringify(await doQuartinho()) === JSON.stringify(pecas0), 'outro Ctrl+Z deveria devolver o quartinho e as peças dele ao lugar');
+
+    // ---- Apagar a parede com Delete: os dois cômodos viram um só, com o primeiro nome, e a faixa avisa.
+    await clicar(await telaDoPonto([-1, 0.05, -3]));
+    conferir((await selecao())?.uid === parede.uid, 'clicar na parede deveria selecioná-la');
+    await pagina.keyboard.press('Delete');
+    await parado();
+    c9 = await casa();
+    conferir(c9.paredesInternas.length === inicial.paredesInternas.length && c9.comodos.filter((x) => x.andar === 0).length === 2, `Delete deveria apagar a parede e juntar os dois cômodos: ${JSON.stringify(c9.comodos)}`);
+    conferir((await pagina.locator('#faixa-edicao').textContent()).includes('viraram um só'), 'a faixa deveria avisar que os cômodos se juntaram');
+    await captura('42-parede-apagada-comodos-juntados');
+    await desfazer();
+    c9 = await casa();
+    conferir(c9.paredesInternas.some((w) => w.uid === parede.uid) && c9.comodos.some((x) => x.nome === 'Copa') && c9.comodos.some((x) => x.nome === 'Banheiro'), 'um Ctrl+Z deveria trazer de volta a parede e os dois nomes');
+
+    // ---- Andar de cima e saída pelo botão.
+    await pagina.locator('#seletor-andar [data-andar="1"]').click();
+    await parado();
+    conferir((await estado()).visao === 'sem-telhado', 'editar o andar de cima deveria tirar só o telhado');
+    await captura('43-editar-andar-de-cima');
+    await pagina.locator('#botao-editar-casa').click();
+    await parado();
+    conferir((await estado()).edicaoCasa.ativa === false && (await estado()).visao === 'completa', 'sair da edição deveria devolver a visão completa');
+  }
+  await verificarEdicaoDaCasa();
+
+  // ---------------------------------------------------------------- Tarefa 3.5, 4.2 e 4.3: queda de luz, mostradores, gráfico, "Por quê?", glossário e segurança
+  async function verificarSimulacaoEAprender() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await esperar(500);
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await pagina.locator('[data-aba="consultor"]').click();
+
+    // A linha fixa de limite do simulador fica no Orçamento.
+    conferir((await pagina.locator('#painel-orcamento .limite-simulador').count()) === 1, 'o painel de Orçamento deveria ter a linha de limite do simulador');
+
+    // Queda de luz às 20 h de 21/06, com a bateria cheia, a 60 min/s.
+    await og(() => {
+      const a = window.__offgrid.acoes;
+      a.definirVelocidade(0);
+      a.recarregarBateria();
+      a.definirTempo(Date.UTC(2026, 5, 21, 23, 0, 0));
+    });
+    await esperar(400);
+    conferir((await pagina.locator('#m-bateria .m-valor').textContent()).trim() === '100 %', 'antes da queda a bateria deveria estar em 100 %');
+    await captura('50-mostradores-antes-da-queda');
+    await pagina.locator('#botao-queda').click();
+    conferir((await pagina.locator('#botao-queda').textContent()) === 'Luz voltou', 'durante a queda o botão deveria dizer "Luz voltou"');
+    conferir((await pagina.locator('#m-rede .m-valor').textContent()) === 'em queda', 'o mostrador da rede deveria dizer "em queda"');
+    await pagina.locator('#botoes-velocidade [data-vel="60"]').click();
+    await esperar(2500);
+    const pctMeio = Number((await pagina.locator('#m-bateria .m-valor').textContent()).replace(/\D/g, ''));
+    conferir(pctMeio < 100, `com a queda e o tempo correndo, a bateria deveria estar abaixo de 100 %: ${pctMeio}`);
+    conferir((await pagina.locator('#m-origem').getAttribute('data-origem')) === 'bateria', 'durante a queda a energia deveria vir da bateria');
+    await captura('51-mostradores-durante-a-queda');
+
+    await pagina.waitForSelector('#faixa-queda:not([hidden])', { timeout: 90000 });
+    await pagina.locator('#botoes-velocidade [data-vel="0"]').click();
+    const faixa = await pagina.locator('#faixa-queda').textContent();
+    conferir(/^A bateria acabou às 0[2-4]:\d\d, depois de \d+ h( \d+ min)? sem luz\.$/.test(faixa), `a faixa deveria dizer que a bateria acabou por volta das 3 h: "${faixa}"`);
+    conferir((await pagina.locator('#m-consumo .m-valor').textContent()) === 'desligado', 'sem bateria, o consumo deveria aparecer como "desligado"');
+    conferir((await pagina.locator('#m-avisos li[data-aviso="bateria-vazia"]').count()) === 1, 'o aviso de bateria vazia deveria aparecer');
+    await captura('52-bateria-acabou');
+
+    // Gráfico na aba Sistema.
+    await pagina.locator('[data-aba="sistema"]').click();
+    await esperar(600);
+    const pontos = Number(await pagina.locator('#grafico-bateria').getAttribute('data-pontos'));
+    conferir(pontos > 10, `o gráfico deveria ter pontos: ${pontos}`);
+    const pintados = await pagina.locator('#grafico-bateria').evaluate((c) => {
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++;
+      return n;
+    });
+    conferir(pintados > 500, `o gráfico deveria ter sido desenhado: ${pintados} pixels`);
+    await captura('53-grafico-da-bateria');
+
+    // Controles do projeto na aba Sistema.
+    await pagina.locator('#sistema-projeto [data-prioridade="solar"]').click();
+    conferir((await estado()).projeto.prioridade === 'solar', '"Solar primeiro" deveria mudar a prioridade');
+    await pagina.locator('#sistema-projeto [data-prioridade="rede"]').click();
+    conferir((await estado()).projeto.prioridade === 'rede', '"Rede primeiro" deveria voltar a prioridade');
+    await pagina.locator('#sistema-projeto [data-tensao-rede="220"]').click();
+    conferir((await estado()).projeto.tensaoRede === 220, 'o botão 220 V deveria mudar a tensão da rede');
+    await pagina.locator('#sistema-projeto [data-tensao-rede="127"]').click();
+    conferir((await estado()).projeto.tensaoRede === 127, 'o botão 127 V deveria voltar a tensão da rede');
+
+    // "Bateria cheia" e "Luz voltou".
+    await pagina.locator('#botao-bateria-cheia').click();
+    await esperar(300);
+    conferir((await pagina.locator('#m-bateria .m-valor').textContent()).trim() === '100 %', '"Bateria cheia" deveria voltar a 100 %');
+    conferir(await pagina.locator('#faixa-queda').isHidden(), 'com a bateria cheia a faixa deveria sumir');
+    await pagina.locator('#botao-queda').click();
+    conferir((await pagina.locator('#botao-queda').textContent()) === 'Queda de luz', 'depois da queda o botão deveria voltar a "Queda de luz"');
+    await captura('54-bateria-cheia-e-luz-voltou');
+
+    // "Por quê?" no consultor. Sem a bateria, o consultor sempre tem sugestão.
+    await og(() => {
+      const e = window.__offgrid.estado();
+      const b = e.projeto.dispositivos.find((d) => /^bat-/.test(d.itemId));
+      if (b) window.__offgrid.acoes.removerDispositivo(b.uid);
+    });
+    await esperar(500);
+    await pagina.locator('[data-aba="consultor"]').click();
+    const botaoPorQue = pagina.locator('#painel-consultor .sugestao .porque-botao').first();
+    conferir((await botaoPorQue.count()) === 1, 'alguma sugestão deveria ter o botão "Por quê?"');
+    const cartao = pagina.locator('#painel-consultor .sugestao:has(.porque-botao)').first();
+    conferir(await cartao.locator('.porque-texto').isHidden(), 'o "Por quê?" começa fechado');
+    await botaoPorQue.click();
+    conferir((await cartao.locator('.porque-texto').isVisible()) && (await cartao.locator('.porque-texto p').first().textContent()).length > 40, 'o "Por quê?" deveria abrir o texto');
+    await esperar(400);
+    conferir(await pagina.locator('#painel-consultor .porque-texto').first().isVisible(), 'o "Por quê?" aberto deveria sobreviver ao recálculo do consultor');
+    await captura('55-por-que-aberto');
+
+    // Glossário: por uma etiqueta do "Por quê?" e pelo botão da barra de cima.
+    const etiqueta = cartao.locator('.porque-texto .etiqueta-termo').first();
+    if (await etiqueta.count()) {
+      const id = await etiqueta.getAttribute('data-termo');
+      await etiqueta.click();
+      conferir(await pagina.locator('#painel-glossario').isVisible(), 'a etiqueta do termo deveria abrir o glossário');
+      conferir((await pagina.locator(`#termo-${id}.aberto`).count()) === 1, 'a etiqueta deveria abrir o glossário naquele termo');
+      await pagina.keyboard.press('Escape');
+      conferir(await pagina.locator('#painel-glossario').isHidden(), 'Esc deveria fechar o glossário');
+    }
+    await pagina.locator('#botao-glossario').click();
+    conferir(await pagina.locator('#painel-glossario').isVisible(), 'o botão Glossário deveria abrir o painel');
+    const total = await pagina.locator('#painel-glossario .termo:not([hidden])').count();
+    conferir(total >= 10, `o glossário deveria listar os termos: ${total}`);
+    await pagina.locator('#busca-glossario').fill('fusivel');
+    const achados = await pagina.locator('#painel-glossario .termo:not([hidden])').count();
+    conferir(achados > 0 && achados < total, `a busca por "fusivel" deveria filtrar: ${achados} de ${total}`);
+    await pagina.locator('#painel-glossario .termo:not([hidden]) .termo-titulo').first().click();
+    await captura('56-glossario-com-busca');
+    await pagina.locator('#painel-glossario .fechar-sobreposto').click();
+    conferir(await pagina.locator('#painel-glossario').isHidden(), 'o botão Fechar deveria fechar o glossário');
+
+    // Painel de segurança.
+    await pagina.locator('#botao-seguranca').click();
+    conferir(await pagina.locator('#painel-seguranca').isVisible(), 'o botão Segurança deveria abrir o painel');
+    const nAvisos = await pagina.locator('#painel-seguranca article.aviso-lista').count();
+    conferir(nAvisos === 12, `o painel de segurança deveria listar 12 avisos: ${nAvisos}`);
+    await captura('57-painel-de-seguranca');
+    await pagina.keyboard.press('Escape');
+    conferir(await pagina.locator('#painel-seguranca').isHidden(), 'Esc deveria fechar o painel de segurança');
+
+    // Aviso no momento certo: a segunda placa em série dispara o aviso dos 100 V. O que já existia ao abrir não dispara.
+    await og(() => {
+      window.__offgrid.reiniciarAvisosVistos();
+      window.__offgrid.acoes.novoProjeto();
+    });
+    await esperar(500);
+    for (let i = 0; i < 20 && (await pagina.locator('#avisos-seguranca .entendi').count()); i++) await pagina.locator('#avisos-seguranca .entendi').click();
+    conferir((await pagina.locator('#avisos-seguranca .aviso-seguranca').count()) === 0, 'o botão "Entendi" deveria fechar os avisos');
+    const novoUid = await og(() => {
+      const a = window.__offgrid.acoes;
+      const e = window.__offgrid.estado();
+      const placa = e.projeto.dispositivos.find((d) => /^placa-/.test(d.itemId));
+      const nova = a.adicionarDispositivo(placa.itemId, { pos: [placa.pos[0] + 1.2, placa.pos[1], placa.pos[2]], quat: placa.quat, superficie: placa.superficie, giro: placa.giro ?? 0 });
+      a.adicionarCabo({ disp: nova, terminal: 'neg' }, { disp: placa.uid, terminal: 'pos' }, 1.5);
+      return nova;
+    });
+    await esperar(300);
+    conferir(typeof novoUid === 'string', 'a segunda placa deveria ter sido criada');
+    // Os avisos entram um por vez; a captura é feita com o aviso dos 100 V à vista.
+    const vistos = await og(() => JSON.parse(sessionStorage.getItem('offgrid.avisos.vistos') ?? '[]'));
+    conferir(vistos.includes('placas-tensao-em-serie'), `a segunda placa em série deveria disparar o aviso dos 100 V: ${JSON.stringify(vistos)}`);
+    conferir(!vistos.includes('bateria-local-e-ventilacao') && !vistos.includes('ca-127-v-choca'), `o que já existia ao abrir não deveria disparar aviso: ${JSON.stringify(vistos)}`);
+    for (let i = 0; i < 10 && !(await pagina.locator('.aviso-seguranca[data-aviso-seguranca="placas-tensao-em-serie"]').count()); i++) await pagina.locator('#avisos-seguranca .entendi').click();
+    conferir((await pagina.locator('.aviso-seguranca[data-aviso-seguranca="placas-tensao-em-serie"] h4').textContent()).includes('100 V'), 'o cartão do aviso dos 100 V deveria estar à vista');
+    await captura('58-aviso-placas-em-serie');
+  }
+  await verificarSimulacaoEAprender();
+
   if (erros.length) throw new Error(`Erros na página:\n${erros.join('\n')}`);
   console.log('Verificação concluída sem erros.');
 }

@@ -42,6 +42,13 @@ describe('simulação no tempo', () => {
     expect(estado.simulacao.saida.cargaAtendidaW).toBe(0);
   });
 
+  it('com o tempo parado e a bateria cheia, os mostradores têm números de verdade', () => {
+    acoes.definirTempo(Date.UTC(2026, 5, 21, 15, 0, 0));
+    const s = estado.simulacao.saida;
+    for (const v of [s.pvW, s.bateriaW, s.redeW, s.cargaAtendidaW, s.estado.soc]) expect(Number.isFinite(v)).toBe(true);
+    expect(s.estado.soc).toBe(1);
+  });
+
   it('o histórico guarda um ponto a cada 10 minutos simulados', () => {
     acoes.alternarQuedaDeLuz();
     acoes.avancarTempo(60);

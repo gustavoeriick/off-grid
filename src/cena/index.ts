@@ -18,12 +18,14 @@ import { criarLugares } from './lugares';
 import { liberar, type TipoSuperficie } from './malha';
 import { liberarMateriais } from './materiais';
 import { liberarModelos } from './modelos';
+import { criarCamadaDeObstaculos } from './obstaculos';
 import { liberarTintas } from './molde';
 import { criarChao, criarRosaDosVentos } from './mundo';
 import { liberarProtecoes } from './protecoes';
 import { lembrar, reassentar } from './reassentar';
 import { criarSol } from './sol';
 import { criarSombra } from './sombra';
+import { ID_TERRENO } from './terreno';
 
 export { comprimentoDoTrecho, corDoCabo } from './cabos';
 export type { CamadaDeCabos } from './cabos';
@@ -72,6 +74,8 @@ export interface OffgridGlobal {
   recalcular?: () => void;
   /** Auxiliar de verificação: o cálculo de sombra das placas que a cena entrega ao núcleo (`cena/sombra.ts`). */
   ambiente?: () => import('../nucleo/tipos').AmbientePlacas;
+  /** Auxiliar de verificação: quantas malhas e triângulos tapam o sol no cálculo (casa e obstáculos). */
+  resumoDaSombra?: () => { malhas: number; triangulos: number };
   /** O que o ponteiro está fazendo em "Editar casa" (`ocioso`, `quartinho`, `profundidade`, `ponta-varanda`, `desenhar`, `mover-parede`, `esticar`). */
   edicao?: () => { modo: string; valido: boolean | null; motivo: string | null };
   /** Posição na janela de uma alça de "Editar casa": `nova-{lado}`, `borda-{lado}`, `ponta-{lado}-a`, `ponta-{lado}-b`, `parede-de`, `parede-para`. */
@@ -191,6 +195,7 @@ export function criarCena(container: HTMLElement): Cena {
   observador.observe(container);
   redimensionar();
 
+  const obstaculos = criarCamadaDeObstaculos(casa.grupo);
   const dispositivos = criarCamadaDeDispositivos(casa.grupo);
   const cabos = criarCamadaDeCabos(casa.grupo, dispositivos);
   const lugares = criarLugares(casa.grupo, () => casa.todasAsSuperficies());
@@ -219,15 +224,52 @@ export function criarCena(container: HTMLElement): Cena {
     } finally {
       sincronizando = false;
     }
+    enquadrarSombra();
     pedirQuadro();
   };
 
+  // O mapa de sombra da tela cobre tudo o que projeta sombra: a casa, o quartinho, os obstáculos em volta e as peças.
+  // A caixa da casa e dos obstáculos é medida quando eles mudam; as peças no terreno, que podem ficar longe, entram a cada mudança delas.
   const caixaDaCasa = new THREE.Box3();
+  const caixaDaSombra = new THREE.Box3();
+  const caixaDaMalha = new THREE.Box3();
+  let noTerreno = '';
+  const medirCasa = (): void => {
+    caixaDaCasa.makeEmpty();
+    casa.grupo.updateWorldMatrix(true, true);
+    casa.grupo.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || !o.castShadow) return;
+      if (o instanceof THREE.InstancedMesh) {
+        if (o.boundingBox === null) o.computeBoundingBox();
+        caixaDaMalha.copy(o.boundingBox!);
+      } else {
+        if (o.geometry.boundingBox === null) o.geometry.computeBoundingBox();
+        caixaDaMalha.copy(o.geometry.boundingBox!);
+      }
+      if (!caixaDaMalha.isEmpty()) caixaDaCasa.union(caixaDaMalha.applyMatrix4(o.matrixWorld));
+    });
+    noTerreno = '';
+  };
+  const pontoDaPeca = new THREE.Vector3();
+  const enquadrarSombra = (): void => {
+    const pecas = estado.projeto.dispositivos.filter((d) => d.superficie === ID_TERRENO);
+    const chave = pecas.map((d) => d.pos.join(',')).join('|');
+    if (chave === noTerreno && !caixaDaSombra.isEmpty()) return;
+    noTerreno = chave;
+    caixaDaSombra.copy(caixaDaCasa);
+    for (const d of pecas) {
+      pontoDaPeca.set(d.pos[0], d.pos[1], d.pos[2]).applyMatrix4(casa.grupo.matrixWorld);
+      caixaDaSombra.expandByPoint(pontoDaPeca.clone().addScalar(1.6)).expandByPoint(pontoDaPeca.addScalar(-1.6));
+    }
+    sol.enquadrar(caixaDaSombra);
+  };
+
   /** Medidas da casa e projeto vistos na última reconstrução, para saber quando as peças têm de acompanhar a casa. */
   let medidasVistas = '';
   let projetoVisto: typeof estado.projeto | null = null;
   const refazerCasa = (): void => {
-    const medidas = JSON.stringify({ ...estado.projeto.casa, orientacaoGraus: 0 });
+    // Os obstáculos (muro, vizinho, árvore) contam como parte da casa: uma peça no terreno sai de baixo deles.
+    const medidas = JSON.stringify([{ ...estado.projeto.casa, orientacaoGraus: 0 }, estado.projeto.obstaculos ?? []]);
     // As peças acompanham a casa quando ela muda no mesmo projeto. Projeto trocado (aberto, novo, desfazer)
     // já traz as peças no lugar; girar a casa não mexe em nada.
     const acompanhar = projetoVisto === estado.projeto && medidas !== medidasVistas;
@@ -235,6 +277,7 @@ export function criarCena(container: HTMLElement): Cena {
     medidasVistas = medidas;
     projetoVisto = estado.projeto;
     casa.reconstruir(estado.projeto.casa);
+    obstaculos.atualizar();
     lugares.invalidar();
     dispositivos.atualizarVisao();
     if (memoria) {
@@ -242,8 +285,9 @@ export function criarCena(container: HTMLElement): Cena {
       if (novos.size > 0) acoes.moverDispositivos(novos, { historico: false });
     }
     sincronizar();
-    // O mapa de sombra acompanha a casa: cobre tudo que ela tem, onde quer que o quartinho esteja.
-    sol.enquadrar(caixaDaCasa.setFromObject(casa.grupo));
+    // O mapa de sombra acompanha a casa: cobre tudo que ela tem, onde quer que o quartinho e os obstáculos estejam.
+    medirCasa();
+    enquadrarSombra();
     pedirQuadro();
   };
   const refazerVisao = (): void => {
@@ -425,6 +469,7 @@ export function criarCena(container: HTMLElement): Cena {
     camera: () => ({ pos: camera.position.toArray(), alvo: controles.target.toArray() }),
     recalcular: recalcularAgora,
     ambiente: () => sombra.ambiente,
+    resumoDaSombra: () => sombra.resumo(),
     triangulosDosModelos: () => dispositivos.triangulos(),
     camadas: { dispositivos, cabos },
     pedirQuadro,
@@ -472,6 +517,7 @@ export function criarCena(container: HTMLElement): Cena {
       // Geometrias, materiais, texturas e mapa de sombra de tudo: casa, terreno, rosa dos ventos e sol.
       dispositivos.destruir();
       cabos.destruir();
+      obstaculos.destruir();
       liberar(cena, true);
       sol.destruir();
       liberarMateriais();

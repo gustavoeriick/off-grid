@@ -13,6 +13,7 @@ import { Construtor, esconder, liberar, type Marca, marcarSolido } from './malha
 import { cor, mat } from './materiais';
 import { type Abertura, criarParede } from './paredes';
 import { CAIBRO, criarAgua, criarCumeeira, FUNDO_RIPA } from './telhado';
+import { MARCA_DO_TERRENO, MEIO_TERRENO } from './terreno';
 import { construirVaranda, cortarAgua, cumeeiraSemPonta, GIRO_DA_FACHADA, type MedidaVaranda, medirVarandas, type Planta } from './varanda';
 
 const ESPESSURA_PAREDE = 0.15;
@@ -310,6 +311,20 @@ function construirCalcada(casa: CasaConfig, varandas: readonly MedidaVaranda[]):
   return g;
 }
 
+/**
+ * Terreno em volta da casa como superfície de encaixe (placas sobre suporte e estação portátil): um plano que não é
+ * desenhado, ao nível do chão. Dentro da casa, das varandas e do quartinho o raio do ponteiro acha antes o piso deles.
+ */
+function criarTerreno(): THREE.Mesh {
+  const geo = new THREE.PlaneGeometry(2 * MEIO_TERRENO, 2 * MEIO_TERRENO);
+  geo.rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(geo, mat.encaixe);
+  m.name = 'terreno-de-encaixe';
+  m.userData.superficie = MARCA_DO_TERRENO;
+  m.userData.soEncaixe = true;
+  return m;
+}
+
 // ---------------------------------------------------------------- Casa
 
 export interface CasaCena {
@@ -554,6 +569,7 @@ export function criarCasa(): CasaCena {
     for (const v of varandas) estrutura.add(construirVaranda(casa, v));
     estrutura.add(construirQuartinho(casa));
     estrutura.add(construirCalcada(casa, varandas));
+    estrutura.add(criarTerreno());
   }
 
   function reconstruir(casa: CasaConfig): void {

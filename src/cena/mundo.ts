@@ -13,12 +13,15 @@ function ruido(x: number, z: number): number {
   return THREE.MathUtils.clamp(0.5 + v / 3.9, 0, 1);
 }
 
-/** Gramado de 80 × 80 m, com manchas, e em volta dele o mesmo verde até o horizonte. */
+/**
+ * Gramado de 130 × 130 m, com manchas, e em volta dele o mesmo verde até o horizonte. Cobre os obstáculos e as placas
+ * no chão, que ficam a até 30 m do meio da casa em qualquer orientação, e a sombra deles.
+ */
 export function criarChao(): THREE.Group {
   const g = new THREE.Group();
   g.name = 'terreno';
 
-  const geo = new THREE.PlaneGeometry(80, 80, 48, 48);
+  const geo = new THREE.PlaneGeometry(130, 130, 78, 78);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.getAttribute('position');
   const uv = geo.getAttribute('uv');
@@ -30,7 +33,7 @@ export function criarChao(): THREE.Group {
     uv.setXY(i, x, z); // em metros, como o resto da cena
     // Do verde mais seco ao mais viçoso, em torno da cor da especificação; na borda as manchas somem,
     // para o gramado emendar com o chão de longe.
-    const n = THREE.MathUtils.lerp(ruido(x, z), 0.5, THREE.MathUtils.smoothstep(Math.max(Math.abs(x), Math.abs(z)), 30, 40));
+    const n = THREE.MathUtils.lerp(ruido(x, z), 0.5, THREE.MathUtils.smoothstep(Math.max(Math.abs(x), Math.abs(z)), 52, 65));
     cor.setRGB(0.9 + n * 0.22, 0.88 + n * 0.2, 0.8 + n * 0.3);
     cores[i * 3] = cor.r;
     cores[i * 3 + 1] = cor.g;
@@ -46,6 +49,7 @@ export function criarChao(): THREE.Group {
   const longe = new THREE.Mesh(new THREE.CircleGeometry(700, 48), mat.gramaLonge);
   longe.rotation.x = -Math.PI / 2;
   longe.name = 'chao-longe';
+  longe.receiveShadow = true;
   longe.position.y = -0.03;
   g.add(longe);
   return g;

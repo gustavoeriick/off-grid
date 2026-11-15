@@ -200,7 +200,9 @@ export function infoBanco(sistema: Sistema, projeto: Projeto, catalogo: Catalogo
 
 /** Quanto a bateria aceita de carga, em W, em um passo de `dt` horas. */
 function cargaAceita(b: InfoBanco, soc: number, dt: number): number {
-  let aceita = Math.min(b.cargaMaxA * b.tensaoCarga, ((1 - soc) * b.wh) / (b.rendCarga * dt));
+  // Em um passo de duração zero (simulação pausada) não há energia a limitar: vale só o limite de corrente, e bateria cheia não aceita nada.
+  const porEnergia = dt > 0 ? ((1 - soc) * b.wh) / (b.rendCarga * dt) : soc < 1 ? Infinity : 0;
+  let aceita = Math.min(b.cargaMaxA * b.tensaoCarga, porEnergia);
   if (b.quimica !== 'lifepo4' && soc > 0.8) aceita *= Math.max(0.1, (1 - soc) / 0.2);
   return Math.max(0, aceita);
 }

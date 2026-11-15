@@ -17,6 +17,8 @@ import { type Modelo, modeloDe, type TerminalDoModelo, TRILHO } from './modelos'
 import { Molde } from './molde';
 import { modeloDaProtecao, PROFUNDIDADE_DA_PROTECAO } from './protecoes';
 import { ocupacaoDoQuadro, type OcupacaoDoQuadro } from './quadro';
+import { criarSuporte } from './suporte';
+import { placaNoChao } from './terreno';
 
 /** Raio da esfera invisível de clique de um terminal. */
 export const RAIO_DE_CLIQUE = 0.1;
@@ -101,6 +103,9 @@ interface Peca {
   trilho: THREE.Group | null;
   assinaturaDoTrilho: string;
   ocupacao: OcupacaoDoQuadro | null;
+  /** Placa no terreno: o suporte inclinado e a inclinação com que ele foi feito. */
+  suporte: THREE.Group | null;
+  inclinacaoDoSuporte: number | null;
 }
 
 const EIXO_Z = new THREE.Vector3(0, 0, 1);
@@ -228,6 +233,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     const peca: Peca = {
       uid: d.uid, item, modelo, grupo, pos: '', superficie: null, ligado: d.ligado, escondida: false, rotulos,
       helice: grupo.getObjectByName('helice') ?? null, ativo: d.ligado, trilho: null, assinaturaDoTrilho: '', ocupacao: null,
+      suporte: null, inclinacaoDoSuporte: null,
     };
     aplicarAtivo(peca);
     casa.add(grupo);
@@ -244,8 +250,32 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     p.trilho = null;
   }
 
+  /** Põe, troca ou tira o suporte inclinado: só a placa no terreno tem um. */
+  function refazerSuporte(p: Peca, d: Dispositivo): void {
+    const inclinacao = placaNoChao(d, p.item) ? (d.inclinacaoGraus ?? 0) : null;
+    if (inclinacao === p.inclinacaoDoSuporte) return;
+    if (p.suporte) {
+      p.grupo.remove(p.suporte);
+      p.suporte.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose();
+      });
+      p.suporte = null;
+    }
+    p.inclinacaoDoSuporte = inclinacao;
+    if (inclinacao === null) return;
+    p.suporte = criarSuporte(p.modelo.dimensoes[0], p.modelo.dimensoes[1], inclinacao);
+    p.grupo.add(p.suporte);
+    if (p.escondida) esconder(p.suporte, true);
+  }
+
   function removerPeca(p: Peca): void {
     removerTrilho(p);
+    if (p.suporte) {
+      p.suporte.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose();
+      });
+      p.suporte = null;
+    }
     casa.remove(p.grupo);
     pecas.delete(p.uid);
   }
@@ -323,6 +353,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       }
       p.superficie = d.superficie;
       refazerTrilho(p);
+      refazerSuporte(p, d);
       const escondida = escondidas.get(d.superficie ?? '') ?? false;
       if (escondida !== p.escondida) {
         p.escondida = escondida;

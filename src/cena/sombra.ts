@@ -1,8 +1,8 @@
 // Sombra para o cálculo: o que a cena informa ao núcleo sobre cada placa (`AmbientePlacas`). Tarefa 3.1.
 // Especificação: docs/especificacao/cena-e-interface.md, seções 3 (marcações), 9 e 15.
 //
-// Os obstáculos são as malhas com `userData.sombra` debaixo do grupo da casa: paredes, lajes, pilares, quartinho
-// e as lajes só de sombra dos telhados. A busca percorre a árvore inteira, então alcança também o que o modo de
+// Os obstáculos são as malhas com `userData.sombra` debaixo do grupo da casa: paredes, lajes, pilares, quartinho,
+// as lajes só de sombra dos telhados e o que há em volta da casa (muro, vizinho e árvore, de obstaculos.ts). A busca percorre a árvore inteira, então alcança também o que o modo de
 // visão escondeu (camada 1), como faria um `Raycaster` com `layers.enableAll()`. Telhas, madeiramento, vidros,
 // malhas de encaixe, equipamentos e cabos não têm a marca e ficam de fora.
 //
@@ -276,7 +276,8 @@ export function criarSombra(casa: THREE.Object3D): SombraDasPlacas {
   const eixoY = new THREE.Vector3();
   const eixoZ = new THREE.Vector3();
 
-  const medidasDaCasa = (): string => JSON.stringify({ ...estado.projeto.casa, orientacaoGraus: 0 });
+  /** A casa e os obstáculos em volta dela (muro, vizinho, árvore): tudo o que tapa o sol. */
+  const medidasDaCasa = (): string => JSON.stringify([{ ...estado.projeto.casa, orientacaoGraus: 0 }, estado.projeto.obstaculos ?? []]);
 
   function obstaculos(): Arvore {
     if (arvore && !conferir) return arvore;

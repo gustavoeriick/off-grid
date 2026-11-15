@@ -2,11 +2,16 @@
 
 import { CATALOGO, grupoDoItem } from '../catalogo';
 import type { Item, TipoCabo, Uso } from '../catalogo/tipos';
+import {
+  alturaDaBeira, avisoDoQuartinho, comprimentoDaParede, deslocamentoMaximo, inclinacaoMaxima, LIMITES_QUARTINHO, LIMITES_VARANDA, limitarVaranda,
+  medidaDaFachada, profundidadeMaxima,
+} from '../cena/regrasDaCasa';
 import { acoes, assinar, estado } from '../estado';
 import { correntesDeProjeto, quedasDeTensao } from '../nucleo/cabos';
 import { comodoDe } from '../nucleo/comodos';
-import type { Cabo, Circuito, Dispositivo } from '../nucleo/tipos';
+import type { Cabo, CasaConfig, Circuito, Dispositivo, LadoCasa, ParedeInterna, Varanda } from '../nucleo/tipos';
 import { avisosDoItem, blocoDePreco, brl, el, h, mostrarMensagem, num, substituir } from './formato';
+import { camposDaPlacaNoChao, linhaDaSombra, painelObstaculo } from './obstaculos';
 
 const NOME_CIRCUITO: Record<Circuito, string> = {
   placas: 'Placas',
@@ -62,13 +67,15 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
     h('p', { class: 'detalhe' }, item.detalhe),
     blocoDePreco(item),
     ...avisosDoItem(item),
-    h('p', { class: 'comodo' }, `Cômodo: ${comodo ? comodo.nome : 'nenhum'}`),
-  ].filter((n): n is HTMLElement => n !== null);
+    h('p', { class: 'comodo' }, d.superficie === 'terreno' ? 'Lugar: no terreno, fora da casa' : `Cômodo: ${comodo ? comodo.nome : 'nenhum'}`),
+    linhaDaSombra(d, item),
+  ].filter((n) => n !== null);
 
   const linha = h('div', { class: 'acoes-item' });
   linha.append(botao('Girar', () => window.dispatchEvent(new CustomEvent('offgrid:girar-selecionado')), { title: 'Gira a peça em 90° sobre a superfície' }));
   linha.append(botao('Apagar', () => acoes.removerDispositivo(d.uid), { class: 'perigo' }));
   nos.push(linha);
+  nos.push(...camposDaPlacaNoChao(d, item, redesenhar));
 
   if (item.categoria === 'aparelho') {
     const uso: Uso = d.uso ?? item.usoPadrao;
@@ -149,6 +156,101 @@ function painelCabo(c: Cabo): Node[] | null {
   return nos;
 }
 
+// ---------------------------------------------------------------- Casa: quartinho, varanda e parede interna ("Editar casa")
+
+interface Faixa {
+  min: number;
+  max: number;
+  passo: number;
+}
+
+/** Campo numérico de um painel. Valor fora da faixa é cortado para o limite; campo vazio ou sem número não muda nada. */
+function campoNumero(rotulo: string, chave: string, valor: number, faixa: Faixa, aoMudar: (v: number) => void, redesenhar: () => void): HTMLLabelElement {
+  const campo = h('input', { type: 'number', 'data-campo': chave, min: String(faixa.min), max: String(faixa.max), step: String(faixa.passo), value: String(valor) });
+  campo.addEventListener('change', () => {
+    const v = campo.value.trim() === '' ? NaN : Number(campo.value.replace(',', '.'));
+    if (Number.isFinite(v)) aoMudar(Math.min(faixa.max, Math.max(faixa.min, v)));
+    // Mostra o valor que ficou valendo, também quando ele foi cortado e o estado não mudou.
+    redesenhar();
+  });
+  return h('label', { class: 'campo-casa' }, rotulo, campo);
+}
+
+const apagarDaCasa = (): boolean => window.dispatchEvent(new CustomEvent('offgrid:apagar-da-casa'));
+
+function painelQuartinho(casa: CasaConfig, redesenhar: () => void): Node[] {
+  const q = casa.quartinho;
+  const L = LIMITES_QUARTINHO;
+  const mudar = (chave: keyof CasaConfig['quartinho']) => (v: number): void => {
+    if (v !== q[chave]) acoes.alterarCasa({ quartinho: { ...q, [chave]: v } });
+  };
+  const campo = (rotulo: string, chave: keyof CasaConfig['quartinho'], faixa: Faixa): HTMLLabelElement => campoNumero(rotulo, chave, q[chave], faixa, mudar(chave), redesenhar);
+  const aviso = avisoDoQuartinho(casa);
+  return [
+    h('h3', null, 'Quartinho'),
+    h('p', { class: 'detalhe' }, 'Arraste o quartinho na cena, ou mude os números. O que está dentro dele vai junto.'),
+    h(
+      'div',
+      { class: 'campos-casa' },
+      campo('Posição x (m)', 'x', { min: -L.posicaoMax, max: L.posicaoMax, passo: L.passo }),
+      campo('Posição z (m)', 'z', { min: -L.posicaoMax, max: L.posicaoMax, passo: L.passo }),
+      campo('Largura (m)', 'largura', { min: 1, max: 6, passo: 0.1 }),
+      campo('Profundidade (m)', 'profundidade', { min: 1, max: 6, passo: 0.1 }),
+      campo('Altura (m)', 'altura', { min: 2, max: 3.5, passo: 0.1 }),
+      campo('Giro (°)', 'giro', { min: -180, max: 180, passo: 5 }),
+    ),
+    h('p', { class: 'detalhe' }, 'A posição é contada do meio da casa: x para os lados, z para a frente (positivo) e para os fundos (negativo).'),
+    aviso ? h('p', { class: 'aviso-item nao-recomendado' }, aviso) : null,
+  ].filter((n) => n !== null);
+}
+
+const NOME_DA_VARANDA: Record<LadoCasa, string> = { frente: 'Varanda da frente', fundos: 'Varanda dos fundos', esquerda: 'Varanda da esquerda', direita: 'Varanda da direita' };
+
+function painelVaranda(casa: CasaConfig, v: Varanda, redesenhar: () => void): Node[] {
+  const L = LIMITES_VARANDA;
+  const fachada = medidaDaFachada(casa, v.lado);
+  const aplicar = (mudanca: Partial<Varanda>): void => {
+    const nova = limitarVaranda({ ...v, ...mudanca }, casa);
+    if (JSON.stringify(nova) !== JSON.stringify(v)) acoes.definirVaranda(nova);
+  };
+  const inteira = h('input', { type: 'checkbox', 'data-campo': 'inteira', checked: v.largura === null });
+  // Ao desmarcar, a varanda começa com metade da fachada, no meio dela.
+  inteira.addEventListener('change', () => aplicar(inteira.checked ? { largura: null, deslocamento: 0 } : { largura: Math.max(1, Math.round(fachada * 5) / 10), deslocamento: 0 }));
+  const beira = alturaDaBeira(casa, v.profundidade, v.inclinacaoPct);
+  const remover = botao('Remover varanda', apagarDaCasa, { class: 'perigo', 'data-acao': 'remover-varanda' });
+  return [
+    h('h3', null, NOME_DA_VARANDA[v.lado]),
+    h('p', { class: 'detalhe' }, 'Na cena, arraste a bolinha da borda de fora para mudar a profundidade e as das pontas para mudar a largura.'),
+    h(
+      'div',
+      { class: 'campos-casa' },
+      campoNumero('Profundidade (m)', 'profundidade', v.profundidade, { min: L.profundidadeMin, max: Math.min(L.profundidadeMax, profundidadeMaxima(casa)), passo: L.profundidadePasso }, (n) => aplicar({ profundidade: n }), redesenhar),
+      campoNumero('Inclinação (%)', 'inclinacao', v.inclinacaoPct, { min: L.inclinacaoMin, max: inclinacaoMaxima(casa, v.profundidade), passo: 1 }, (n) => aplicar({ inclinacaoPct: n }), redesenhar),
+      ...(v.largura === null
+        ? []
+        : [
+            campoNumero('Largura (m)', 'largura', v.largura, { min: Math.min(L.larguraMin, fachada), max: fachada, passo: 0.1 }, (n) => aplicar({ largura: n }), redesenhar),
+            campoNumero('Deslocamento (m)', 'deslocamento', v.deslocamento, { min: -deslocamentoMaximo(fachada, v.largura), max: deslocamentoMaximo(fachada, v.largura), passo: 0.1 }, (n) => aplicar({ deslocamento: n }), redesenhar),
+          ]),
+    ),
+    h('label', { class: 'campo' }, inteira, `Fachada inteira (${num(fachada, 1)} m)`),
+    h('p', { class: 'detalhe' }, `A beira do telhado fica a ${num(beira, 2)} m do chão. O mínimo é ${num(L.alturaMinBeira, 1)} m: por isso, quanto mais funda a varanda, menor a inclinação que cabe.`),
+    v.largura === null ? null : h('p', { class: 'detalhe' }, 'Deslocamento é quanto o meio da varanda sai do meio da fachada: positivo vai para a direita de quem olha a fachada de fora.'),
+    h('div', { class: 'acoes-item' }, remover),
+  ].filter((n) => n !== null);
+}
+
+function painelParede(p: ParedeInterna): Node[] {
+  const n = p.passagens.length;
+  return [
+    h('h3', null, 'Parede interna'),
+    h('p', null, `Comprimento: ${num(comprimentoDaParede(p), 1)} m`),
+    h('p', null, n === 0 ? 'Sem passagem' : n === 1 ? '1 passagem de 0,8 m' : `${n} passagens de 0,8 m`),
+    h('p', { class: 'detalhe' }, 'Na cena: arraste a parede para mover, arraste uma ponta para encurtar ou esticar e clique nela para pôr ou tirar uma passagem (um vão sem porta).'),
+    h('div', { class: 'acoes-item' }, botao('Apagar parede', apagarDaCasa, { class: 'perigo', 'data-acao': 'apagar-parede', title: 'Tecla Delete' })),
+  ];
+}
+
 export function montarSelecionado(): void {
   const raiz = el<HTMLElement>('#item-selecionado');
   const desenhar = (): void => {
@@ -160,6 +262,17 @@ export function montarSelecionado(): void {
     } else if (s?.tipo === 'cabo') {
       const c = estado.projeto.cabos.find((x) => x.uid === s.uid);
       if (c) nos = painelCabo(c);
+    } else if (s?.tipo === 'quartinho') {
+      nos = painelQuartinho(estado.projeto.casa, forcar);
+    } else if (s?.tipo === 'varanda') {
+      const v = estado.projeto.casa.varandas.find((x) => x.lado === s.lado);
+      if (v) nos = painelVaranda(estado.projeto.casa, v, forcar);
+    } else if (s?.tipo === 'parede') {
+      const p = estado.projeto.casa.paredesInternas.find((x) => x.uid === s.uid);
+      if (p) nos = painelParede(p);
+    } else if (s?.tipo === 'obstaculo') {
+      const o = (estado.projeto.obstaculos ?? []).find((x) => x.uid === s.uid);
+      if (o) nos = painelObstaculo(o, forcar);
     }
     raiz.hidden = nos === null;
     if (nos === null) {

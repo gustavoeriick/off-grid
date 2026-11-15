@@ -6,6 +6,7 @@
 //   offgrid:arrastar-item      { itemId, clientX, clientY }   apertou um cartão do catálogo
 //   offgrid:girar-selecionado                                  botão "Girar" do painel do item
 //   offgrid:acao               Acao ('mais-placa' ou 'mais-bateria') botão de uma sugestão do consultor
+//   offgrid:placa-no-chao      { inclinacao?, azimute? }       campos "Inclinação" e "Direção" da placa selecionada no terreno
 
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -20,6 +21,7 @@ import type { Candidato, Lugares, Toque } from './lugares';
 import { acrescentarBateria, acrescentarPlaca } from './maisPecas';
 import type { TipoSuperficie } from './malha';
 import { modeloDe } from './modelos';
+import { azimutePadrao, giroParaOAzimute, ID_TERRENO, limitarInclinacao, placaNoChao } from './terreno';
 
 export interface PartesDaCena {
   container: HTMLElement;
@@ -49,15 +51,21 @@ type Alvo =
   | { tipo: 'dispositivo'; uid: string }
   | { tipo: 'cabo'; uid: string };
 
+/** Placa levada ao terreno: giro em torno da vertical e inclinação do suporte. Nulo usa o padrão (face para o norte, latitude do local). */
+interface NoChao {
+  giro: number | null;
+  inclinacao: number | null;
+}
+
 type Modo =
   | { tipo: 'ocioso' }
   /** Botão apertado na cena, ainda sem passar dos 4 px. */
   | { tipo: 'apertado'; x: number; y: number; alvo: Alvo | null }
   /** Arraste que não é da interação: a órbita da câmera, ou um cabo apertado e arrastado. */
   | { tipo: 'alheio' }
-  | { tipo: 'catalogo'; item: Item; giro: number; candidato: Candidato | null }
+  | { tipo: 'catalogo'; item: Item; giro: number; chao: NoChao; candidato: Candidato | null }
   | { tipo: 'protecao'; item: Protecao; cabo: string | null }
-  | { tipo: 'mover'; uid: string; item: Item; giro: number; desvio: [number, number]; marcado: boolean; candidato: Candidato | null }
+  | { tipo: 'mover'; uid: string; item: Item; giro: number; chao: NoChao; desvio: [number, number]; marcado: boolean; candidato: Candidato | null }
   | { tipo: 'cabo'; de: PontaCabo; tipoDoTerminal: TipoTerminal; x: number; y: number; moveu: boolean; para: PontaCabo | null; motivo: string | null };
 
 /** Distância, em pixels, a partir da qual apertar e mexer vira arraste. */
@@ -372,29 +380,41 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   }
 
   /** Candidato do item sob o ponteiro, ou nulo quando o ponteiro não está sobre uma superfície à vista. */
-  function candidatoSob(item: Item, giro: number, x: number, y: number, ignorar?: ReadonlySet<string>): Candidato | null {
+  /** Giro, no quadro da casa, da placa que chega ao terreno sem direção escolhida: a face olha para o norte do mundo (no hemisfério norte, para o sul). */
+  const giroPadraoNoChao = (): number => giroParaOAzimute(estado.projeto.casa.orientacaoGraus, azimutePadrao(estado.projeto));
+
+  function candidatoSob(item: Item, giro: number, chao: NoChao, x: number, y: number, ignorar?: ReadonlySet<string>): Candidato | null {
     if (!sobreACena(x, y)) return null;
     mirar(x, y);
     let toque: Toque | null = c.lugares.toque(raio, c.superficies());
     // Peça de piso apontada para uma parede: vale o piso ao pé dela, e a peça encosta na parede.
     if (toque?.marca.tipo === 'parede' && superficieAceita(item) === 'piso') toque = c.lugares.pisoAoPe(toque, c.superficies()) ?? toque;
-    return toque ? c.lugares.candidato(item, giro, toque, ignorar ? { ignorar } : {}) : null;
+    if (!toque) return null;
+    // Placa no terreno: fica sobre o suporte, com a direção e a inclinação dela.
+    if (toque.marca.id === ID_TERRENO && item.categoria === 'placa') {
+      return c.lugares.candidato(item, chao.giro ?? giroPadraoNoChao(), toque, { ...(ignorar ? { ignorar } : {}), ...(chao.inclinacao === null ? {} : { inclinacao: chao.inclinacao }) });
+    }
+    return c.lugares.candidato(item, giro, toque, ignorar ? { ignorar } : {});
   }
 
+  /** O candidato é uma placa sobre suporte, no terreno. */
+  const noChao = (item: Item, candidato: Candidato | null): boolean => item.categoria === 'placa' && candidato?.encaixe.superficie === ID_TERRENO;
+
   function ondeLevar(item: Item): string {
+    if (item.categoria === 'placa') return `${nomeCurto(item)}: leve até um telhado ou até o terreno`;
     const tipo = superficieAceita(item);
     return tipo ? `${nomeCurto(item)}: leve até ${NOME_DA_SUPERFICIE[tipo]}` : nomeCurto(item);
   }
 
   function atualizarCatalogo(m: Modo & { tipo: 'catalogo' }, x: number, y: number): void {
-    m.candidato = candidatoSob(m.item, m.giro, x, y);
+    m.candidato = candidatoSob(m.item, m.giro, m.chao, x, y);
     if (!m.candidato) {
       esconderFantasma();
       mostrarDica(ondeLevar(m.item), x, y);
       return;
     }
     mostrarFantasma(m.item, m.candidato.encaixe, m.candidato.valido);
-    if (m.candidato.valido) mostrarDica('Solte para colocar (R gira)', x, y, 'bom');
+    if (m.candidato.valido) mostrarDica(noChao(m.item, m.candidato) ? 'Solte para pôr no chão, sobre suporte (R muda a direção)' : 'Solte para colocar (R gira)', x, y, 'bom');
     else mostrarDica(m.candidato.motivo, x, y, 'ruim');
   }
 
@@ -416,7 +436,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   }
 
   function atualizarMover(m: Modo & { tipo: 'mover' }, x: number, y: number): void {
-    m.candidato = candidatoSob(m.item, m.giro, x - m.desvio[0], y - m.desvio[1], new Set([m.uid]));
+    m.candidato = candidatoSob(m.item, m.giro, m.chao, x - m.desvio[0], y - m.desvio[1], new Set([m.uid]));
     if (!m.candidato) {
       esconderFantasma();
       mostrarDica(ondeLevar(m.item), x, y);
@@ -451,7 +471,10 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     const centro = new THREE.Vector3(...d.pos);
     const contato = centro.clone().addScaledVector(q.n, q.w - centro.dot(q.n));
     const [sx, sy] = c.naTela(contato);
-    modo = { tipo: 'mover', uid, item, giro: d.giro, desvio: [x - sx, y - sy], marcado: false, candidato: null };
+    // A placa que está no terreno leva a direção e a inclinação dela; se subir para um telhado, entra em pé.
+    const doChao = placaNoChao(d, item);
+    const chao: NoChao = doChao ? { giro: d.giro, inclinacao: d.inclinacaoGraus ?? null } : { giro: null, inclinacao: null };
+    modo = { tipo: 'mover', uid, item, giro: doChao ? 0 : d.giro, chao, desvio: [x - sx, y - sy], marcado: false, candidato: null };
     if (estado.selecao?.tipo !== 'dispositivo' || estado.selecao.uid !== uid) acoes.selecionar({ tipo: 'dispositivo', uid });
     limparPairar();
     c.canvas.style.cursor = 'grabbing';
@@ -699,7 +722,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       return;
     }
     if (item.categoria === 'protecao') modo = { tipo: 'protecao', item, cabo: null };
-    else if (superficieAceita(item) && modeloDe(item)) modo = { tipo: 'catalogo', item, giro: 0, candidato: null };
+    else if (superficieAceita(item) && modeloDe(item)) modo = { tipo: 'catalogo', item, giro: 0, chao: { giro: null, inclinacao: null }, candidato: null };
     else return;
     limparPairar();
     c.controles.enabled = false;
@@ -722,9 +745,29 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     const q = d ? c.lugares.quadroDaPeca(d) : null;
     if (!d || !item || !q) return;
     const centro = new THREE.Vector3(...d.pos);
-    const girado = c.lugares.assentar(item, d.giro + 90, q, centro.dot(q.u), centro.dot(q.v), { ignorar: new Set([d.uid]) });
+    // Placa no terreno: a face anda 15° no sentido dos ponteiros do relógio, com a mesma inclinação.
+    const girado = placaNoChao(d, item)
+      ? c.lugares.assentar(item, d.giro - 15, q, centro.dot(q.u), centro.dot(q.v), { ignorar: new Set([d.uid]), ...(d.inclinacaoGraus === undefined ? {} : { inclinacao: d.inclinacaoGraus }) })
+      : c.lugares.assentar(item, d.giro + 90, q, centro.dot(q.u), centro.dot(q.v), { ignorar: new Set([d.uid]) });
     if (girado.valido) acoes.moverDispositivo(d.uid, girado.encaixe);
     else avisar(`Girada, a peça não cabe aqui. ${girado.motivo ?? ''}`.trim(), ...telaDaPeca(d.uid));
+  }
+
+  /** Campos "Inclinação" e "Direção" do painel da placa selecionada no terreno. */
+  function ajustarPlacaNoChao(e: Event): void {
+    const pedido = (e as CustomEvent<{ inclinacao?: number; azimute?: number }>).detail ?? {};
+    const s = estado.selecao;
+    if (s?.tipo !== 'dispositivo' || estado.edicaoCasa.ativa) return;
+    const d = estado.projeto.dispositivos.find((k) => k.uid === s.uid);
+    const item = d ? CATALOGO.get(d.itemId) : undefined;
+    const q = d ? c.lugares.quadroDaPeca(d) : null;
+    if (!d || !item || !q || !placaNoChao(d, item)) return;
+    const giro = pedido.azimute === undefined ? d.giro : giroParaOAzimute(estado.projeto.casa.orientacaoGraus, pedido.azimute);
+    const inclinacao = limitarInclinacao(pedido.inclinacao ?? d.inclinacaoGraus ?? 0);
+    const centro = new THREE.Vector3(...d.pos);
+    const novo = c.lugares.assentar(item, giro, q, centro.dot(q.u), centro.dot(q.v), { ignorar: new Set([d.uid]), inclinacao });
+    if (!novo.valido) avisar(`Assim a placa não cabe aqui. ${novo.motivo ?? ''}`.trim(), ...telaDaPeca(d.uid));
+    else if (!mesmoEncaixe(novo.encaixe, d.uid)) acoes.moverDispositivo(d.uid, novo.encaixe);
   }
 
   function apagarSelecionado(): void {
@@ -743,7 +786,9 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     if (e.key === 'r' || e.key === 'R') {
       const m = modo;
       if (m.tipo === 'catalogo' || m.tipo === 'mover') {
-        m.giro = (m.giro + 90) % 360;
+        // No terreno, R vira a face da placa 15° no sentido dos ponteiros do relógio; nas outras superfícies, gira 90°.
+        if (noChao(m.item, m.candidato)) m.chao.giro = (m.chao.giro ?? m.candidato!.encaixe.giro) - 15;
+        else m.giro = (m.giro + 90) % 360;
         if (ultimo) tratarMovimento(ultimo[0], ultimo[1]);
       } else if (m.tipo === 'ocioso') girarSelecionado();
       return;
@@ -788,6 +833,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   window.addEventListener('offgrid:arrastar-item', aoArrastarItem);
   window.addEventListener('offgrid:girar-selecionado', girarSelecionado);
   window.addEventListener('offgrid:acao', aoAgir);
+  window.addEventListener('offgrid:placa-no-chao', ajustarPlacaNoChao);
 
   const cancelarAssinaturas = [
     assinar('selecao', pedirRealce),
@@ -826,6 +872,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       window.removeEventListener('offgrid:arrastar-item', aoArrastarItem);
       window.removeEventListener('offgrid:girar-selecionado', girarSelecionado);
       window.removeEventListener('offgrid:acao', aoAgir);
+      window.removeEventListener('offgrid:placa-no-chao', ajustarPlacaNoChao);
       removerFantasma();
       molduraDaSelecao?.parent?.remove(molduraDaSelecao);
       c.casa.remove(realces, elastico);
