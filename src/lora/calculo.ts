@@ -24,7 +24,7 @@ export type SituacaoDoEnlace =
 
 let relevo: Relevo = criarRelevo();
 const situacoes = new Map<string, { assinatura: string; situacao: SituacaoDoEnlace }>();
-const altitudes = new Map<string, { assinatura: string; altM: number | null }>();
+const altitudes = new Map<string, { assinatura: string; altM: number | null; erro: boolean }>();
 const ouvintes = new Set<() => void>();
 
 /** Troca a fonte do relevo. Para os testes e para a verificação, que usam um relevo feito à mão. */
@@ -93,14 +93,15 @@ async function calcular(chave: string, assinatura: string, de: PontoLora, para: 
 
 async function medirAltitude(id: string, assinatura: string, ponto: Coordenada): Promise<void> {
   let altM: number | null = null;
+  let erro = false;
   try {
     await relevo.carregar([ponto]);
     altM = relevo.altitudeEm(ponto);
   } catch {
-    altM = null;
+    erro = true;
   }
   if (altitudes.get(id)?.assinatura !== assinatura) return;
-  altitudes.set(id, { assinatura, altM });
+  altitudes.set(id, { assinatura, altM, erro });
   avisar();
 }
 
@@ -132,7 +133,7 @@ function recalcular(): void {
   for (const p of projeto.pontos) {
     const assinatura = `${p.lat}|${p.lon}`;
     if (altitudes.get(p.id)?.assinatura === assinatura) continue;
-    altitudes.set(p.id, { assinatura, altM: null });
+    altitudes.set(p.id, { assinatura, altM: null, erro: false });
     void medirAltitude(p.id, assinatura, { lat: p.lat, lon: p.lon });
   }
   for (const id of [...altitudes.keys()]) if (!pontos.has(id)) altitudes.delete(id);
@@ -147,6 +148,20 @@ export function situacaoDoEnlace(de: string, para: string): SituacaoDoEnlace | n
 /** Altitude do terreno no ponto, em metros. Nulo enquanto o relevo não chegou ou se não deu para baixar. */
 export function altitudeDoPonto(id: string): number | null {
   return altitudes.get(id)?.altM ?? null;
+}
+
+/** Como está a altitude do ponto: ainda baixando o relevo, pronta, ou o relevo não pôde ser baixado. */
+export function situacaoDaAltitude(id: string): 'baixando' | 'pronta' | 'erro' {
+  const a = altitudes.get(id);
+  if (!a || (a.altM === null && !a.erro)) return 'baixando';
+  return a.erro ? 'erro' : 'pronta';
+}
+
+/** Refaz o que deu erro: enlaces sem resultado e altitudes que não puderam ser baixadas. Para o botão "Tentar de novo". */
+export function tentarDeNovo(): void {
+  for (const [chave, s] of [...situacoes]) if (s.situacao.estado === 'erro') situacoes.delete(chave);
+  for (const [id, a] of [...altitudes]) if (a.erro) altitudes.delete(id);
+  recalcular();
 }
 
 assinarLora('projeto', recalcular);
