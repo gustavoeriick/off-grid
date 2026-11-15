@@ -1505,7 +1505,7 @@ async function principal() {
     await pagina.locator('[data-aba="consultor"]').click();
     await pagina.locator('#botao-passo-a-passo').click();
     await pagina.locator('#painel-escolha-roteiro').waitFor({ state: 'visible' });
-    conferir((await pagina.locator('#painel-escolha-roteiro .roteiro-opcao').count()) === 2, 'a escolha deveria listar os dois roteiros');
+    conferir((await pagina.locator('#painel-escolha-roteiro .roteiro-opcao').count()) === 3 && ((await pagina.locator('#painel-escolha-roteiro .roteiro-opcao').first().getAttribute('class')) ?? '').includes('roteiro-tutorial'), 'a escolha deveria listar o tutorial primeiro e os dois roteiros da casa');
     await captura('74-passo-a-passo-escolha');
 
     // 12 V: pergunta antes, e a montagem fica vazia (sem a tomada da rede).
@@ -1711,6 +1711,388 @@ async function principal() {
     await captura('82-roda-aproxima-do-ponteiro');
     await pagina.locator('#botao-vista-inicial').click();
   }
+  // ---- Tutorial do quartinho (tarefa 7.5): entrada pelo cartão, nove passos com o mouse, teste de autonomia e saída.
+  async function verificarTutorial() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const projeto = async () => (await estado()).projeto;
+    const situacao = () => og(() => window.__offgrid.interacao());
+    const noMundo = (p) => [-p[0], p[1], -p[2]];
+    const painel = () => pagina.locator('#passo-a-passo');
+    const destaques = async () => (await estado()).destaques ?? [];
+    const olhar = (pos, alvo) => mudarCamera(noMundo(pos), noMundo(alvo));
+    const parado = async () => {
+      await esperar(300);
+      await og(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return situacao();
+    };
+    const levar = async (de, ate) => {
+      await pagina.mouse.move(de[0], de[1]);
+      await esperar(150);
+      await pagina.mouse.down();
+      await pagina.mouse.move(ate[0], ate[1], { steps: 10 });
+      return parado();
+    };
+    const soltar = async () => {
+      await pagina.mouse.up();
+      await esperar(250);
+    };
+    const doCartao = async (itemId) => {
+      const c = await og((id) => window.__offgrid.telaDoCartao(id), itemId);
+      conferir(Array.isArray(c), `o catálogo deveria ter um cartão para ${itemId}`);
+      return c;
+    };
+    const telaDoPonto = (pt) => og((x) => window.__offgrid.telaDoPonto(x), pt);
+    const telaDoTerminal = (uid, t) => og(([u, x]) => window.__offgrid.telaDoTerminal(u, x), [uid, t]);
+    const fecharAvisos = async () => {
+      for (let i = 0; i < 20 && (await pagina.locator('#avisos-seguranca .entendi').count()); i++) await pagina.locator('#avisos-seguranca .entendi').click();
+    };
+    /** Espera o painel chegar ao passo `n` (1 a 9) ou ao resumo (10). */
+    const noPasso = async (n) => {
+      try {
+        await pagina.waitForFunction((x) => document.querySelector('#passo-a-passo')?.dataset.passo === String(x), n, { timeout: 8000 });
+      } catch {
+        const e = await estado();
+        const sug = (e.derivados?.sugestoes ?? []).map((x) => `${x.nivel}: ${x.titulo}`);
+        throw new Error(`Conferência falhou: o painel deveria estar no passo ${n}; está no ${await painel().getAttribute('data-passo')}. Consultor: ${JSON.stringify(sug)}`);
+      }
+      await esperar(200);
+    };
+    const exigirDestaque = async (tipo, mensagem) => {
+      const d = await destaques();
+      conferir(d.length > 0 && d.every((x) => x.tipo === tipo), `${mensagem}: ${JSON.stringify(d)}`);
+      return d;
+    };
+    const arrastarPeca = async (itemId, pontoDeCasa, nome) => {
+      const alvo = await telaDoPonto(pontoDeCasa);
+      await fecharAvisos();
+      const s = await levar(await doCartao(itemId), alvo);
+      conferir(s.modo === 'catalogo' && s.valido === true, `${nome}: soltar ${itemId} em ${JSON.stringify(pontoDeCasa)} deveria ficar verde: ${JSON.stringify(s)}`);
+      await soltar();
+      await fecharAvisos();
+    };
+    const uidDe = async (itemId) => (await projeto()).dispositivos.find((d) => d.itemId === itemId)?.uid;
+    const cabo = async (uid1, t1, uid2, t2) => {
+      await fecharAvisos();
+      const de = await telaDoTerminal(uid1, t1);
+      const para = await telaDoTerminal(uid2, t2);
+      conferir(de && para, `os terminais ${uid1}.${t1} e ${uid2}.${t2} deveriam estar na tela`);
+      let s = await levar(de, [(de[0] + para[0]) / 2 + 40, (de[1] + para[1]) / 2]);
+      if (s.modo !== 'cabo') await pagina.screenshot({ path: join(pasta, 'zz-falha-cabo.png') });
+      conferir(s.modo === 'cabo', `puxar do terminal ${uid1}.${t1} deveria começar um cabo: ${JSON.stringify(s)}`);
+      await pagina.mouse.move(para[0], para[1], { steps: 8 });
+      s = await parado();
+      conferir(s.valido === true, `o cabo ${uid1}.${t1} até ${uid2}.${t2} deveria poder ser ligado: ${JSON.stringify(s)}`);
+      await soltar();
+      await fecharAvisos();
+    };
+    /** Câmera para dentro do quartinho: a porta fica no lado de z negativo e a parede do fundo em z = +1,25. */
+    const paraDentro = async () => {
+      await olhar([0, 3.0, -4.2], [0, 0.8, 0.4]);
+      await esperar(300);
+      await fecharAvisos();
+    };
+    const botaoDoPainel = (acao) => painel().locator(`button[data-acao="${acao}"]`);
+    const esperarTeste = (fase, ms) => pagina.waitForFunction((f) => document.querySelector('#passo-a-passo')?.dataset.teste === f, fase, { timeout: ms });
+    const esperarSituacao = (sit) => pagina.waitForFunction((x) => document.querySelector('#passo-a-passo')?.dataset.situacao === x, sit, { timeout: 8000 });
+
+    // ---- Entrada pelo cartão "Por onde começar": volta o cartão e confere o botão principal.
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await esperar(900);
+    await og(() => localStorage.removeItem('offgrid.boasvindas.vista'));
+    await og(() => sessionStorage.clear());
+    await pagina.reload();
+    await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true, null, { timeout: 30000 });
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    conferir(await pagina.locator('#boas-vindas').isVisible(), 'o cartão "Por onde começar" deveria aparecer de novo');
+    conferir((await pagina.locator('#boas-vindas button').first().textContent()) === 'Fazer o tutorial', 'o botão principal do cartão deveria ser "Fazer o tutorial"');
+    const casaAntes = await projeto();
+    conferir(!casaAntes.casa.soQuartinho && casaAntes.dispositivos.length > 0, 'antes do tutorial deveria haver a casa com peças');
+
+    let confirmou = false;
+    pagina.once('dialog', (dlg) => {
+      confirmou = true;
+      dlg.dismiss();
+    });
+    await pagina.locator('#boas-vindas button[data-acao="tutorial"]').click();
+    await pagina.locator('#passo-a-passo').waitFor({ state: 'visible' });
+    await esperar(400);
+    conferir(!confirmou, 'entrar no tutorial não deveria pedir confirmação');
+    let e = await estado();
+    conferir(e.projeto.casa.soQuartinho === true && e.projeto.dispositivos.length === 0 && e.projeto.cabos.length === 0, 'o tutorial deveria abrir só com o quartinho, vazio');
+    const guardada = JSON.parse(await og(() => localStorage.getItem('offgrid.projeto.casa')));
+    conferir(JSON.stringify(guardada) === JSON.stringify(casaAntes), 'a casa deveria ficar guardada em offgrid.projeto.casa');
+    conferir((await painel().getAttribute('data-roteiro')) === 'tutorial-quartinho', 'o painel deveria mostrar o roteiro do tutorial');
+    conferir((await pagina.locator('#passo-a-passo .passo-contagem').textContent()).startsWith('Passo 1 de 9'), 'o tutorial deveria começar no passo 1 de 9');
+    conferir((await painel().textContent()).includes('Sair do tutorial'), 'o painel deveria ter "Sair do tutorial"');
+    // Topo.
+    conferir(await pagina.locator('#rotulo-tutorial').isVisible(), 'o rótulo "Tutorial" deveria aparecer no topo');
+    for (const id of ['#abrir-casa', '#botao-editar-casa']) conferir(!(await pagina.locator(id).isVisible()), `${id} deveria sumir no tutorial`);
+    await pagina.locator('#botao-projeto').click();
+    conferir(!(await pagina.locator('#botao-novo').isVisible()) && !(await pagina.locator('#botao-importar').isVisible()) && (await pagina.locator('#botao-exportar').isVisible()), 'no menu Projeto só "Exportar" deveria sobrar');
+    await pagina.keyboard.press('Escape');
+    // Passo 1: realce da superfície do telhado.
+    let d = await exigirDestaque('superficie', 'no passo 1 deveria haver realce de superfície');
+    conferir(d[0].id === 'telhado-quartinho', `o passo 1 deveria realçar o telhado do quartinho: ${JSON.stringify(d)}`);
+    await pagina.locator('#botao-vista-inicial').click();
+    await esperar(1200);
+    await captura('83-tutorial-aberto-passo-1');
+    // Cena (se já existir): destaque desenhado.
+    const naCena = await og(() => window.__offgrid.destaquesNaCena?.());
+    if (naCena !== undefined) conferir(Array.isArray(naCena) ? naCena.length > 0 : Boolean(naCena), `a cena deveria desenhar o realce: ${JSON.stringify(naCena)}`);
+
+    // ---- Passo 1: a placa no telhado do quartinho.
+    await olhar([0, 5.5, 6], [0, 2, 0]);
+    await esperar(300);
+    let colocada = false;
+    for (const y of [2.5, 2.6, 2.7, 2.4, 2.8]) {
+      const alvo = await telaDoPonto([0, y, 0]);
+      const s = await levar(await doCartao('placa-resun-100'), alvo);
+      if (s.modo === 'catalogo' && s.valido === true) {
+        await soltar();
+        colocada = true;
+        break;
+      }
+      await pagina.keyboard.press('Escape');
+      await soltar();
+    }
+    conferir(colocada, 'a placa deveria poder ser solta no telhado do quartinho');
+    await fecharAvisos();
+    let p = await projeto();
+    conferir(p.dispositivos.length === 1 && p.dispositivos[0].superficie === 'telhado-quartinho', `a placa deveria ficar em telhado-quartinho: ${JSON.stringify(p.dispositivos.map((x) => x.superficie))}`);
+    await noPasso(2);
+    d = await exigirDestaque('superficie', 'no passo 2 deveria haver realce de superfície');
+    conferir(d[0].id === 'piso-quartinho', `o passo 2 deveria realçar o piso: ${JSON.stringify(d)}`);
+
+    // ---- Passos 2 e 3: bateria e inversor no piso, com o quartinho aberto.
+    await pagina.getByRole('button', { name: 'Sem telhado', exact: true }).click();
+    await paraDentro();
+    await esperar(400);
+    await captura('84-tutorial-passo-2-realce-no-piso');
+    await arrastarPeca('bat-moura-12mn105', [0.8, 0.05, 0.5], 'passo 2');
+    await noPasso(3);
+    await arrastarPeca('inv-aiker-500-12v-110', [-0.8, 0.05, 0.5], 'passo 3');
+    await noPasso(4);
+    const bateria = await uidDe('bat-moura-12mn105');
+    const inversor = await uidDe('inv-aiker-500-12v-110');
+
+    // Recarregar a página com o projeto do tutorial aberto continua o tutorial, mesmo sem nada na sessão.
+    await esperar(900);
+    await og(() => sessionStorage.clear());
+    await pagina.reload();
+    await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true, null, { timeout: 30000 });
+    await painel().waitFor({ state: 'visible' });
+    await noPasso(4);
+    conferir((await painel().getAttribute('data-roteiro')) === 'tutorial-quartinho' && (await pagina.locator('#rotulo-tutorial').isVisible()), 'depois de recarregar o tutorial deveria continuar');
+    await pagina.getByRole('button', { name: 'Sem telhado', exact: true }).click();
+    await paraDentro();
+    await esperar(400);
+
+    // ---- Passo 4: cabos da bateria ao inversor; o destaque é de terminais.
+    d = await exigirDestaque('terminal', 'no passo 4 deveria haver realce de terminais');
+    conferir(d.length === 4, `o passo 4 deveria realçar os quatro terminais: ${JSON.stringify(d)}`);
+    await captura('85-tutorial-passo-4-realce-nos-terminais');
+    await cabo(bateria, 'pos', inversor, 'batPos');
+    await esperar(400);
+    d = await destaques();
+    conferir(d.length === 2 && d.every((x) => x.tipo === 'terminal'), `com um cabo ligado deveriam sobrar dois terminais: ${JSON.stringify(d)}`);
+    await cabo(bateria, 'neg', inversor, 'batNeg');
+    await noPasso(5);
+
+    // ---- Passo 5: fusível no cabo positivo (realce no cabo).
+    d = await exigirDestaque('cabo', 'no passo 5 deveria haver realce no cabo');
+    p = await projeto();
+    const caboPos = p.cabos.find((c) => c.de.disp === bateria && c.de.terminal === 'pos');
+    conferir(d.length === 1 && d[0].uid === caboPos.uid, `o realce do passo 5 deveria ser o cabo positivo: ${JSON.stringify(d)}`);
+    const sFus = await levar(await doCartao('prot-fusivel-anl-100'), await og((u) => window.__offgrid.telaDoCabo(u, 0.5), caboPos.uid));
+    conferir(sFus.modo === 'protecao' && sFus.valido === true, `o fusível sobre o cabo positivo deveria poder ser instalado: ${JSON.stringify(sFus)}`);
+    await soltar();
+    await noPasso(6);
+
+    // ---- Passo 6: controlador na parede do fundo e dois cabos até a bateria.
+    d = await exigirDestaque('superficie', 'no passo 6 deveria haver realce de superfície');
+    conferir(d[0].id === 'parede-quartinho-fundo', `o passo 6 deveria realçar a parede do fundo: ${JSON.stringify(d)}`);
+    // A parede do fundo: a câmera está na porta, então ela ocupa a parte de cima da cena; tenta alguns pontos até ficar verde.
+    let noFundo = false;
+    for (const [fx, fy] of [[0.5, 0.42], [0.62, 0.42], [0.38, 0.45], [0.5, 0.35]]) {
+      const caixa = await pagina.locator('#cena canvas').boundingBox();
+      const s = await levar(await doCartao('ctl-pwm-30a'), [caixa.x + caixa.width * fx, caixa.y + caixa.height * fy]);
+      if (s.modo === 'catalogo' && s.valido === true) {
+        await soltar();
+        noFundo = true;
+        break;
+      }
+      await pagina.keyboard.press('Escape');
+      await soltar();
+    }
+    conferir(noFundo, 'o controlador deveria poder ser solto na parede do fundo do quartinho');
+    await fecharAvisos();
+    conferir((await projeto()).dispositivos.find((x) => x.itemId === 'ctl-pwm-30a')?.superficie === 'parede-quartinho-fundo', 'o controlador deveria ficar na parede do fundo');
+    const ctl = await uidDe('ctl-pwm-30a');
+    await esperar(400);
+    await exigirDestaque('terminal', 'no passo 6, com o controlador, deveria haver realce de terminais');
+    await cabo(bateria, 'pos', ctl, 'batPos');
+    await cabo(bateria, 'neg', ctl, 'batNeg');
+    await noPasso(7);
+
+    // ---- Passo 7: cabos da placa no controlador.
+    await esperar(300);
+    await exigirDestaque('terminal', 'no passo 7 deveria haver realce de terminais');
+    const placa = await uidDe('placa-resun-100');
+    // A placa está no telhado e o controlador dentro do quartinho: com o telhado à vista, a placa só aparece de cima.
+    // O cabo é feito com dois cliques: clica no terminal da placa (vista de cima) e, com o cabo preso ao ponteiro,
+    // a câmera vai para dentro do quartinho, pela porta, e o segundo clique cai no terminal do controlador.
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    const cabo2cliques = async (uid1, t1, uid2, t2) => {
+      await fecharAvisos();
+      await olhar([0, 5.5, 6], [0, 2, 0]);
+      await esperar(400);
+      const de = await telaDoTerminal(uid1, t1);
+      conferir(de, `o terminal ${uid1}.${t1} deveria estar na tela vista de cima`);
+      await pagina.mouse.click(de[0], de[1]);
+      await esperar(250);
+      conferir((await situacao()).modo === 'cabo', `um clique no terminal ${uid1}.${t1} deveria prender o cabo ao ponteiro: ${JSON.stringify(await situacao())}`);
+      await olhar([0, 1.5, -3.6], [0, 1.0, 0.4]);
+      await esperar(400);
+      const para = await telaDoTerminal(uid2, t2);
+      conferir(para, `o terminal ${uid2}.${t2} deveria estar na tela, visto de dentro`);
+      await pagina.mouse.move(para[0], para[1], { steps: 8 });
+      const s = await parado();
+      if (s.valido !== true) await pagina.screenshot({ path: join(pasta, 'zz-falha-cabo2.png') });
+      conferir(s.valido === true, `o cabo ${uid1}.${t1} até ${uid2}.${t2} deveria poder ser ligado: ${JSON.stringify(s)}`);
+      await pagina.mouse.click(para[0], para[1]);
+      await esperar(300);
+      await fecharAvisos();
+    };
+    await cabo2cliques(placa, 'pos', ctl, 'pvPos');
+    await cabo2cliques(placa, 'neg', ctl, 'pvNeg');
+    await noPasso(8);
+    await pagina.getByRole('button', { name: 'Sem telhado', exact: true }).click();
+    await paraDentro();
+
+    // ---- Passo 8: lâmpada no piso, plugue na saída do inversor.
+    d = await exigirDestaque('superficie', 'no passo 8, sem aparelho, deveria haver realce de superfície');
+    conferir(d[0].id === 'piso-quartinho', `o passo 8 deveria realçar o piso: ${JSON.stringify(d)}`);
+    await arrastarPeca('ap-ventilador', [0.4, 0.05, -0.2], 'passo 8');
+    const ventilador = await uidDe('ap-ventilador');
+    await esperar(400);
+    await exigirDestaque('terminal', 'no passo 8, com o aparelho, deveria haver realce de terminais');
+    await cabo(ventilador, 'plug', inversor, 'caSaida');
+    p = await projeto();
+    if (!p.dispositivos.find((x) => x.uid === ventilador).ligado) await og((u) => window.__offgrid.acoes.definirLigado(u, true), ventilador);
+    await og(() => window.__offgrid.acoes.selecionar(null));
+
+    // ---- Passo 9: sem erros → resumo. Se ficar preso aqui, o consultor diz por quê.
+    try {
+      await esperarSituacao('resumo');
+    } catch {
+      const sug = ((await estado()).derivados?.sugestoes ?? []).map((x) => `${x.nivel}: ${x.titulo}`);
+      throw new Error(`Conferência falhou: o passo "sem erros" não fechou. Sugestões do consultor: ${JSON.stringify(sug)}`);
+    }
+    conferir((await destaques()).length === 0, 'no resumo a lista de destaques deveria estar vazia');
+    const resumoTexto = await painel().textContent();
+    conferir(resumoTexto.includes('Montagem concluída') && resumoTexto.includes('Testar a bateria') && resumoTexto.includes('Orçamento total: R$'), `o resumo do tutorial: "${resumoTexto}"`);
+    await pagina.locator('#botao-vista-inicial').click();
+    await esperar(1000);
+    await captura('86-tutorial-resumo');
+
+    // Um passo desfeito durante o teste cancela o teste e o painel volta ao passo da vez.
+    await botaoDoPainel('testar-bateria').click();
+    await esperarTeste('rodando', 5000);
+    conferir((await painel().textContent()).includes('a partir das 18:00'), 'o teste deveria começar às 18:00');
+    e = await estado();
+    conferir(e.simulacao.quedaDeLuz.ativa === true && e.tempo.velocidade === 60 && (await destaques()).length === 0, 'durante o teste: contagem sem rede ligada, 60 min/s e nenhum destaque');
+    await og((u) => window.__offgrid.acoes.removerDispositivo(u), ventilador);
+    await esperarSituacao('andamento');
+    e = await estado();
+    conferir(!e.simulacao.quedaDeLuz.ativa && e.tempo.velocidade === 0 && !(await painel().getAttribute('data-teste')), `remover o ventilador no meio do teste deveria cancelá-lo e parar o relógio: queda ${e.simulacao.quedaDeLuz.ativa}, velocidade ${e.tempo.velocidade}, teste ${await painel().getAttribute('data-teste')}`);
+    conferir((await painel().getAttribute('data-passo')) === '8', 'o painel deveria voltar ao passo do aparelho');
+    await og(() => window.__offgrid.acoes.desfazer());
+    await esperarSituacao('resumo');
+
+    // ---- Teste com o ventilador (50 W): a bateria esvazia. O horário de uso do aparelho (10 às 22 h) não vale no teste.
+    await botaoDoPainel('testar-bateria').click();
+    await esperarTeste('rodando', 5000);
+    await esperar(1500);
+    conferir(await pagina.locator('#faixa-queda').isHidden(), 'durante o teste a faixa "A bateria acabou às…" não deveria aparecer');
+    conferir((await painel().textContent()).includes('No teste, os aparelhos ligados ficam funcionando o tempo todo.'), 'o painel deveria avisar que no teste os aparelhos funcionam o tempo todo');
+    await captura('87-tutorial-teste-rodando');
+    await esperarTeste('resultado', 150000);
+    e = await estado();
+    let texto = await painel().textContent();
+    conferir(/A bateria segurou (\d+ h( \d+ min)?|\d+ min): das 18:00 às \d\d:\d\d\./.test(texto), `texto do resultado com o ventilador: "${texto}"`);
+    conferir(/Aparelhos ligados: Ventilador, somando 50 W\./.test(texto), `o resultado deveria listar o ventilador e os 50 W: "${texto}"`);
+    conferir(texto.includes('inversor de 500 W') && texto.includes('Geladeira e micro-ondas'), 'o resultado deveria avisar da geladeira e do micro-ondas');
+    conferir(e.tempo.velocidade === 0 && !e.simulacao.quedaDeLuz.ativa, 'ao terminar o teste o tempo deveria parar e a contagem sem rede acabar');
+    conferir(e.simulacao.estadoSim.soc < 0.55, `no teste do ventilador a bateria deveria estar no limite de descarga: ${e.simulacao.estadoSim.soc}`);
+    conferir((await pagina.locator('button[data-acao="testar-de-novo"]').count()) === 1 && (await pagina.locator('#passo-a-passo button[data-acao="sair"]').count()) === 1, 'o resultado deveria ter "Testar de novo" e "Sair do tutorial"');
+    conferir(await pagina.locator('#faixa-queda').isHidden(), 'a faixa da queda de luz não deveria aparecer no tutorial');
+    await captura('88-tutorial-resultado-ventilador');
+
+    // ---- "Testar de novo" repete o teste com o mesmo resultado.
+    await botaoDoPainel('testar-de-novo').click();
+    await esperarTeste('rodando', 5000);
+    await esperarTeste('resultado', 150000);
+    const textoDeNovo = await painel().textContent();
+    conferir(/A bateria segurou .+: das 18:00 às \d\d:\d\d\./.test(textoDeNovo) && textoDeNovo.includes('Ventilador, somando 50 W'), `testar de novo deveria dar outro resultado completo: "${textoDeNovo}"`);
+    texto = textoDeNovo;
+
+    // ---- Troca de aparelho: desliga o ventilador, lâmpada no piso, plugue na saída: a bateria passa de 24 horas.
+    await og((u) => window.__offgrid.acoes.definirLigado(u, false), ventilador);
+    await paraDentro();
+    await arrastarPeca('ap-lampada', [0.4, 0.05, -0.2], 'lâmpada');
+    const lampada = await uidDe('ap-lampada');
+    await cabo(lampada, 'plug', inversor, 'caSaida');
+    p = await projeto();
+    if (!p.dispositivos.find((x) => x.uid === lampada).ligado) await og((u) => window.__offgrid.acoes.definirLigado(u, true), lampada);
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await esperarSituacao('resumo');
+    await botaoDoPainel('testar-bateria').click();
+    await esperarTeste('rodando', 5000);
+    await esperarTeste('resultado', 150000);
+    texto = await painel().textContent();
+    conferir(texto.includes('A bateria passou de 24 horas. O ponto mais baixo foi') && /às \d\d:\d\d; de dia a placa repôs o que foi gasto à noite\./.test(texto), `texto do resultado com a lâmpada: "${texto}"`);
+    conferir(/Aparelhos ligados: Lâmpada LED, somando 9 W\./.test(texto) && !texto.includes('Ventilador, somando'), `o resultado deveria listar só a lâmpada ligada: "${texto}"`);
+    e = await estado();
+    conferir(e.simulacao.quedaDeLuz.ativa === false && e.tempo.velocidade === 0, 'o teste da lâmpada deveria parar o tempo e encerrar a contagem');
+    await captura('89-tutorial-resultado-lampada');
+
+    // ---- Painel em 1280 x 720 e em 1440 x 900: o quartinho na vista inicial não fica sob o painel.
+    for (const [largura, altura] of [[1280, 720], [1440, 900]]) {
+      await pagina.setViewportSize({ width: largura, height: altura });
+      await pagina.locator('#botao-vista-inicial').click();
+      await esperar(1200);
+      const geo = await og(() => {
+        const r = document.querySelector('#passo-a-passo').getBoundingClientRect();
+        const cantos = [];
+        for (const x of [-1.5, 1.5]) for (const y of [0, 2.4]) for (const z of [-1.25, 1.25]) cantos.push(window.__offgrid.telaDoPonto([x, y, z]));
+        const xs = cantos.map((c) => c[0]);
+        const ys = cantos.map((c) => c[1]);
+        const q = { esq: Math.min(...xs), dir: Math.max(...xs), topo: Math.min(...ys), base: Math.max(...ys) };
+        const larg = Math.max(0, Math.min(q.dir, r.right) - Math.max(q.esq, r.left));
+        const alt = Math.max(0, Math.min(q.base, r.bottom) - Math.max(q.topo, r.top));
+        const area = (q.dir - q.esq) * (q.base - q.topo);
+        return { sobreposto: area > 0 ? (larg * alt) / area : 0, painel: [r.left, r.top, r.right, r.bottom].map(Math.round), quartinho: [q.esq, q.topo, q.dir, q.base].map(Math.round) };
+      });
+      console.log(`tutorial ${largura}x${altura}: o painel cobre ${(geo.sobreposto * 100).toFixed(0)} % do quartinho ${JSON.stringify(geo)}`);
+      conferir(geo.sobreposto < 0.15, `o painel não deveria cobrir o quartinho em ${largura}x${altura}: ${JSON.stringify(geo)}`);
+      await captura(`90-tutorial-painel-${largura}x${altura}`);
+    }
+
+    // ---- Sair: a casa volta igual, o painel fecha, o topo volta.
+    await botaoDoPainel('sair').click();
+    await esperar(600);
+    e = await estado();
+    conferir(!e.projeto.casa.soQuartinho, 'ao sair o projeto da casa deveria voltar');
+    conferir(JSON.stringify(e.projeto) === JSON.stringify(casaAntes), 'ao sair a casa deveria voltar igual à de antes do tutorial');
+    conferir(!(await painel().isVisible()) && (await destaques()).length === 0, 'ao sair o painel deveria fechar e os destaques sumir');
+    conferir(!(await pagina.locator('#rotulo-tutorial').isVisible()), 'ao sair o rótulo "Tutorial" deveria sumir');
+    for (const id of ['#abrir-casa', '#botao-editar-casa']) conferir(await pagina.locator(id).isVisible(), `${id} deveria voltar ao sair`);
+    conferir((await og(() => localStorage.getItem('offgrid.projeto.casa'))) === null, 'ao sair a chave da casa guardada deveria ser apagada');
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await captura('91-tutorial-casa-de-volta');
+  }
+  await verificarTutorial();
+
   await verificarConjunto();
 
   if (erros.length) throw new Error(`Erros na página:\n${erros.join('\n')}`);

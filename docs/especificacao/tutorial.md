@@ -78,7 +78,7 @@ Os passos são conferidos pelo estado do projeto, como nos outros roteiros: o pa
 | `fusivel` | `prot-fusivel-anl-100` | Fusível ou disjuntor CC no cabo positivo da bateria ao inversor | O cabo positivo |
 | `controlador` | `ctl-pwm-30a` | Há controlador PWM com o par de cabos até a bateria | Sem controlador: `parede-quartinho-fundo`. Com ele: os terminais que faltam ligar |
 | `cabos-da-placa` | categoria cabo | `pos` da placa em `pvPos` e `neg` em `pvNeg` do controlador | Os terminais que faltam ligar |
-| `aparelho` | `ap-lampada` | Há aparelho com o plugue em `caSaida` do inversor e ligado | Sem aparelho: `piso-quartinho`. Com ele: o plugue e `caSaida` |
+| `aparelho` | `ap-ventilador` | Há aparelho com o plugue em `caSaida` do inversor e ligado | Sem aparelho: `piso-quartinho`. Com ele: o plugue e `caSaida` |
 | `sem-erros` | nenhuma | Sem problema de ligação e sem sugestão de nível erro | nenhum |
 
 Os textos de cada passo dizem o que é a peça, por que ela entra nessa ordem e o cuidado de segurança. Não contradizem `src/conteudo/seguranca.ts`.
@@ -97,10 +97,10 @@ Quando todos os passos estão feitos, o painel mostra "Montagem concluída", a a
 
 O teste, feito com as ações que já existem:
 
-1. Põe o relógio às 18:00 do dia que está na tela, enche a bateria, começa a contagem sem rede (`alternarQuedaDeLuz`) e acelera para 60 min/s.
+1. Põe os aparelhos ligados na saída do inversor em uso "o dia inteiro" (fora do horário típico eles não consumiriam, e o resultado sairia falso), põe o relógio às 18:00 do dia que está na tela, enche a bateria, começa a contagem sem rede (`alternarQuedaDeLuz`) e acelera para 60 min/s.
 2. Termina quando a bateria esvazia ou quando passam 24 horas simuladas. Ao terminar, pausa o tempo e encerra a contagem.
 3. Mostra o resultado no painel:
-   - Esvaziou: "A bateria segurou {5 h 40 min}: das 18:00 às {23:40}." e, embaixo, quais aparelhos estavam ligados e quantos watts somavam.
+   - Esvaziou: "A bateria segurou {5 h 40 min}: das 18:00 às {23:40}. O inversor desligou com a bateria em {50} %: abaixo disso ela estraga." e, embaixo, quais aparelhos estavam ligados e quantos watts somavam.
    - Passou de 24 horas: "A bateria passou de 24 horas. O ponto mais baixo foi {62} %, às {05:50}; de dia a placa repôs o que foi gasto à noite."
 4. Botões: "Testar de novo", "Sair do tutorial". Um texto convida a trocar o aparelho: desligar o atual, arrastar outro, ligar o plugue na saída do inversor e testar de novo. Avisa que geladeira e micro-ondas passam do que o inversor de 500 W aguenta, e que o consultor mostra o motivo.
 

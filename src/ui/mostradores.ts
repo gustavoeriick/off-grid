@@ -9,6 +9,7 @@ import { posicaoSol } from '../nucleo/sol';
 import { CATALOGO } from '../catalogo';
 import type { AvisoPasso, OrigemEnergia } from '../nucleo/tipos';
 import { el, h, num } from './formato';
+import { emTesteDeAutonomia } from './passoAPasso';
 
 const AVISOS: Record<AvisoPasso, string> = {
   'sem-bateria': 'Falta a bateria: sem ela o inversor não tem de onde tirar energia.',
@@ -176,7 +177,8 @@ export function montarMostradores(): void {
     botaoQueda.classList.toggle('queda-ativa', queda.ativa);
 
     // Faixa sobre a cena.
-    if (queda.ativa && queda.apagouMsUtc !== null && queda.inicioMsUtc !== null) {
+    // No teste de autonomia do tutorial, o resultado aparece só no painel do tutorial.
+    if (queda.ativa && queda.apagouMsUtc !== null && queda.inicioMsUtc !== null && !emTesteDeAutonomia()) {
       faixa.hidden = false;
       trocarTexto(faixa, `A bateria acabou às ${horaTexto(queda.apagouMsUtc)}, depois de ${duracaoTexto(queda.apagouMsUtc - queda.inicioMsUtc)} sem luz.`);
     } else if (!faixa.hidden) {

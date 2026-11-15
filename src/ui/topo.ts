@@ -1,6 +1,6 @@
 // Barra de cima: desfazer, refazer, novo, exportar, importar e "Editar casa". Tarefa 2.5, parte de interface.
 
-import { acoes, assinar, estado } from '../estado';
+import { acoes, assinar, emTutorial, estado } from '../estado';
 import { el, mostrarMensagem } from './formato';
 
 function emCampoDeTexto(alvo: EventTarget | null): boolean {
@@ -120,6 +120,22 @@ export function montarTopo(): void {
   assinar('casa', () => {
     if (esperaDoRecado) mostrarInstrucao();
   });
+
+  // No tutorial só existe o quartinho: medidas da casa, edição da casa, "Novo" e "Importar" saem do topo, e aparece o rótulo "Tutorial".
+  // O projeto do tutorial não é um cenário para trocar: "Novo" recomeçaria o tutorial e "Importar" o apagaria.
+  const escondidosNoTutorial = ['#abrir-casa', '#botao-editar-casa', '#botao-novo', '#botao-importar'].map((s) => el<HTMLElement>(s));
+  const rotuloTutorial = el('#rotulo-tutorial');
+  const desenharTutorial = (): void => {
+    const tutorial = emTutorial();
+    escondidosNoTutorial.forEach((b) => (b.hidden = tutorial));
+    rotuloTutorial.hidden = !tutorial;
+    if (tutorial) {
+      if (estado.edicaoCasa.ativa) acoes.definirEdicaoDaCasa(false);
+      el('#form-casa').hidden = true;
+    }
+  };
+  assinar('projeto', desenharTutorial);
+  desenharTutorial();
 
   let ativaAntes = false;
   const desenhar = (): void => {

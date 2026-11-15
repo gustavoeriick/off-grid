@@ -14,7 +14,7 @@ import { montarCampoDoComodo } from './comodos';
 import { montarGrafico } from './grafico';
 import { montarMostradores } from './mostradores';
 import { montarBarraDeObstaculos } from './obstaculos';
-import { montarPassoAPasso } from './passoAPasso';
+import { iniciarTutorial, montarPassoAPasso } from './passoAPasso';
 import { montarPaineis } from './paineis';
 import { montarSelecionado } from './selecionado';
 import { montarTopo } from './topo';
@@ -106,6 +106,7 @@ function montarBoasVindas(): void {
   // Um passo a passo em andamento (página recarregada) ocupa o mesmo canto.
   if (!el<HTMLElement>('#passo-a-passo').hidden) return;
   const entendi = h('button', { type: 'button', 'data-acao': 'entendi' }, 'Entendi');
+  const tutorial = h('button', { type: 'button', 'data-acao': 'tutorial' }, 'Fazer o tutorial');
   const roteiro = h('button', { type: 'button', 'data-acao': 'passo-a-passo' }, 'Abrir o passo a passo');
   const cartao = h(
     'aside',
@@ -117,9 +118,9 @@ function montarBoasVindas(): void {
       h('li', null, 'A casa já vem com o seu plano montado como está no papel: placa na varanda, inversor e bateria no quartinho.'),
       h('li', null, 'À direita, o Consultor lista o que precisa mudar. Cada item tem um botão que resolve e um “Por quê?” que explica.'),
       h('li', null, 'Embaixo, mude a hora, acelere o tempo e simule uma queda de luz para ver quanto a bateria dura.'),
-      h('li', null, 'Para aprender montando do zero, peça por peça, use o passo a passo.'),
+      h('li', null, 'Para aprender montando do zero, peça por peça, faça o tutorial: só o quartinho, com cada peça explicada. A sua casa fica guardada.'),
     ),
-    h('div', { class: 'boas-vindas-botoes' }, roteiro, entendi),
+    h('div', { class: 'boas-vindas-botoes' }, tutorial, roteiro, entendi),
   );
   el('#centro').append(cartao);
   let cancelar: () => void = () => undefined;
@@ -135,6 +136,10 @@ function montarBoasVindas(): void {
   cancelar = assinar('projeto', fechar);
   entendi.addEventListener('click', fechar);
   el('#botao-passo-a-passo').addEventListener('click', fechar);
+  tutorial.addEventListener('click', () => {
+    fechar();
+    iniciarTutorial();
+  });
   roteiro.addEventListener('click', () => el<HTMLButtonElement>('#botao-passo-a-passo').click());
 }
 

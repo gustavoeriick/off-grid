@@ -412,7 +412,7 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       titulo: 'Ligue a placa ao controlador',
       texto:
         'Agora a placa entra no circuito. Puxe um cabo do + da placa, no telhado, até o PV+ do controlador, e outro do − até o PV−. Com sol, o controlador passa a carregar a bateria.',
-      dica: 'Na vida real, cubra a placa com um pano escuro ou trabalhe sem sol ao fazer esta ligação, e nunca solte um conector da placa com o sistema funcionando.',
+      dica: 'No simulador, o cabo também sai com dois cliques: clique no terminal da placa, gire a câmera até ver o controlador pela porta e clique no terminal dele. Na vida real, cubra a placa com um pano escuro ou trabalhe sem sol ao fazer esta ligação, e nunca solte um conector da placa com o sistema funcionando.',
       categoria: 'cabo',
       feito: (p, _d, c) => {
         const controladores = dispositivosQue(p, c, controladorPwm);
@@ -430,9 +430,9 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       id: 'aparelho',
       titulo: 'Ligue um aparelho no inversor',
       texto:
-        'Falta alguém para usar a energia. Arraste uma lâmpada para o piso do quartinho e ligue o plugue dela em "Saída para os aparelhos" do inversor. Se ela estiver desligada, clique nela e use o botão Ligar. Olhe os mostradores à direita: o consumo aparece, e a energia vem da placa ou da bateria.',
-      dica: 'A soma da potência dos aparelhos precisa caber nos 500 W do inversor.',
-      itemId: 'ap-lampada',
+        'Falta alguém para usar a energia. Arraste um ventilador para o piso do quartinho e ligue o plugue dele em "Saída para os aparelhos" do inversor. Se ele estiver desligado, clique nele e use o botão Ligar. Olhe os mostradores à direita: o consumo aparece, e a energia vem da placa ou da bateria.',
+      dica: 'A soma da potência dos aparelhos precisa caber nos 500 W do inversor. A lâmpada também serve, mas ela vai para o alto da parede: para puxar o cabo dela, use a visão "Sem telhado".',
+      itemId: 'ap-ventilador',
       feito: (p, _d, c) =>
         cabosDaSaida(p, c).some((cabo) => {
           if (!aparelhoNaSaida(p, c, cabo)) return false;
