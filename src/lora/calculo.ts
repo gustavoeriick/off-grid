@@ -4,7 +4,12 @@
 
 import { criarRelevo, type Relevo } from './dados/relevo';
 import { assinarLora, estadoLora } from './estado';
-import { avisosDaRegra, calcularEnlace, distanciaKm, melhorias, MODOS, montarPerfil, pontoNoCaminho, REGIOES } from './nucleo';
+import { PONTO_PADRAO } from './estado';
+import {
+  avaliarCandidato, avisosDaRegra, calcularEnlace, candidatosARepetidor, distanciaKm, escolherSugestoes, MARGEM_DA_GRADE_FRACAO,
+  MARGEM_MINIMA_DA_GRADE_KM, melhorias, melhorRota, MODOS, montarPerfil, pontoNoCaminho, REGIOES,
+  type Aresta, type ResultadoDaRota, type SugestaoDeRepetidor,
+} from './nucleo';
 import type { Ambiente, Coordenada, Melhoria, Modo, Perfil, PontoLora, ProjetoLora, ResultadoDoEnlace } from './nucleo/tipos';
 
 export type SituacaoDoEnlace =
@@ -162,6 +167,88 @@ export function tentarDeNovo(): void {
   for (const [chave, s] of [...situacoes]) if (s.situacao.estado === 'erro') situacoes.delete(chave);
   for (const [id, a] of [...altitudes]) if (a.erro) altitudes.delete(id);
   recalcular();
+}
+
+// ---------------------------------------------------------------- Rotas e sugestão de repetidor (fase L3)
+
+export interface RotaEntreCasas {
+  de: string;
+  para: string;
+  /** Nulo enquanto algum enlace do projeto ainda está sendo calculado. */
+  resultado: ResultadoDaRota | null;
+}
+
+/** Enlaces com resultado pronto, como arestas para a busca de rota. */
+function arestasProntas(): { arestas: Aresta[]; calculando: boolean } {
+  const arestas: Aresta[] = [];
+  let calculando = false;
+  for (const e of estadoLora.projeto.enlaces) {
+    const s = situacaoDoEnlace(e.de, e.para);
+    if (s?.estado === 'pronto') arestas.push({ de: e.de, para: e.para, folgaDb: s.resultado.conta.folgaDb, veredito: s.resultado.veredito });
+    else if (s?.estado === 'calculando') calculando = true;
+  }
+  return { arestas, calculando };
+}
+
+/** Melhor rota entre dois pontos, pelos enlaces do projeto. Nulo enquanto há enlace sendo calculado. */
+export function rotaEntre(de: string, para: string): ResultadoDaRota | null {
+  const { arestas, calculando } = arestasProntas();
+  if (calculando) return null;
+  const p = estadoLora.projeto;
+  return melhorRota(p.pontos.map((x) => x.id), arestas, de, para, p.limiteDeSaltos);
+}
+
+/** A rota de cada par de pontos do tipo casa, na ordem em que aparecem no projeto. */
+export function rotasEntreCasas(): RotaEntreCasas[] {
+  const casas = estadoLora.projeto.pontos.filter((p) => p.tipo === 'casa');
+  const lista: RotaEntreCasas[] = [];
+  for (let i = 0; i < casas.length; i += 1) {
+    for (let j = i + 1; j < casas.length; j += 1) lista.push({ de: casas[i]!.id, para: casas[j]!.id, resultado: rotaEntre(casas[i]!.id, casas[j]!.id) });
+  }
+  return lista;
+}
+
+/** Pontos espalhados pelo quadrado em volta do caminho, para saber quais blocos de relevo a busca vai precisar. */
+function pontosDaRegiao(a: Coordenada, b: Coordenada): Coordenada[] {
+  const d = distanciaKm(a, b);
+  const margem = Math.max(MARGEM_MINIMA_DA_GRADE_KM, MARGEM_DA_GRADE_FRACAO * d);
+  const meio = pontoNoCaminho(a, b, 0.5);
+  // Um quadrado que contém o retângulo da busca em qualquer direção, com 2 km de sobra.
+  const ladoKm = d / 2 + margem + 2;
+  const dLat = ladoKm / 111;
+  const dLon = ladoKm / (111 * Math.max(0.2, Math.cos((meio.lat * Math.PI) / 180)));
+  const n = Math.max(2, Math.ceil((2 * ladoKm) / 5));
+  const pontos: Coordenada[] = [];
+  for (let i = 0; i <= n; i += 1) {
+    for (let j = 0; j <= n; j += 1) pontos.push({ lat: meio.lat - dLat + (2 * dLat * i) / n, lon: meio.lon - dLon + (2 * dLon * j) / n });
+  }
+  return pontos;
+}
+
+/**
+ * Procura até cinco lugares para um repetidor entre dois pontos do projeto (especificação, seção 4.9).
+ * Baixa o relevo da região, avalia os candidatos em pedaços para não travar a tela e avisa o andamento, de 0 a 1.
+ * Lança erro com mensagem clara se os pontos não existem ou se o relevo não pôde ser baixado.
+ */
+export async function sugerirRepetidor(de: string, para: string, andamento?: (fracao: number) => void): Promise<SugestaoDeRepetidor[]> {
+  const projeto = estadoLora.projeto;
+  const a = projeto.pontos.find((p) => p.id === de);
+  const b = projeto.pontos.find((p) => p.id === para);
+  if (!a || !b) throw new Error('Escolha dois pontos do mapa para procurar um lugar de repetidor.');
+  andamento?.(0);
+  await relevo.carregar(pontosDaRegiao(a, b));
+  const ambiente = ambienteDoProjeto(projeto);
+  const candidatos = candidatosARepetidor(a, b, relevo.altitudeEm);
+  const avaliados: SugestaoDeRepetidor[] = [];
+  for (let i = 0; i < candidatos.length; i += 1) {
+    avaliados.push(avaliarCandidato(a, b, candidatos[i]!, PONTO_PADRAO, relevo.altitudeEm, ambiente));
+    if (i % 20 === 19) {
+      andamento?.((i + 1) / candidatos.length);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+  andamento?.(1);
+  return escolherSugestoes(avaliados);
 }
 
 assinarLora('projeto', recalcular);
