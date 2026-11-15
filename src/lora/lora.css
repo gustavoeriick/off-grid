@@ -160,7 +160,8 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  /* "clip" e não "hidden": uma camada com "hidden" ainda rola quando um botão fora da tela recebe o foco, e os pontos sairiam do lugar. */
+  overflow: clip;
   pointer-events: none;
 }
 
@@ -748,4 +749,251 @@
 .lora-campo.lora-larga select {
   max-width: 100%;
   width: 100%;
+}
+
+/* ---------------------------------------------------------------- Rotas e sugestão de repetidor (L3) */
+
+#lora-mapa-area[data-ferramenta='sugerir'] .maplibregl-canvas-container {
+  cursor: default;
+}
+
+#lora-mapa-area[data-ferramenta='sugerir'] .lora-ponto {
+  cursor: pointer;
+}
+
+.lora-ferramentas {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Rota destacada: os trechos dela ganham um contorno azul; os outros enlaces ficam apagados. */
+#lora-mapa-area.com-rota .lora-enlace:not(.na-rota),
+#lora-mapa-area.com-rota .lora-enlace-rotulo:not(.na-rota),
+#lora-mapa-area.com-rota .lora-ponto:not(.na-rota) {
+  opacity: 0.4;
+}
+
+.lora-enlace.na-rota .lora-enlace-borda {
+  stroke: var(--destaque);
+  stroke-width: 13;
+}
+
+.lora-enlace.na-rota .lora-enlace-traco {
+  stroke-width: 5;
+}
+
+.lora-enlace-rotulo.na-rota {
+  border-color: var(--destaque);
+  box-shadow: 0 0 0 2px var(--destaque), 0 1px 5px rgba(0, 0, 0, 0.3);
+}
+
+.lora-ponto.na-rota .lora-ponto-desenho {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 5px var(--destaque), 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* Sugestão de lugar para repetidor: um alfinete tracejado com o número. A ponta fica na coordenada.
+   O desenho é diferente do da casa (círculo) e do repetidor (losango), e o tracejado diz que ainda não existe. */
+.lora-sugestao {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
+  cursor: pointer;
+  --cor-da-sugestao: #b45309;
+}
+
+.lora-sugestao:hover {
+  background: none;
+}
+
+.lora-sugestao:focus-visible {
+  outline: none;
+}
+
+.lora-sugestao-desenho {
+  position: absolute;
+  left: -15px;
+  top: -37px;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border: 2.5px dashed var(--cor-da-sugestao);
+  border-radius: 50% 50% 50% 0;
+  background: #fff7e6;
+  color: #7c3a03;
+  font-size: 14px;
+  font-weight: 700;
+  transform: rotate(-45deg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.lora-sugestao-desenho span {
+  transform: rotate(45deg);
+}
+
+.lora-sugestao.destaque {
+  z-index: 3;
+}
+
+.lora-sugestao.destaque .lora-sugestao-desenho,
+.lora-sugestao:focus-visible .lora-sugestao-desenho {
+  border-style: solid;
+  background: var(--cor-da-sugestao);
+  color: #fff;
+  box-shadow: 0 0 0 3px #fff, 0 3px 9px rgba(0, 0, 0, 0.5);
+}
+
+/* Com o ponteiro em uma sugestão: os dois enlaces que ela teria, tracejados, na cor do veredito de cada um. */
+.lora-sugestao-linha {
+  stroke: var(--tom-cinza);
+  stroke-width: 4;
+  stroke-dasharray: 3 8;
+  stroke-linecap: round;
+  /* Contorno branco, para o tracejado aparecer mesmo por cima de um enlace. */
+  filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff);
+}
+
+.lora-sugestao-linha[data-tom='folga'] { stroke: var(--tom-folga); }
+.lora-sugestao-linha[data-tom='limite'] { stroke: var(--tom-limite); }
+.lora-sugestao-linha[data-tom='nao-fecha'] { stroke: var(--tom-nao-fecha); }
+
+/* Painel da busca. */
+.lora-busca {
+  border-color: #e0a45c;
+  border-left: 4px solid #b45309;
+}
+
+.lora-busca[hidden] {
+  display: none;
+}
+
+.lora-busca progress {
+  display: block;
+  width: 100%;
+  height: 14px;
+  margin: 6px 0 2px;
+  accent-color: #b45309;
+}
+
+.lora-sugestoes {
+  list-style: none;
+  margin: 8px 0 4px;
+  padding: 0;
+}
+
+.lora-sugestao-item {
+  margin: 0 0 6px;
+  padding: 7px 9px 8px;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.lora-sugestao-item.destaque,
+.lora-sugestao-item:focus-visible {
+  border-color: #b45309;
+  background: #fff7e6;
+  box-shadow: 0 0 0 1px #b45309;
+  outline: none;
+}
+
+.lora-sugestao-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+
+.lora-sugestao-numero {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border: 2px dashed #b45309;
+  border-radius: 50%;
+  background: #fff7e6;
+  color: #7c3a03;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.lora-sugestao-veredito.folga { color: #12632a; }
+.lora-sugestao-veredito.limite { color: #664d03; }
+.lora-sugestao-veredito.nao-fecha { color: #8a1c1c; }
+
+.lora-sugestao-trechos {
+  list-style: none;
+  margin: 5px 0 7px;
+  padding: 0;
+  font-size: 13px;
+}
+
+.lora-sugestao-trechos li {
+  padding: 2px 0;
+}
+
+.lora-sugestao-por {
+  background: var(--destaque);
+  border-color: var(--destaque);
+  color: #fff;
+}
+
+.lora-sugestao-por:hover {
+  background: #0f4f99;
+}
+
+/* Lista de rotas do resumo. */
+.lora-rota-caminho {
+  flex: 1 1 100%;
+  font-size: 13px;
+}
+
+.lora-rota .detalhe {
+  flex: 1 1 100%;
+}
+
+.lora-rota.sem-rota {
+  box-sizing: border-box;
+  padding: 5px 9px;
+  border: 1px dashed var(--borda);
+  border-radius: 6px;
+}
+
+button.lora-rota[aria-pressed='true'] {
+  border-color: var(--destaque);
+  box-shadow: 0 0 0 1px var(--destaque);
+  background: #e8f0fb;
+}
+
+/* Caixa de explicação: o que é um repetidor. */
+.lora-explica {
+  margin: 8px 0;
+  padding: 7px 10px;
+  border-left: 3px solid #6a1b9a;
+  border-radius: 4px;
+  background: #f6eefb;
+  font-size: 12.5px;
+}
+
+.lora-explica[hidden] {
+  display: none;
+}
+
+.lora-explica ul {
+  margin: 3px 0 0;
+  padding-left: 18px;
+}
+
+.lora-explica button {
+  margin-top: 4px;
 }

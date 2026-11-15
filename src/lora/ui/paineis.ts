@@ -4,10 +4,12 @@
 // são montados uma vez e só têm os valores atualizados, para o campo que está sendo digitado não perder o foco.
 
 import { acoesLora, assinarLora, estadoLora } from '../estado';
-import { altitudeDoPonto, assinarCalculo, modoDoProjeto, situacaoDaAltitude, situacaoDoEnlace, type SituacaoDoEnlace } from '../calculo';
+import { altitudeDoPonto, assinarCalculo, modoDoProjeto, rotasEntreCasas, situacaoDaAltitude, situacaoDoEnlace, type SituacaoDoEnlace } from '../calculo';
 import { avisosDaRegra, MODOS, REGIOES, SALTOS_MAXIMO } from '../nucleo';
 import type { PontoLora, Regiao } from '../nucleo/tipos';
+import { assinarBusca, destacarRota, procurarRepetidor, rotaEmDestaque } from './busca';
 import { h, num, type Filho } from './dom';
+import { montarPainelDaBusca } from './painel-da-busca';
 import {
   AVISO_FIXO,
   dbmTexto,
@@ -17,7 +19,12 @@ import {
   dbComSinal,
   lerNumero,
   linhasDaConta,
+  resumoDaRota,
+  type ResumoDaRota,
   resumoDoEnlace,
+  TEXTO_DA_LINHA,
+  TEXTO_DE_ROTA,
+  TEXTO_DO_REPETIDOR,
   TEXTO_DE_SALTOS,
   TEXTO_DO_MODO,
   TEXTO_MARGEM_DO_AMBIENTE,
@@ -62,6 +69,8 @@ function montarResumo(): HTMLElement {
   caixa.append(h('h3', null, `Enlaces (${projeto.enlaces.length})`));
   if (projeto.enlaces.length === 0) {
     caixa.append(h('p', { class: 'lora-ajuda' }, 'Use "Ligar dois pontos" na barra do mapa para ver se o rádio fecha a ligação entre eles. ', termo('Enlace', GLOSSARIO.enlace), ' é a ligação de rádio entre dois pontos.'));
+    const rotas = montarRotas();
+    if (rotas) caixa.append(rotas);
     return caixa;
   }
   const enlaces = h('ul', { class: 'lora-lista' });
@@ -84,8 +93,69 @@ function montarResumo(): HTMLElement {
     botao.addEventListener('click', () => acoesLora.selecionar({ tipo: 'enlace', de: e.de, para: e.para }));
     enlaces.append(h('li', null, botao));
   }
-  caixa.append(enlaces);
+  caixa.append(enlaces, h('p', { class: 'detalhe' }, TEXTO_DA_LINHA));
+  const rotas = montarRotas();
+  if (rotas) caixa.append(rotas);
   return caixa;
+}
+
+const ROTA_SEM_RESULTADO: ResumoDaRota = {
+  veredito: 'sem resultado',
+  classe: 'erro',
+  caminho: '',
+  detalhe: 'Algum enlace ficou sem resultado porque o relevo não pôde ser baixado; sem ele não dá para dizer a rota. Selecione o enlace e use "Tentar de novo".',
+};
+
+/** A seção "Rotas entre as casas": a melhor rota de cada par de casas, pelos enlaces desenhados. Nulo com menos de duas casas. */
+function montarRotas(): HTMLElement | null {
+  const rotas = rotasEntreCasas();
+  if (rotas.length === 0) return null;
+  const limite = estadoLora.projeto.limiteDeSaltos;
+  const destacada = rotaEmDestaque();
+  const lista = h('ul', { class: 'lora-lista' });
+  // Enlace sem resultado (o relevo não baixou) não entra na busca de rota: sem ele, "não há ligação" seria uma resposta enganosa.
+  const haEnlaceSemResultado = estadoLora.projeto.enlaces.some((e) => situacaoDoEnlace(e.de, e.para)?.estado === 'erro');
+  for (const r of rotas) {
+    const resumo = r.resultado !== null && r.resultado.rota === null && haEnlaceSemResultado ? ROTA_SEM_RESULTADO : resumoDaRota(r.resultado, nomeDoPonto, limite);
+    const temRota = Boolean(r.resultado?.rota);
+    const marcada = temRota && destacada !== null && destacada.de === r.de && destacada.para === r.para;
+    const conteudo: Filho[] = [
+      h('strong', null, `${nomeDoPonto(r.de)} ↔ ${nomeDoPonto(r.para)}`),
+      h('span', null, distintivo(resumo.veredito, resumo.classe)),
+      resumo.caminho ? h('span', { class: 'lora-rota-caminho' }, resumo.caminho) : null,
+      h('span', { class: 'detalhe' }, resumo.detalhe),
+    ];
+    if (!temRota) {
+      // Sem rota não há o que destacar no mapa: o item é só texto.
+      lista.append(h('li', { class: 'lora-item lora-rota sem-rota', 'data-de': r.de, 'data-para': r.para }, ...conteudo));
+      continue;
+    }
+    const botao = h(
+      'button',
+      { type: 'button', class: 'lora-item lora-rota', 'data-de': r.de, 'data-para': r.para, 'aria-pressed': String(marcada), title: marcada ? 'Clique para tirar o destaque do mapa' : 'Clique para destacar no mapa os trechos desta rota' },
+      ...conteudo,
+    );
+    botao.addEventListener('click', () => destacarRota(marcada ? null : { de: r.de, para: r.para }));
+    lista.append(h('li', null, botao));
+  }
+  return h('div', { id: 'lora-rotas' }, h('h3', null, 'Rotas entre as casas'), h('p', { class: 'detalhe' }, TEXTO_DE_ROTA), lista);
+}
+
+/**
+ * Em uma linha, as rotas entre casas que usam um ponto ou um enlace. `usa` diz se a rota passa por ele.
+ * Nulo quando o projeto tem menos de duas casas ou os enlaces ainda estão sendo calculados.
+ */
+function linhaDasRotas(oQue: 'este ponto' | 'este enlace', usa: (rota: { pontos: string[]; trechos: { de: string; para: string }[] }) => boolean): HTMLElement | null {
+  const rotas = rotasEntreCasas();
+  if (rotas.length === 0 || rotas.some((r) => r.resultado === null)) return null;
+  const caminhos = rotas.flatMap((r) => (r.resultado?.rota && usa(r.resultado.rota) ? [r.resultado.rota.pontos.map(nomeDoPonto).join(' → ')] : []));
+  const texto =
+    caminhos.length === 0
+      ? `Nenhuma rota entre casas passa por ${oQue}.`
+      : caminhos.length === 1
+        ? `A rota ${caminhos[0]} passa por ${oQue}.`
+        : `${caminhos.length} rotas entre casas passam por ${oQue}: ${caminhos.join('; ')}.`;
+  return h('p', { class: 'detalhe lora-nas-rotas' }, termo('Rotas', TEXTO_DE_ROTA), ': ', texto);
 }
 
 // ---------------------------------------------------------------- Ponto selecionado
@@ -146,6 +216,13 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
   const posicao = h('p', { class: 'detalhe' });
   const altitude = h('p', { class: 'detalhe' });
   const avisos = h('div', null);
+  const rotas = h('div', null);
+  const oQueERepetidor = h(
+    'div',
+    { class: 'lora-explica', id: 'lora-explica-repetidor', role: 'note', hidden: true },
+    h('strong', null, 'O que é um repetidor'),
+    h('ul', null, ...TEXTO_DO_REPETIDOR.map((frase) => h('li', null, frase))),
+  );
   const apagar = h('button', { type: 'button', class: 'lora-perigo', title: 'Apaga o ponto e os enlaces ligados a ele. Dá para desfazer com Ctrl+Z.' }, 'Apagar ponto');
   apagar.addEventListener('click', () => acoesLora.removerPonto(id));
 
@@ -156,8 +233,10 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
     h('div', { class: 'lora-campo' }, h('label', null, 'Nome', nome)),
     h('div', { class: 'lora-campo' }, h('label', null, termo('Tipo', `Casa: um rádio em uma casa. ${GLOSSARIO.repetidor}`), tipo)),
     ...linhas,
+    oQueERepetidor,
     posicao,
     altitude,
+    rotas,
     avisos,
     h('div', { class: 'lora-acoes' }, apagar),
   );
@@ -178,6 +257,9 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
     altitude.replaceChildren(termo('Altitude do terreno', GLOSSARIO.altitude), `: ${textoDaAltitude}`);
     const lista = avisosDaRegra(ponto, modoDoProjeto(estadoLora.projeto));
     avisos.replaceChildren(...lista.map((a) => h('p', { class: 'lora-aviso', role: 'note' }, a)));
+    oQueERepetidor.hidden = ponto.tipo !== 'repetidor';
+    const linha = linhaDasRotas('este ponto', (r) => r.pontos.includes(id));
+    rotas.replaceChildren(...(linha ? [linha] : []));
   };
   atualizar();
   return { elemento, atualizar };
@@ -244,8 +326,28 @@ function montarPainelDoEnlace(de: string, para: string): HTMLElement {
   }
   caixa.append(tabela);
 
+  const nasRotas = linhaDasRotas('este enlace', (rota) => rota.trechos.some((t) => (t.de === de && t.para === para) || (t.de === para && t.para === de)));
+  if (nasRotas) caixa.append(nasRotas);
+
   const melhorias = montarListaDeMelhorias(situacao);
   if (melhorias) caixa.append(melhorias);
+  if (r.veredito !== 'folga') {
+    const procurar = h(
+      'button',
+      { type: 'button', id: 'lora-enlace-sugerir', title: 'Procura no relevo até cinco lugares altos que fechem enlace com as duas pontas. Nada é criado: você escolhe depois.' },
+      'Procurar lugar para um repetidor entre estes pontos',
+    );
+    procurar.addEventListener('click', () => procurarRepetidor(de, para));
+    caixa.append(
+      h(
+        'div',
+        { class: 'lora-explica', role: 'note' },
+        h('strong', null, 'Outra saída: um repetidor'),
+        h('p', null, `${TEXTO_DO_REPETIDOR[0]} ${TEXTO_DO_REPETIDOR[1]} Com ele, a mensagem vai em dois enlaces mais fáceis em vez de um difícil.`),
+        procurar,
+      ),
+    );
+  }
   for (const a of situacao.avisos) caixa.append(h('p', { class: 'lora-aviso', role: 'note' }, a));
   caixa.append(h('p', { class: 'lora-aviso fixo', role: 'note' }, AVISO_FIXO), h('div', { class: 'lora-acoes' }, desligar));
   return caixa;
@@ -340,7 +442,7 @@ function montarConfiguracao(): PainelDaConfiguracao {
 export function montarPaineisLora(raiz: HTMLElement): void {
   const area = h('div', { class: 'lora-area' });
   const configuracao = montarConfiguracao();
-  raiz.replaceChildren(area, configuracao.elemento);
+  raiz.replaceChildren(montarPainelDaBusca(), area, configuracao.elemento);
 
   let chave = '';
   let painelDoPonto: PainelDoPonto | null = null;
@@ -376,5 +478,12 @@ export function montarPaineisLora(raiz: HTMLElement): void {
   assinarLora('projeto', aoMudar);
   assinarLora('selecao', redesenhar);
   assinarCalculo(redesenhar);
+  // A rota destacada no mapa aparece marcada na lista de rotas do resumo.
+  let rotaMarcada = rotaEmDestaque();
+  assinarBusca(() => {
+    if (rotaEmDestaque() === rotaMarcada) return;
+    rotaMarcada = rotaEmDestaque();
+    redesenhar();
+  });
   redesenhar();
 }

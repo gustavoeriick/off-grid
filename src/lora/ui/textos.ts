@@ -151,8 +151,105 @@ export const GLOSSARIO = {
   ganho: 'Ganho da antena, em dBi: o quanto ela concentra o sinal na direção certa. Antena maior costuma ter ganho maior.',
   cabo: 'Perda no cabo, em dB (decibel): o que o cabo entre o rádio e a antena consome do sinal. Cabo longo ou fino perde mais.',
   altitude: 'Altitude do terreno acima do nível do mar, lida do mapa de relevo no lugar do ponto.',
-  repetidor: 'Repetidor: um rádio no meio do caminho que recebe a mensagem e a repete, para chegar onde o sinal direto não chega.',
+  repetidor: 'Repetidor: um rádio igual aos outros, posto por você em um lugar alto, que recebe a mensagem inteira e a transmite de novo, para chegar onde o sinal direto não chega. Ele não amplifica o sinal.',
   fresnel: 'Zona de Fresnel: uma região em forma de bola de rúgbi em volta da linha reta entre as antenas. Se algo entra nela, o sinal enfraquece mesmo sem tapar a linha.',
   folga: 'Folga: o quanto o sinal que chega passa do mínimo que o rádio entende, em dB. Quanto maior, mais seguro.',
   sensibilidade: 'Sensibilidade: o sinal mais fraco, em dBm, que o rádio ainda consegue entender neste modo.',
 } as const;
+
+// ---------------------------------------------------------------- Rotas e repetidores (fase L3, especificação 4.9)
+
+/** O que é rota e o que é salto, para quem está começando. */
+export const TEXTO_DE_ROTA =
+  'Rota é o caminho que a mensagem faz de uma casa à outra, passando de rádio em rádio. Cada rádio no meio do caminho, que recebe a mensagem e a transmite de novo, conta um salto. A rota vale o que vale o trecho mais fraco dela.';
+
+/** Cada linha do mapa é uma ligação direta: o simulador não põe rádio nenhum no meio. */
+export const TEXTO_DA_LINHA = 'Cada linha do mapa é uma ligação direta entre dois rádios, sem nada no meio. O simulador não imagina antena no caminho: repetidor só existe onde você puser um.';
+
+/** O que é e o que não é um repetidor, em frases curtas. */
+export const TEXTO_DO_REPETIDOR: readonly string[] = [
+  'É um rádio igual aos outros, que você põe em um lugar alto.',
+  'Ele não amplifica o sinal: recebe a mensagem inteira e transmite de novo.',
+  'Só serve se fechar enlace com os dois lados: precisa "enxergar" o rádio de cada ponta, ou outro repetidor.',
+];
+
+export const TEXTO_SEM_LIGACAO = "Não há ligação desenhada entre estas casas. Use 'Ligar dois pontos' ou 'Sugerir ponto de repetidor'.";
+
+export const TEXTO_DA_BUSCA = 'Baixando o relevo da região e procurando lugares altos…';
+
+export const AVISO_DA_SUGESTAO =
+  'A sugestão só olha o relevo: procura terreno alto com boa ligação para os dois lados. Não sabe se o lugar tem acesso, dono, energia ou autorização.';
+
+/** Quantos rádios ficam entre as duas pontas de uma rota, em palavras. */
+export function radiosNoMeio(n: number): string {
+  if (n <= 0) return 'ligação direta, sem rádio no meio';
+  return n === 1 ? '1 rádio no meio' : `${n} rádios no meio`;
+}
+
+/** O caminho de uma rota pelos nomes: "Minha casa → Repetidor 1 → Casa dos pais". */
+export const caminhoDaRota = (nomes: string[]): string => nomes.join(' → ');
+
+/** O que a tela precisa saber de uma rota; é a parte de `ResultadoDaRota` (núcleo) que vira texto. */
+export type RotaParaTexto =
+  | { rota: { pontos: string[]; maisFraco: { de: string; para: string }; folgaDb: number; veredito: Veredito; pontosNoMeio: number } }
+  | { rota: null; motivo: 'sem-ligacao' }
+  | { rota: null; motivo: 'limite'; pontosNoMeio: number };
+
+export interface ResumoDaRota {
+  /** Palavras do selo: o veredito, "calculando…", "sem ligação" ou "passa do limite de saltos". */
+  veredito: string;
+  classe: Veredito | 'calculando' | 'erro';
+  /** O caminho pelos nomes; vazio quando não há rota. */
+  caminho: string;
+  /** A frase que explica: o trecho mais fraco e os rádios no meio, ou por que não há rota. */
+  detalhe: string;
+}
+
+/**
+ * Resumo da rota entre duas casas para a lista da rede. `resultado` nulo quer dizer que ainda há enlace sendo calculado.
+ * `nome` devolve o nome de um ponto pelo `id`; `limiteDeSaltos` é o do projeto.
+ */
+export function resumoDaRota(resultado: RotaParaTexto | null, nome: (id: string) => string, limiteDeSaltos: number): ResumoDaRota {
+  if (resultado === null) return { veredito: 'calculando…', classe: 'calculando', caminho: '', detalhe: 'Esperando o cálculo dos enlaces.' };
+  if (resultado.rota === null) {
+    if (resultado.motivo === 'sem-ligacao') return { veredito: 'sem ligação', classe: 'erro', caminho: '', detalhe: TEXTO_SEM_LIGACAO };
+    return {
+      veredito: 'passa do limite de saltos',
+      classe: 'erro',
+      caminho: '',
+      detalhe: `Há caminho desenhado, mas ele precisa de ${radiosNoMeio(resultado.pontosNoMeio)} e o limite de saltos deste projeto é ${limiteDeSaltos}. A mensagem pararia antes de chegar. O limite muda em "Configuração da rede", aqui embaixo.`,
+    };
+  }
+  const r = resultado.rota;
+  const fraco = `${nome(r.maisFraco.de)} ↔ ${nome(r.maisFraco.para)}`;
+  const direta = r.pontosNoMeio === 0;
+  let detalhe: string;
+  if (r.veredito === 'nao-fecha') {
+    detalhe = direta
+      ? `A ligação direta não fecha: folga ${dbComSinal(r.folgaDb)}.`
+      : `O trecho ${fraco} derruba a rota: folga ${dbComSinal(r.folgaDb)}. Passa por ${radiosNoMeio(r.pontosNoMeio)}.`;
+  } else {
+    detalhe = direta ? `Ligação direta, sem rádio no meio. Folga ${dbComSinal(r.folgaDb)}.` : `Passa por ${radiosNoMeio(r.pontosNoMeio)}. Trecho mais fraco: ${fraco}, folga ${dbComSinal(r.folgaDb)}.`;
+  }
+  return { veredito: textoDoVeredito(r.veredito), classe: r.veredito, caminho: caminhoDaRota(r.pontos.map(nome)), detalhe };
+}
+
+/** Um trecho de uma sugestão de repetidor: "Minha casa ↔ repetidor: 15,9 km, folga +21,3 dB". */
+export function trechoDaSugestaoTexto(ponta: string, t: { distanciaKm: number; folgaDb: number }): string {
+  return `${ponta} ↔ repetidor: ${distanciaTexto(t.distanciaKm)}, folga ${dbComSinal(t.folgaDb)}`;
+}
+
+/**
+ * Texto para quando nenhuma sugestão fecha os dois trechos. `melhor` é a primeira da lista; `nomeA` e `nomeB` são as pontas.
+ * Devolve nulo quando alguma sugestão fecha (o chamador confere antes) ou a lista está vazia.
+ */
+export function textoSemSugestaoQueFecha(melhor: { trechoA: { veredito: Veredito }; trechoB: { veredito: Veredito } } | undefined, nomeA: string, nomeB: string): string | null {
+  if (!melhor) return null;
+  const faltaA = melhor.trechoA.veredito === 'nao-fecha';
+  const faltaB = melhor.trechoB.veredito === 'nao-fecha';
+  if (!faltaA && !faltaB) return null;
+  const inicio = 'Um repetidor só não resolve: em nenhum destes lugares os dois trechos fecham. Abaixo estão os melhores que o relevo oferece.';
+  if (faltaA && faltaB) return `${inicio} Nem o melhor fecha com alguma das pontas; vale tentar antena mais alta ou um modo mais lento antes de pensar em dois repetidores.`;
+  const semLigacao = faltaA ? nomeA : nomeB;
+  return `${inicio} Uma saída é pôr um repetidor no lugar 1 e repetir a busca entre ele e ${semLigacao}, a ponta que ficou sem ligação.`;
+}

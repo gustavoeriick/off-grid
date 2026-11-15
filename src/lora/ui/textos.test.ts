@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ContaDoEnlace, Geometria } from '../nucleo/tipos';
-import { comSinal, cortar, dbComSinal, dbmTexto, dbTexto, distanciaTexto, lerNumero, linhasDaConta, resumoDoEnlace, textoDaZona, textoDoVeredito, vereditoEmDestaque } from './textos';
+import {
+  comSinal, cortar, dbComSinal, dbmTexto, dbTexto, distanciaTexto, lerNumero, linhasDaConta, radiosNoMeio, resumoDaRota, resumoDoEnlace,
+  TEXTO_SEM_LIGACAO, textoDaZona, textoDoVeredito, textoSemSugestaoQueFecha, trechoDaSugestaoTexto, vereditoEmDestaque,
+} from './textos';
 
 const M = '−';
 
@@ -96,5 +99,62 @@ describe('zona de Fresnel', () => {
   it('terreno acima da linha', () => {
     const g = { ...base, pontos: [], zonaLivre: false, piorPonto: { dKm: 4.2, altM: 0, curvaM: 0, linhaM: 0, folgaM: -3, raioDeFresnelM: 10 } } as Geometria;
     expect(textoDaZona(g)).toContain('o terreno passa 3,0 m acima da linha');
+  });
+});
+
+describe('rotas e sugestão de repetidor', () => {
+  const nomes: Record<string, string> = { a: 'Casa A', r: 'Repetidor 1', b: 'Casa B' };
+  const nome = (id: string): string => nomes[id] ?? '?';
+
+  it('rádios no meio, em palavras', () => {
+    expect(radiosNoMeio(0)).toContain('sem rádio no meio');
+    expect(radiosNoMeio(1)).toBe('1 rádio no meio');
+    expect(radiosNoMeio(3)).toBe('3 rádios no meio');
+  });
+  it('enquanto os enlaces calculam', () => {
+    expect(resumoDaRota(null, nome, 3)).toMatchObject({ veredito: 'calculando…', classe: 'calculando', caminho: '' });
+  });
+  it('sem ligação desenhada', () => {
+    const r = resumoDaRota({ rota: null, motivo: 'sem-ligacao' }, nome, 3);
+    expect(r.veredito).toBe('sem ligação');
+    expect(r.detalhe).toBe(TEXTO_SEM_LIGACAO);
+  });
+  it('passa do limite de saltos: diz quantos rádios seriam precisos, o limite e onde mudar', () => {
+    const r = resumoDaRota({ rota: null, motivo: 'limite', pontosNoMeio: 2 }, nome, 1);
+    expect(r.veredito).toBe('passa do limite de saltos');
+    expect(r.detalhe).toContain('precisa de 2 rádios no meio');
+    expect(r.detalhe).toContain('o limite de saltos deste projeto é 1');
+    expect(r.detalhe).toContain('Configuração da rede');
+  });
+  it('rota pelo repetidor: caminho por nome, trecho mais fraco e rádios no meio', () => {
+    const r = resumoDaRota({ rota: { pontos: ['a', 'r', 'b'], maisFraco: { de: 'r', para: 'b' }, folgaDb: 12.34, veredito: 'limite', pontosNoMeio: 1 } }, nome, 3);
+    expect(r.veredito).toBe('fecha no limite');
+    expect(r.classe).toBe('limite');
+    expect(r.caminho).toBe('Casa A → Repetidor 1 → Casa B');
+    expect(r.detalhe).toBe('Passa por 1 rádio no meio. Trecho mais fraco: Repetidor 1 ↔ Casa B, folga +12,3 dB.');
+  });
+  it('rota que não fecha: diz o trecho que derruba', () => {
+    const r = resumoDaRota({ rota: { pontos: ['a', 'r', 'b'], maisFraco: { de: 'a', para: 'r' }, folgaDb: -4.5, veredito: 'nao-fecha', pontosNoMeio: 1 } }, nome, 3);
+    expect(r.veredito).toBe('não fecha');
+    expect(r.detalhe).toContain(`O trecho Casa A ↔ Repetidor 1 derruba a rota: folga ${M}4,5 dB.`);
+  });
+  it('ligação direta', () => {
+    const direta = { pontos: ['a', 'b'], maisFraco: { de: 'a', para: 'b' }, pontosNoMeio: 0 };
+    expect(resumoDaRota({ rota: { ...direta, folgaDb: 20, veredito: 'folga' } }, nome, 3).detalhe).toBe('Ligação direta, sem rádio no meio. Folga +20,0 dB.');
+    expect(resumoDaRota({ rota: { ...direta, folgaDb: -13, veredito: 'nao-fecha' } }, nome, 3).detalhe).toBe(`A ligação direta não fecha: folga ${M}13,0 dB.`);
+  });
+  it('trecho de uma sugestão', () => {
+    expect(trechoDaSugestaoTexto('Casa A', { distanciaKm: 17.35, folgaDb: 35.41 })).toBe('Casa A ↔ repetidor: 17,4 km, folga +35,4 dB');
+  });
+  it('nenhuma sugestão fecha: aponta a ponta que ficou sem ligação', () => {
+    const fecha = { veredito: 'limite' as const };
+    const naoFecha = { veredito: 'nao-fecha' as const };
+    expect(textoSemSugestaoQueFecha(undefined, 'Casa A', 'Casa B')).toBeNull();
+    expect(textoSemSugestaoQueFecha({ trechoA: fecha, trechoB: fecha }, 'Casa A', 'Casa B')).toBeNull();
+    const t = textoSemSugestaoQueFecha({ trechoA: fecha, trechoB: naoFecha }, 'Casa A', 'Casa B')!;
+    expect(t).toContain('Um repetidor só não resolve');
+    expect(t).toContain('repetir a busca entre ele e Casa B');
+    expect(textoSemSugestaoQueFecha({ trechoA: naoFecha, trechoB: fecha }, 'Casa A', 'Casa B')).toContain('entre ele e Casa A');
+    expect(textoSemSugestaoQueFecha({ trechoA: naoFecha, trechoB: naoFecha }, 'Casa A', 'Casa B')).toContain('Um repetidor só não resolve');
   });
 });

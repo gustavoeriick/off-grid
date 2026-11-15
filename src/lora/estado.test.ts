@@ -51,6 +51,20 @@ describe('estado do LoRa', () => {
     expect(estadoLora.projeto).toMatchObject({ margemDoAmbienteDb: 40, limiteDeSaltos: 1, regiao: 'BR_902' });
   });
 
+  it('pôr um repetidor cria o ponto e os dois enlaces em um passo só de desfazer', () => {
+    const a = acoesLora.adicionarPonto(-10, -50, 'casa', 'A');
+    const b = acoesLora.adicionarPonto(-10.2, -50.3, 'casa', 'B');
+    acoesLora.ligar(a, b);
+    const antes = JSON.stringify(estadoLora.projeto);
+    const r = acoesLora.porRepetidor(-10.1, -50.1, a, b)!;
+    expect(estadoLora.projeto.pontos.find((p) => p.id === r)).toMatchObject({ tipo: 'repetidor', nome: 'Repetidor 1', ...PONTO_PADRAO });
+    expect(estadoLora.projeto.enlaces).toEqual([{ de: a, para: b }, { de: a, para: r }, { de: b, para: r }]);
+    acoesLora.desfazer();
+    expect(JSON.stringify(estadoLora.projeto)).toBe(antes);
+    expect(acoesLora.porRepetidor(0, 0, a, 'nao-existe')).toBeNull();
+    expect(acoesLora.porRepetidor(0, 0, a, a)).toBeNull();
+  });
+
   it('arquivo que não é projeto de rádio é recusado; ponto sem posição também', () => {
     expect(() => conferirProjeto({ versao: 2, nome: 'solar', casa: {} })).toThrow();
     expect(() => conferirProjeto({ versao: 1, pontos: [{ id: 'x', lat: 200, lon: 0 }], enlaces: [] })).toThrow();
@@ -61,6 +75,8 @@ describe('estado do LoRa', () => {
 
   it('meus projetos: criar, trocar, renomear, duplicar, importar e apagar', () => {
     const primeiro = acoesLora.listarProjetos().find((p) => p.atual)!.id;
+    // O nome do primeiro projeto depende da ordem dos testes: fixa um, para o teste não depender dela.
+    acoesLora.renomearProjeto(primeiro, 'Rede A');
     acoesLora.adicionarPonto(-10, -50, 'casa', 'A');
     const daPrimeira = JSON.stringify(estadoLora.projeto);
     const segundo = acoesLora.criarProjeto('Outra rede', 'vazio');
@@ -69,11 +85,11 @@ describe('estado do LoRa', () => {
     expect(estadoLora.projeto.nome).toBe('Outra rede');
     expect(acoesLora.abrirProjeto(primeiro)).toBe(true);
     expect(JSON.stringify(estadoLora.projeto)).toBe(daPrimeira);
-    acoesLora.renomearProjeto(segundo, 'Teste');
+    acoesLora.renomearProjeto(segundo, 'Rede A');
     const copia = acoesLora.duplicarProjeto(primeiro)!;
     const nomes = Object.fromEntries(acoesLora.listarProjetos().map((p) => [p.id, p.nome]));
-    expect(nomes[segundo]).toBe('Teste (2)');
-    expect(nomes[copia]).toBe('Teste (cópia)');
+    expect(nomes[segundo]).toBe('Rede A (2)');
+    expect(nomes[copia]).toBe('Rede A (cópia)');
     acoesLora.importarProjeto(JSON.parse(acoesLora.exportarProjeto()));
     expect(acoesLora.listarProjetos()).toHaveLength(4);
     expect(estadoLora.projeto.pontos).toHaveLength(1);

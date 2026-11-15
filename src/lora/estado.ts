@@ -171,6 +171,22 @@ export const acoesLora = {
     return id;
   },
 
+  /**
+   * Cria um repetidor no lugar dado e o liga a dois pontos, tudo em um passo só de desfazer.
+   * Cada enlace sai da ponta para o repetidor. Devolve o `id` do repetidor, ou nulo se alguma ponta não existe.
+   */
+  porRepetidor(lat: number, lon: number, de: string, para: string): string | null {
+    const p = estadoLora.projeto;
+    if (de === para || !p.pontos.some((x) => x.id === de) || !p.pontos.some((x) => x.id === para)) return null;
+    const id = novoIdDePonto(p);
+    mudar((q) => {
+      const quantos = q.pontos.filter((x) => x.tipo === 'repetidor').length + 1;
+      q.pontos = [...q.pontos, { id, nome: `Repetidor ${quantos}`, tipo: 'repetidor', lat, lon, ...PONTO_PADRAO }];
+      q.enlaces = [...q.enlaces, { de, para: id }, { de: para, para: id }];
+    });
+    return id;
+  },
+
   /** Muda dados de um ponto. `historico: false` durante um arraste; marque o começo com `marcarHistorico`. */
   alterarPonto(id: string, dados: Partial<Omit<PontoLora, 'id'>>, opcoes?: { historico?: boolean }): void {
     mudar((p) => {

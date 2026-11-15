@@ -2648,6 +2648,321 @@ async function principal() {
     conferir(pedidos.mapa > 0 && pedidos.relevo > 0, `o mapa e o relevo deveriam ter pedido blocos: ${pedidos.mapa} e ${pedidos.relevo}`);
   }
 
+  // Rotas com vários saltos e "Sugerir ponto de repetidor" (especificacao/lora.md, seção 4.9), no mesmo terreno inventado:
+  // uma casa no alto de um morro e outra atrás da serra. O enlace direto não fecha; o alto da serra enxerga as duas.
+  // Os números da tela são comparados com os do cálculo, lidos por `window.__lora`; nenhum valor de rádio é fixado aqui.
+  async function verificarLoraRede(lora, pedidos) {
+    const MENOS = '−';
+    const br = (n, casas) => n.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+    /** Como a tela escreve uma folga: "+12,3 dB", com o sinal de menos de verdade. */
+    const dbBr = (n) => `${Number(Math.abs(n).toFixed(1)) === 0 ? '' : n < 0 ? MENOS : '+'}${br(Math.abs(n), 1)} dB`;
+    const kmBr = (km) => (km < 1 ? `${br(km * 1000, 0)} m` : `${br(km, km < 10 ? 2 : 1)} km`);
+    const PALAVRAS = { folga: 'fecha com folga', limite: 'fecha no limite', 'nao-fecha': 'não fecha' };
+    const POSTO = { folga: 0, limite: 1, 'nao-fecha': 2 };
+    const pior = (...v) => v.reduce((a, b) => (POSTO[a] >= POSTO[b] ? a : b));
+
+    const busca = () => pagina.evaluate(() => JSON.parse(JSON.stringify(window.__lora.busca())));
+    const rota = (de, para) => pagina.evaluate(([a, b]) => JSON.parse(JSON.stringify(window.__lora.rotaEntre(a, b))), [de, para]);
+    const enlace = (de, para) =>
+      pagina.evaluate(([a, b]) => {
+        const s = window.__lora.situacaoDoEnlace(a, b);
+        return s?.estado === 'pronto' ? { estado: 'pronto', veredito: s.resultado.veredito, folgaDb: s.resultado.conta.folgaDb, km: s.resultado.geometria.distanciaKm } : s;
+      }, [de, para]);
+    const enlacesProntos = () =>
+      pagina.waitForFunction(() => window.__lora.estado().projeto.enlaces.every((e) => window.__lora.situacaoDoEnlace(e.de, e.para)?.estado === 'pronto'), null, { timeout: 60000 });
+    /** Espera a busca chegar ao estado e o mapa parar: quando as sugestões não cabem na tela, o mapa se enquadra com animação. */
+    const buscaEm = async (estado) => {
+      await pagina.waitForFunction((alvo) => window.__lora.busca().estado === alvo, estado, { timeout: 60000 });
+      const ler = () => pagina.evaluate(() => JSON.stringify([window.__lora.mapa.centro(), window.__lora.mapa.zoom()]));
+      let anterior = await ler();
+      for (let i = 0; i < 50; i++) {
+        await esperar(200);
+        const agora = await ler();
+        if (agora === anterior) return;
+        anterior = agora;
+      }
+      throw new Error('O mapa não parou de se mexer.');
+    };
+    const telaDoPonto = (id) => pagina.evaluate((i) => window.__lora.telaDoPonto(i), id);
+    const cliqueNoPonto = async (id) => {
+      const t = await telaDoPonto(id);
+      await pagina.mouse.click(t.x, t.y);
+    };
+    const meioDe = async (seletor) => {
+      const c = await pagina.locator(seletor).boundingBox();
+      return { x: c.x + c.width / 2, y: c.y + c.height / 2 };
+    };
+    const recarregar = async () => {
+      await esperar(600); // o projeto é gravado com um pequeno atraso
+      await pagina.reload();
+      await pagina.waitForFunction(() => window.__lora && window.__lora.pronto === true, null, { timeout: 30000 });
+      await esperar(500);
+    };
+    const painel = pagina.locator('#lora-busca');
+    const marcadores = pagina.locator('#lora-mapa .lora-sugestao');
+    const rotas = pagina.locator('#lora-rotas');
+
+    // Um projeto novo com duas casas ligadas: o enlace direto não fecha, e a seção de rotas diz isso.
+    const [idA, idB] = await pagina.evaluate(
+      ([a, b]) => {
+        const ac = window.__lora.acoes;
+        ac.criarProjeto('Rede com repetidor', 'vazio');
+        const x = ac.adicionarPonto(a.lat, a.lon, 'casa', 'Casa do morro');
+        const y = ac.adicionarPonto(b.lat, b.lon, 'casa', 'Casa do vale');
+        ac.ligar(x, y);
+        return [x, y];
+      },
+      [LUGARES.morroA, LUGARES.atrasDaSerra],
+    );
+    await enlacesProntos();
+    const direto = await enlace(idA, idB);
+    conferir(direto.veredito === 'nao-fecha', `com a serra no meio, o enlace direto não deveria fechar: ${JSON.stringify(direto)}`);
+    let r = await rota(idA, idB);
+    conferir(r.rota && r.rota.pontosNoMeio === 0 && r.rota.veredito === 'nao-fecha', `a rota deveria ser a ligação direta, que não fecha: ${JSON.stringify(r)}`);
+    let texto = await rotas.textContent();
+    conferir(texto.includes('Rota é o caminho') && texto.includes('salto'), 'a seção de rotas deveria explicar o que é rota e o que é salto');
+    conferir(texto.includes('Casa do morro ↔ Casa do vale') && texto.includes('não fecha') && texto.includes(`A ligação direta não fecha: folga ${dbBr(direto.folgaDb)}`), `a rota direta deveria aparecer com a folga do cálculo: "${texto}"`);
+    conferir((await pagina.locator('#lora-direita').textContent()).includes('ligação direta entre dois rádios'), 'o resumo deveria dizer que cada linha é uma ligação direta entre dois rádios');
+
+    // Busca com o relevo ainda baixando: barra de andamento, texto e botão de cancelar. O resultado da busca cancelada é ignorado.
+    pedidos.relevoEmEspera = true;
+    await recarregar();
+    await pagina.locator('#lora-sugerir').click();
+    let b = await busca();
+    conferir(b.estado === 'buscando' && b.de === idA && b.para === idB, `com dois pontos só, "Sugerir ponto de repetidor" deveria começar a busca entre eles: ${JSON.stringify(b)}`);
+    texto = await painel.textContent();
+    conferir(texto.includes('Baixando o relevo da região e procurando lugares altos…') && texto.includes('Casa do morro') && texto.includes('Casa do vale'), `o painel deveria dizer o que a busca está fazendo: "${texto}"`);
+    conferir((await painel.locator('progress').count()) === 1 && (await painel.locator('#lora-busca-fechar').textContent()) === 'Cancelar a busca', 'a busca deveria ter barra de andamento e botão de cancelar');
+    await captura('111-lora-busca-em-andamento');
+    await painel.locator('#lora-busca-fechar').click();
+    conferir((await busca()).estado === 'parada' && (await painel.isHidden()), 'cancelar deveria fechar o painel da busca');
+    pedidos.relevoEmEspera = false;
+    await enlacesProntos();
+    await esperar(1500);
+    conferir((await busca()).estado === 'parada' && (await marcadores.count()) === 0, 'o resultado de uma busca cancelada não deveria aparecer');
+
+    // Com o mouse: seleciona o enlace que não fecha e pede a busca pelo botão do painel do enlace.
+    const a = await telaDoPonto(idA);
+    const z = await telaDoPonto(idB);
+    await pagina.mouse.click(a.x + (z.x - a.x) * 0.25, a.y + (z.y - a.y) * 0.25);
+    conferir((await lora()).selecao?.tipo === 'enlace', 'clique na linha deveria selecionar o enlace');
+    const pedir = pagina.locator('#lora-enlace-sugerir');
+    conferir((await pedir.textContent()) === 'Procurar lugar para um repetidor entre estes pontos', 'o painel do enlace que não fecha deveria oferecer a busca de repetidor');
+    conferir((await pagina.locator('#lora-direita .lora-explica').textContent()).includes('não amplifica'), 'o painel do enlace deveria dizer que o repetidor não amplifica');
+    await pedir.click();
+    await buscaEm('pronta');
+    b = await busca();
+    const sugestoes = b.sugestoes;
+    conferir(sugestoes.length >= 2 && sugestoes.length <= 5, `a busca deveria devolver de 2 a 5 lugares neste terreno: ${sugestoes.length}`);
+    conferir(sugestoes.some((s) => s.veredito !== 'nao-fecha'), `no alto da serra, algum lugar deveria fechar com as duas casas: ${JSON.stringify(sugestoes.map((s) => s.veredito))}`);
+    conferir((await marcadores.count()) === sugestoes.length, `o mapa deveria ter um marcador por sugestão: ${await marcadores.count()}`);
+    const areaDoMapa = await pagina.locator('#lora-mapa').boundingBox();
+    for (const s of sugestoes) {
+      const t = await pagina.evaluate(([lat, lon]) => window.__lora.mapa.telaDe(lat, lon), [s.lat, s.lon]);
+      conferir(t.x > areaDoMapa.x && t.x < areaDoMapa.x + areaDoMapa.width && t.y > areaDoMapa.y + 40 && t.y < areaDoMapa.y + areaDoMapa.height, `as sugestões deveriam ficar à vista no mapa: ${JSON.stringify(t)}`);
+    }
+    conferir((await painel.boundingBox()).y < 120, 'o painel das sugestões deveria ir para o alto da coluna da direita');
+    conferir((await marcadores.allTextContents()).join('') === sugestoes.map((_, i) => i + 1).join(''), 'os marcadores deveriam ser numerados');
+    const itens = painel.locator('.lora-sugestao-item');
+    conferir((await itens.count()) === sugestoes.length, 'a lista deveria ter um item por sugestão');
+    for (let i = 0; i < sugestoes.length; i++) {
+      const s = sugestoes[i];
+      conferir(s.veredito === pior(s.trechoA.veredito, s.trechoB.veredito), `o veredito da sugestão ${i + 1} deveria ser o do pior trecho`);
+      const item = await itens.nth(i).textContent();
+      const esperados = [
+        `Lugar ${i + 1}: ${PALAVRAS[s.veredito][0].toUpperCase()}${PALAVRAS[s.veredito].slice(1)}`,
+        `terreno a ${br(s.altM, 0)} m`,
+        `Casa do morro ↔ repetidor: ${kmBr(s.trechoA.distanciaKm)}, folga ${dbBr(s.trechoA.folgaDb)} ${PALAVRAS[s.trechoA.veredito]}`,
+        `Casa do vale ↔ repetidor: ${kmBr(s.trechoB.distanciaKm)}, folga ${dbBr(s.trechoB.folgaDb)} ${PALAVRAS[s.trechoB.veredito]}`,
+        'Pôr um repetidor aqui',
+      ];
+      for (const t of esperados) conferir(item.includes(t), `o item ${i + 1} da lista deveria ter "${t}": "${item}"`);
+    }
+    texto = await painel.textContent();
+    conferir(texto.includes('A sugestão só olha o relevo: procura terreno alto com boa ligação para os dois lados. Não sabe se o lugar tem acesso, dono, energia ou autorização.'), 'o aviso do limite da sugestão deveria aparecer sempre');
+    conferir(texto.includes('nenhum rádio foi posto ainda') && texto.includes('não amplifica'), 'o painel deveria dizer que as sugestões não são rádios e que o repetidor não amplifica');
+    conferir((await lora()).projeto.pontos.length === 2, 'a busca não deveria criar ponto nenhum');
+    await pagina.mouse.move(a.x + 200, a.y + 40);
+    await captura('112-lora-sugestoes-de-repetidor');
+
+    // O ponteiro em um item da lista destaca o marcador e mostra os dois enlaces que ele teria; no marcador, destaca o item.
+    let p = await meioDe('#lora-busca .lora-sugestao-item[data-indice="0"] .lora-sugestao-topo');
+    await pagina.mouse.move(p.x, p.y);
+    conferir(await marcadores.nth(0).evaluate((m) => m.classList.contains('destaque')), 'o ponteiro no item 1 deveria destacar o marcador 1');
+    conferir((await pagina.locator('#lora-mapa .lora-sugestao-linha[visibility="visible"]').count()) === 2, 'o destaque deveria mostrar os dois enlaces da sugestão');
+    await captura('113-lora-sugestao-em-destaque');
+    p = await meioDe('#lora-mapa .lora-sugestao[data-indice="1"] .lora-sugestao-desenho');
+    await pagina.mouse.move(p.x, p.y);
+    conferir(await itens.nth(1).evaluate((m) => m.classList.contains('destaque')), 'o ponteiro no marcador 2 deveria destacar o item 2 da lista');
+    conferir(!(await itens.nth(0).evaluate((m) => m.classList.contains('destaque'))), 'só um item fica em destaque');
+
+    // "Pôr um repetidor aqui": cria o repetidor, liga às duas casas, mantém o enlace direto e apaga as sugestões.
+    const antesDePor = JSON.stringify((await lora()).projeto);
+    const s0 = sugestoes[0];
+    await itens.nth(0).locator('.lora-sugestao-por').click();
+    let e = await lora();
+    const rep = e.projeto.pontos[2];
+    conferir(e.projeto.pontos.length === 3 && rep.tipo === 'repetidor' && rep.lat === s0.lat && rep.lon === s0.lon, `o repetidor deveria nascer no lugar da sugestão: ${JSON.stringify(rep)}`);
+    conferir(e.projeto.enlaces.length === 3, `o repetidor deveria ser ligado às duas casas, e o enlace direto mantido: ${JSON.stringify(e.projeto.enlaces)}`);
+    conferir((await busca()).estado === 'parada' && (await marcadores.count()) === 0 && (await painel.isHidden()), 'as sugestões deveriam sumir depois de pôr o repetidor');
+    await enlacesProntos();
+    const tA = await enlace(idA, rep.id);
+    const tB = await enlace(idB, rep.id);
+    conferir(Math.abs(tA.folgaDb - s0.trechoA.folgaDb) < 1e-6 && tA.veredito === s0.trechoA.veredito, `o enlace da casa do morro ao repetidor deveria dar o que a sugestão previu: ${JSON.stringify([tA, s0.trechoA])}`);
+    conferir(Math.abs(tB.folgaDb - s0.trechoB.folgaDb) < 1e-6 && tB.veredito === s0.trechoB.veredito, `o enlace da casa do vale ao repetidor deveria dar o que a sugestão previu: ${JSON.stringify([tB, s0.trechoB])}`);
+
+    // A seção de rotas mostra a rota pelo repetidor, com o veredito e a folga do trecho mais fraco.
+    r = await rota(idA, idB);
+    conferir(r.rota && r.rota.pontos.join() === [idA, rep.id, idB].join() && r.rota.pontosNoMeio === 1, `a rota deveria passar pelo repetidor: ${JSON.stringify(r)}`);
+    conferir(r.rota.veredito === pior(tA.veredito, tB.veredito) && Math.abs(r.rota.folgaDb - Math.min(tA.folgaDb, tB.folgaDb)) < 1e-9, `a rota vale o que vale o pior trecho: ${JSON.stringify(r.rota)}`);
+    const fraco = tA.folgaDb <= tB.folgaDb ? 'Casa do morro ↔ Repetidor 1' : 'Repetidor 1 ↔ Casa do vale';
+    texto = await rotas.locator('.lora-rota').textContent();
+    for (const t of [PALAVRAS[r.rota.veredito], 'Casa do morro → Repetidor 1 → Casa do vale', 'Passa por 1 rádio no meio', `Trecho mais fraco: ${fraco}, folga ${dbBr(r.rota.folgaDb)}`]) {
+      conferir(texto.includes(t), `a rota pelo repetidor deveria ter "${t}": "${texto}"`);
+    }
+    await captura('114-lora-rota-pelo-repetidor');
+
+    // Clicar na rota destaca os trechos dela no mapa; clicar de novo, ou no mapa vazio, tira o destaque.
+    const naRota = pagina.locator('#lora-mapa .lora-enlace.na-rota');
+    await rotas.locator('button.lora-rota').click();
+    conferir((await naRota.count()) === 2 && (await rotas.locator('button.lora-rota').getAttribute('aria-pressed')) === 'true', 'clicar na rota deveria destacar os dois trechos dela');
+    conferir((await pagina.locator(`#lora-mapa .lora-enlace[data-de="${idA}"][data-para="${idB}"].na-rota`).count()) === 0, 'o enlace direto, que não é da rota, não fica em destaque');
+    await captura('115-lora-rota-em-destaque');
+    await rotas.locator('button.lora-rota').click();
+    conferir((await naRota.count()) === 0, 'clicar de novo na rota deveria tirar o destaque');
+    await rotas.locator('button.lora-rota').click();
+    p = await pagina.evaluate(([lat, lon]) => window.__lora.mapa.telaDe(lat, lon), [LUGARES.morroB.lat, LUGARES.morroB.lon]);
+    await pagina.mouse.click(p.x, p.y);
+    conferir((await naRota.count()) === 0, 'clicar no mapa vazio deveria tirar o destaque da rota');
+
+    // O painel do repetidor explica o que ele é e diz de que rota participa; a dica de "Novo repetidor" também explica.
+    await cliqueNoPonto(rep.id);
+    conferir((await lora()).selecao?.id === rep.id, 'clique no repetidor deveria selecioná-lo');
+    texto = await pagina.locator('#lora-explica-repetidor').textContent();
+    conferir(['rádio igual aos outros', 'lugar alto', 'não amplifica', 'recebe a mensagem inteira e transmite de novo', 'os dois lados'].every((t) => texto.includes(t)), `o painel do repetidor deveria explicar o que ele é: "${texto}"`);
+    conferir((await pagina.locator('#lora-direita .lora-nas-rotas').textContent()).includes('Casa do morro → Repetidor 1 → Casa do vale'), 'o painel do ponto deveria dizer de que rota ele participa');
+    await captura('116-lora-painel-do-repetidor');
+    await pagina.locator('#lora-novo-repetidor').click();
+    texto = await pagina.locator('#lora-dica').textContent();
+    conferir(texto.includes('não amplifica') && texto.includes('lugar alto') && texto.includes('dois lados'), `a dica de "Novo repetidor" deveria explicar o repetidor: "${texto}"`);
+    await pagina.keyboard.press('Escape');
+    await pagina.evaluate(([x, y]) => window.__lora.acoes.selecionar({ tipo: 'enlace', de: x, para: y }), [idA, rep.id]);
+    conferir((await pagina.locator('#lora-direita .lora-nas-rotas').textContent()).includes('passa por este enlace'), 'o painel do enlace deveria dizer de que rota ele participa');
+    await pagina.evaluate(() => window.__lora.acoes.selecionar(null));
+
+    // Desfazer volta tudo. Hoje são três passos (cada enlace e o ponto); com uma ação única no estado, bastará um.
+    let passos = 0;
+    while (passos < 1 && JSON.stringify((await lora()).projeto) !== antesDePor) {
+      await pagina.keyboard.press('Control+z');
+      passos += 1;
+    }
+    conferir(JSON.stringify((await lora()).projeto) === antesDePor, 'desfazer deveria devolver o projeto ao que era antes de pôr o repetidor');
+    await enlacesProntos();
+    r = await rota(idA, idB);
+    conferir(r.rota && r.rota.pontosNoMeio === 0 && r.rota.veredito === 'nao-fecha', 'desfeito o repetidor, a rota volta a ser a ligação direta, que não fecha');
+
+    // Limite de saltos: dois repetidores em série e limite 1. A tela diz quantos rádios no meio seriam precisos e onde mudar.
+    const [idR1, idR2] = await pagina.evaluate(
+      ([x, y, s]) => {
+        const ac = window.__lora.acoes;
+        const fim = window.__lora.estado().projeto.pontos.find((q) => q.id === y);
+        const r1 = ac.adicionarPonto(s.lat, s.lon, 'repetidor');
+        const r2 = ac.adicionarPonto((s.lat + fim.lat) / 2, (s.lon + fim.lon) / 2, 'repetidor');
+        ac.ligar(x, r1);
+        ac.ligar(r1, r2);
+        ac.ligar(r2, y);
+        ac.desligar(x, y);
+        return [r1, r2];
+      },
+      [idA, idB, s0],
+    );
+    const saltos = pagina.locator('#lora-direita input[aria-label="Limite de saltos"]');
+    await saltos.fill('1');
+    await saltos.press('Tab');
+    conferir((await lora()).projeto.limiteDeSaltos === 1, 'o limite de saltos deveria ser 1');
+    await enlacesProntos();
+    r = await rota(idA, idB);
+    conferir(r.rota === null && r.motivo === 'limite' && r.pontosNoMeio === 2, `com limite 1 e dois repetidores em série, a rota passa do limite: ${JSON.stringify(r)}`);
+    texto = await rotas.locator('.lora-rota').textContent();
+    for (const t of ['passa do limite de saltos', 'precisa de 2 rádios no meio', 'o limite de saltos deste projeto é 1', 'Configuração da rede']) {
+      conferir(texto.includes(t), `a rota que passa do limite deveria ter "${t}": "${texto}"`);
+    }
+    conferir((await rotas.locator('button.lora-rota').count()) === 0, 'sem rota, não há o que destacar no mapa');
+    await captura('117-lora-limite-de-saltos');
+    await saltos.fill('2');
+    await saltos.press('Tab');
+    r = await rota(idA, idB);
+    const tres = [await enlace(idA, idR1), await enlace(idR1, idR2), await enlace(idR2, idB)];
+    conferir(r.rota && r.rota.pontosNoMeio === 2 && r.rota.veredito === pior(...tres.map((t) => t.veredito)) && Math.abs(r.rota.folgaDb - Math.min(...tres.map((t) => t.folgaDb))) < 1e-9, `com limite 2, a rota passa pelos dois repetidores: ${JSON.stringify([r, tres])}`);
+    texto = await rotas.locator('.lora-rota').textContent();
+    conferir(texto.includes('Casa do morro → Repetidor 1 → Repetidor 2 → Casa do vale') && texto.includes('2 rádios no meio') && texto.includes(PALAVRAS[r.rota.veredito]) && texto.includes(dbBr(r.rota.folgaDb)), `a rota com dois saltos deveria aparecer por nome: "${texto}"`);
+
+    // Sem ligação: apagado o enlace entre os repetidores, não há caminho entre as casas.
+    await pagina.evaluate(([x, y]) => window.__lora.acoes.selecionar({ tipo: 'enlace', de: x, para: y }), [idR1, idR2]);
+    await pagina.keyboard.press('Delete');
+    r = await rota(idA, idB);
+    conferir(r.rota === null && r.motivo === 'sem-ligacao', `sem o enlace do meio, não há rota: ${JSON.stringify(r)}`);
+    texto = await rotas.locator('.lora-rota').textContent();
+    conferir(texto.includes('sem ligação') && texto.includes("Não há ligação desenhada entre estas casas. Use 'Ligar dois pontos' ou 'Sugerir ponto de repetidor'."), `a tela deveria dizer que não há ligação: "${texto}"`);
+    await captura('118-lora-sem-ligacao');
+
+    // A ferramenta da barra, sem enlace selecionado: pede dois pontos, como "Ligar dois pontos"; Esc cancela.
+    const pressionado = async () => (await pagina.locator('#lora-sugerir').getAttribute('aria-pressed')) === 'true';
+    await pagina.locator('#lora-sugerir').click();
+    conferir((await pressionado()) && (await pagina.locator('#lora-dica').textContent()).includes('Clique nos dois pontos'), 'a ferramenta deveria pedir os dois pontos');
+    await cliqueNoPonto(idA);
+    conferir((await pagina.locator('#lora-dica').textContent()).includes('Casa do morro'), 'a dica deveria dizer que falta a outra ponta');
+    await pagina.keyboard.press('Escape');
+    conferir(!(await pressionado()) && (await busca()).estado === 'parada', 'Esc deveria cancelar a escolha dos pontos');
+    await pagina.locator('#lora-sugerir').click();
+    await cliqueNoPonto(idA);
+    await cliqueNoPonto(idB);
+    await buscaEm('pronta');
+    b = await busca();
+    conferir(b.de === idA && b.para === idB && JSON.stringify(b.sugestoes) === JSON.stringify(sugestoes), 'a busca entre os mesmos dois pontos deveria dar as mesmas sugestões');
+    conferir((await lora()).selecao === null && !(await pressionado()), 'a busca não muda a seleção, e a ferramenta desliga');
+
+    // As sugestões somem quando um dos dois pontos muda e com o botão "Fechar sugestões".
+    await pagina.evaluate((id) => window.__lora.acoes.alterarPonto(id, { alturaDaAntenaM: 12 }), idB);
+    conferir((await busca()).estado === 'parada' && (await marcadores.count()) === 0, 'mudar um dos pontos da busca deveria apagar as sugestões');
+    await pagina.keyboard.press('Control+z');
+    await pagina.locator('#lora-sugerir').click();
+    await cliqueNoPonto(idA);
+    await cliqueNoPonto(idB);
+    await buscaEm('pronta');
+    conferir((await painel.locator('#lora-busca-fechar').textContent()) === 'Fechar sugestões', 'o painel deveria ter o botão "Fechar sugestões"');
+    await painel.locator('#lora-busca-fechar').click();
+    conferir((await busca()).estado === 'parada' && (await marcadores.count()) === 0 && (await painel.isHidden()), '"Fechar sugestões" deveria tirar as sugestões do mapa e fechar o painel');
+
+    // Relevo que não baixa: a busca diz o que houve e "Tentar de novo" refaz.
+    const errosAntes = erros.length;
+    pedidos.relevoFalha = true;
+    await recarregar();
+    await pagina.locator('#lora-sugerir').click();
+    await cliqueNoPonto(idA);
+    await cliqueNoPonto(idB);
+    await buscaEm('erro');
+    texto = await painel.textContent();
+    conferir(texto.includes('A busca não pôde ser feita') && texto.includes('bloco de relevo') && (await painel.locator('#lora-busca-tentar').isVisible()), `a falha do relevo deveria ter mensagem clara e "Tentar de novo": "${texto}"`);
+    conferir((await rotas.locator('.lora-rota').textContent()).includes('sem resultado'), 'com enlace sem relevo, a rota deveria dizer que está sem resultado, e não que falta ligação');
+    await captura('119-lora-busca-sem-relevo');
+    pedidos.relevoFalha = false;
+    await esperar(300);
+    // Os erros de rede deste trecho são os provocados de propósito (resposta 503 do relevo); qualquer outro continua valendo.
+    const provocados = erros.splice(errosAntes);
+    erros.push(...provocados.filter((x) => !x.includes('503')));
+    await painel.locator('#lora-busca-tentar').click();
+    await buscaEm('pronta');
+    conferir(JSON.stringify((await busca()).sugestoes) === JSON.stringify(sugestoes), 'depois de "Tentar de novo", a busca deveria dar as mesmas sugestões');
+
+    // Trocar de projeto apaga as sugestões.
+    await pagina.evaluate(() => window.__lora.acoes.criarProjeto('Outra rede', 'copia'));
+    conferir((await busca()).estado === 'parada' && (await marcadores.count()) === 0 && (await painel.isHidden()), 'trocar de projeto deveria apagar as sugestões');
+
+    // Privacidade: a busca baixa blocos de relevo, e nada sai para outro endereço.
+    conferir(pedidos.outros.length === 0, `nenhum pedido deveria sair para outro endereço: ${pedidos.outros.join(', ')}`);
+  }
+
   // Ambiente de rádio LoRa (especificacao/lora.md, seção 1): página própria, seletor de ambiente e projetos separados.
   // Os pontos de teste ficam em lugares neutros, sem relação com casa nenhuma.
   async function verificarLora() {
@@ -2700,6 +3015,7 @@ async function principal() {
     await pagina.locator('#lora-painel-projetos .fechar-sobreposto').click();
 
     await verificarLoraMapa(lora, pedidos);
+    await verificarLoraRede(lora, pedidos);
 
     // De volta ao solar: o projeto dele está como estava.
     await pagina.locator('.ambientes a', { hasText: 'Solar' }).click();

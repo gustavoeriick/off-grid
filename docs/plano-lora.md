@@ -136,8 +136,8 @@ Ao fim desta fase você já responde à pergunta dos 20 km e dos 40 km.
 
 ### Fase L3: repetidores (aprovada pelo Gustavo em 15/11/2026)
 
-- [ ] **L3.1 Repetidor no mapa e rede com vários saltos.** `nucleo` e `interface` (Sonnet).
-- [ ] **L3.2 "Sugerir ponto de repetidor".** `nucleo` (Sonnet), com revisão do Fable.
+- [x] **L3.1 Repetidor no mapa e rede com vários saltos.** `nucleo` e `interface` (Sonnet).
+- [x] **L3.2 "Sugerir ponto de repetidor".** `nucleo` (Sonnet), com revisão do Fable.
 - [ ] **L3.3 Nó repetidor solar:** placa e bateria, com a conta de autonomia do solar. `nucleo` (Sonnet).
 
 ### Fase L4: aprender

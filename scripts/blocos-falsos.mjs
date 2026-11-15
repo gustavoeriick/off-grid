@@ -111,15 +111,20 @@ const ENDERECO_DO_RELEVO = /^https:\/\/s3\.amazonaws\.com\/elevation-tiles-prod\
  * Intercepta os dois serviços de fora e responde com os blocos falsos. Devolve a contagem dos pedidos e a lista
  * de qualquer pedido que tenha saído para outro endereço (que tem de ficar vazia).
  * `origem` é o endereço do próprio site (o vite preview).
+ * Dois controles para os testes: `relevoFalha` faz o relevo responder com erro, e `relevoEmEspera` segura as respostas
+ * do relevo até voltar a ser falso (para ver a tela enquanto o relevo "baixa").
  */
 export async function interceptarBlocos(pagina, origem) {
-  const pedidos = { mapa: 0, relevo: 0, outros: [], relevoFalha: false };
+  const pedidos = { mapa: 0, relevo: 0, outros: [], relevoFalha: false, relevoEmEspera: false };
   const guardados = new Map();
   const responder = (expressao, gerar, contar) => async (rota) => {
     const url = rota.request().url();
     const m = expressao.exec(url);
     if (!m) return rota.abort();
     contar();
+    if (expressao === ENDERECO_DO_RELEVO) {
+      while (pedidos.relevoEmEspera) await new Promise((r) => setTimeout(r, 50));
+    }
     if (expressao === ENDERECO_DO_RELEVO && pedidos.relevoFalha) return rota.fulfill({ status: 503, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'fora do ar' });
     let corpo = guardados.get(url);
     if (!corpo) {

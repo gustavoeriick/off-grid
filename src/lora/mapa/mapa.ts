@@ -10,7 +10,9 @@ import { assinarCalculo, atribuicaoDoRelevo, situacaoDoEnlace } from '../calculo
 import { acoesLora, assinarLora, estadoLora } from '../estado';
 import { distanciaKm } from '../nucleo';
 import type { Coordenada, PontoLora } from '../nucleo/tipos';
+import { assinarBusca, buscaAtual, destacarRota, destacarSugestao, procurarRepetidor, sugestaoEmDestaque, trechosDaRotaEmDestaque, type Busca } from '../ui/busca';
 import { h, mostrarMensagem } from '../ui/dom';
+import { TEXTO_DA_BUSCA } from '../ui/textos';
 import { svg } from './svg';
 import { distanciaTexto, PALAVRAS_DO_VEREDITO, tomDaSituacao } from './vereditos';
 
@@ -30,7 +32,7 @@ const FOLGA_DO_CLIQUE_PX = 4;
 /** Abaixo deste comprimento na tela, o rótulo do enlace não cabe entre os dois pontos. */
 const COMPRIMENTO_MINIMO_DO_ROTULO_PX = 110;
 
-type Ferramenta = 'ponto' | 'repetidor' | 'ligar' | null;
+type Ferramenta = 'ponto' | 'repetidor' | 'ligar' | 'sugerir' | null;
 
 export interface MapaLora {
   /** Posição do ponto na janela, em pixels. Nulo se o ponto não existe. */
@@ -60,6 +62,8 @@ function desenhoDoRepetidor(): SVGElement {
 }
 
 const chaveDoEnlace = (de: string, para: string): string => `${de}|${para}`;
+/** A mesma chave para os dois sentidos do enlace. */
+const chaveSemSentido = (de: string, para: string): string => (de < para ? `${de}|${para}` : `${para}|${de}`);
 
 export function montarMapaLora(raiz: HTMLElement): MapaLora {
   // ---------------------------------------------------------------- Mapa de fundo
@@ -110,7 +114,9 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   // ---------------------------------------------------------------- Camada dos pontos e dos enlaces, por cima do mapa
   const linhas = svg('svg', { class: 'lora-linhas', 'aria-hidden': 'true' });
   const elastico = svg('line', { class: 'lora-elastico', visibility: 'hidden' });
-  linhas.append(elastico);
+  // Com o ponteiro em uma sugestão de repetidor: os dois enlaces que ela teria, um para cada ponta.
+  const linhasDaSugestao = [svg('line', { class: 'lora-sugestao-linha', visibility: 'hidden' }), svg('line', { class: 'lora-sugestao-linha', visibility: 'hidden' })];
+  linhas.append(...linhasDaSugestao, elastico);
   const marcas = h('div', { class: 'lora-marcas' });
   const marcaDoCaminho = h('div', { class: 'lora-marca-caminho', hidden: true, 'aria-hidden': 'true' });
   marcas.append(marcaDoCaminho);
@@ -132,9 +138,12 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   }
   const desenhosDosPontos = new Map<string, DesenhoDoPonto>();
   const desenhosDosEnlaces = new Map<string, DesenhoDoEnlace>();
+  /** Os marcadores das sugestões de repetidor e a busca de que vieram. */
+  let desenhosDasSugestoes: HTMLButtonElement[] = [];
+  let buscaDesenhada: Busca | null = null;
 
   let ferramenta: Ferramenta = null;
-  /** Na ferramenta "Ligar dois pontos": o primeiro ponto clicado. */
+  /** Nas ferramentas "Ligar dois pontos" e "Sugerir ponto de repetidor": o primeiro ponto clicado. */
   let origemDaLigacao: string | null = null;
   let lugarMarcado: Coordenada | null = null;
 
@@ -159,7 +168,7 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   };
 
   function cliqueNoPonto(id: string): void {
-    if (ferramenta !== 'ligar') {
+    if (ferramenta !== 'ligar' && ferramenta !== 'sugerir') {
       definirFerramenta(null);
       acoesLora.selecionar({ tipo: 'ponto', id });
       return;
@@ -174,6 +183,12 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
       origemDaLigacao = null;
       atualizarFerramentas();
       desenhar();
+      return;
+    }
+    if (ferramenta === 'sugerir') {
+      const origem = origemDaLigacao;
+      definirFerramenta(null);
+      procurarRepetidor(origem, id);
       return;
     }
     ligar(origemDaLigacao, id);
@@ -204,7 +219,7 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
       botao.setPointerCapture(e.pointerId);
     });
     botao.addEventListener('pointermove', (e) => {
-      if (!arraste || e.pointerId !== arraste.ponteiro || ferramenta === 'ligar') return;
+      if (!arraste || e.pointerId !== arraste.ponteiro || ferramenta === 'ligar' || ferramenta === 'sugerir') return;
       if (!arraste.moveu) {
         if (Math.hypot(e.clientX - arraste.x0, e.clientY - arraste.y0) < FOLGA_DO_CLIQUE_PX) return;
         arraste.moveu = true;
@@ -239,6 +254,45 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
     return { raiz: botao, nome, tipo: null };
   }
 
+  /** Se alguma sugestão ou ponta da busca ficou fora da parte visível do mapa, enquadra todas. */
+  function mostrarSugestoes(lugares: (Coordenada | undefined)[]): void {
+    const todos = lugares.filter((c): c is Coordenada => c !== undefined);
+    const largura = caixa.clientWidth;
+    const altura = caixa.clientHeight;
+    const cabe = todos.every((c) => {
+      const t = naTela(c);
+      return t.x >= 60 && t.x <= largura - 60 && t.y >= 110 && t.y <= altura - 50;
+    });
+    if (cabe || todos.length === 0) return;
+    const lons = todos.map((c) => c.lon);
+    const lats = todos.map((c) => c.lat);
+    // Fora do desenho em curso: o enquadramento move o mapa, e o movimento redesenha tudo.
+    queueMicrotask(() =>
+      mapa.fitBounds(
+        [
+          [Math.min(...lons), Math.min(...lats)],
+          [Math.max(...lons), Math.max(...lats)],
+        ],
+        { padding: { top: 120, bottom: 60, left: 90, right: 150 }, maxZoom: 13 },
+      ),
+    );
+  }
+
+  function criarDesenhoDaSugestao(indice: number): HTMLButtonElement {
+    const botao = h(
+      'button',
+      { type: 'button', class: 'lora-sugestao', 'data-indice': String(indice), 'aria-label': `Sugestão ${indice + 1} de lugar para um repetidor` },
+      h('span', { class: 'lora-sugestao-desenho' }, h('span', null, String(indice + 1))),
+    );
+    isolarDoMapa(botao);
+    botao.addEventListener('mouseenter', () => destacarSugestao(indice, 'mapa'));
+    botao.addEventListener('mouseleave', () => destacarSugestao(null));
+    botao.addEventListener('focus', () => destacarSugestao(indice, 'mapa'));
+    botao.addEventListener('blur', () => destacarSugestao(null));
+    marcas.append(botao);
+    return botao;
+  }
+
   function criarDesenhoDoEnlace(de: string, para: string): DesenhoDoEnlace {
     const borda = svg('line', { class: 'lora-enlace-borda' });
     const traco = svg('line', { class: 'lora-enlace-traco' });
@@ -255,7 +309,7 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
       isolarDoMapa(e);
       e.addEventListener('click', selecionar);
     }
-    linhas.insertBefore(grupo, elastico);
+    linhas.insertBefore(grupo, linhasDaSugestao[0]!);
     marcas.insertBefore(rotulo, marcas.firstChild);
     return { grupo, borda, traco, alvo, rotulo, distancia, veredito };
   }
@@ -264,6 +318,12 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   function desenhar(): void {
     const { projeto, selecao } = estadoLora;
     const pontos = new Map(projeto.pontos.map((p) => [p.id, p]));
+
+    // Rota destacada na lista "Rotas entre as casas": os trechos dela ficam marcados e os outros enlaces, apagados.
+    const rota = trechosDaRotaEmDestaque();
+    const trechosDaRota = new Set(rota.trechos.map((t) => chaveSemSentido(t.de, t.para)));
+    const pontosDaRota = new Set(rota.pontos);
+    raiz.classList.toggle('com-rota', trechosDaRota.size > 0);
 
     // Enlaces.
     const enlacesVivos = new Set<string>();
@@ -294,13 +354,16 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
       d.grupo.classList.toggle('selecionado', selecionado);
       d.rotulo.dataset.tom = tom;
       d.rotulo.classList.toggle('selecionado', selecionado);
+      const naRota = trechosDaRota.has(chaveSemSentido(e.de, e.para));
+      d.grupo.classList.toggle('na-rota', naRota);
+      d.rotulo.classList.toggle('na-rota', naRota);
       d.distancia.textContent = distanciaTexto(km);
       d.veredito.textContent = PALAVRAS_DO_VEREDITO[tom];
       const explicacao = situacao?.estado === 'pronto' ? situacao.resultado.texto : situacao?.estado === 'erro' ? situacao.mensagem : 'Baixando o relevo do caminho…';
-      d.rotulo.title = `Enlace (a ligação de rádio) entre ${de.nome} e ${para.nome}. ${explicacao} Clique para ver o corte do terreno.`;
+      d.rotulo.title = `Enlace: a ligação direta de rádio entre ${de.nome} e ${para.nome}, sem nada no meio. ${explicacao} Clique para ver o corte do terreno.`;
       d.rotulo.setAttribute('aria-pressed', String(selecionado));
       d.rotulo.style.transform = `translate(${((a.x + b.x) / 2).toFixed(1)}px, ${((a.y + b.y) / 2).toFixed(1)}px) translate(-50%, -50%)`;
-      d.rotulo.hidden = !selecionado && Math.hypot(a.x - b.x, a.y - b.y) < COMPRIMENTO_MINIMO_DO_ROTULO_PX;
+      d.rotulo.hidden = !selecionado && !naRota && Math.hypot(a.x - b.x, a.y - b.y) < COMPRIMENTO_MINIMO_DO_ROTULO_PX;
     }
     for (const [chave, d] of desenhosDosEnlaces) {
       if (enlacesVivos.has(chave)) continue;
@@ -327,9 +390,10 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
       d.raiz.classList.toggle('selecionado', selecionado);
       d.raiz.classList.toggle('na-ponta', naPonta);
       d.raiz.classList.toggle('origem', origemDaLigacao === p.id);
+      d.raiz.classList.toggle('na-rota', pontosDaRota.has(p.id));
       d.raiz.setAttribute('aria-pressed', String(selecionado));
-      const oQueE = p.tipo === 'repetidor' ? 'Repetidor (um rádio em lugar alto, que repassa as mensagens dos outros)' : 'Ponto';
-      const oQueFazer = ferramenta === 'ligar' ? 'Clique para ligar.' : 'Clique para selecionar; arraste para mudar de lugar.';
+      const oQueE = p.tipo === 'repetidor' ? 'Repetidor (um rádio em lugar alto, que recebe as mensagens dos outros e as transmite de novo)' : 'Ponto';
+      const oQueFazer = ferramenta === 'ligar' ? 'Clique para ligar.' : ferramenta === 'sugerir' ? 'Clique para escolher como ponta da busca.' : 'Clique para selecionar; arraste para mudar de lugar.';
       d.raiz.title = `${oQueE}: ${p.nome}. ${oQueFazer}`;
       d.raiz.setAttribute('aria-label', `${p.tipo === 'repetidor' ? 'Repetidor' : 'Ponto'} ${p.nome}`);
       const t = naTela(p);
@@ -342,6 +406,42 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
     }
     if (origemDaLigacao !== null && !pontos.has(origemDaLigacao)) origemDaLigacao = null;
     if (origemDaLigacao === null) elastico.setAttribute('visibility', 'hidden');
+
+    // Sugestões de lugar para repetidor: marcadores numerados, com contorno tracejado. Não são pontos do projeto.
+    const busca = buscaAtual();
+    if (busca !== buscaDesenhada) {
+      buscaDesenhada = busca;
+      for (const m of desenhosDasSugestoes) m.remove();
+      desenhosDasSugestoes = busca.estado === 'pronta' ? busca.sugestoes.map((_, i) => criarDesenhoDaSugestao(i)) : [];
+      if (busca.estado === 'pronta') mostrarSugestoes([pontos.get(busca.de), pontos.get(busca.para), ...busca.sugestoes]);
+    }
+    const emDestaque = sugestaoEmDestaque()?.indice ?? null;
+    for (const linha of linhasDaSugestao) linha.setAttribute('visibility', 'hidden');
+    if (busca.estado === 'pronta') {
+      busca.sugestoes.forEach((s, i) => {
+        const m = desenhosDasSugestoes[i]!;
+        const t = naTela(s);
+        m.style.transform = `translate(${t.x.toFixed(1)}px, ${t.y.toFixed(1)}px)`;
+        m.classList.toggle('destaque', emDestaque === i);
+        m.dataset.tom = s.veredito;
+        m.title = `Sugestão ${i + 1} de lugar para um repetidor: ${PALAVRAS_DO_VEREDITO[s.veredito]}, terreno a ${Math.round(s.altM)} m. Nenhum rádio foi posto aqui ainda; os detalhes estão na lista à direita.`;
+        if (emDestaque !== i) return;
+        [
+          { ponta: pontos.get(busca.de), trecho: s.trechoA },
+          { ponta: pontos.get(busca.para), trecho: s.trechoB },
+        ].forEach(({ ponta, trecho }, n) => {
+          if (!ponta) return;
+          const a = naTela(ponta);
+          const linha = linhasDaSugestao[n]!;
+          linha.setAttribute('x1', a.x.toFixed(1));
+          linha.setAttribute('y1', a.y.toFixed(1));
+          linha.setAttribute('x2', t.x.toFixed(1));
+          linha.setAttribute('y2', t.y.toFixed(1));
+          linha.setAttribute('data-tom', trecho.veredito);
+          linha.setAttribute('visibility', 'visible');
+        });
+      });
+    }
 
     // Marca do ponteiro sobre o corte do terreno.
     marcaDoCaminho.hidden = lugarMarcado === null;
@@ -357,18 +457,23 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   const botaoRepetidor = botaoDeFerramenta(
     'lora-novo-repetidor',
     'Novo repetidor',
-    'Repetidor é um rádio em lugar alto, que repassa as mensagens entre dois pontos que não se alcançam direto. Depois de clicar aqui, clique no mapa onde ele ficaria',
+    'Repetidor é um rádio igual aos outros, posto em lugar alto. Ele não amplifica o sinal: recebe a mensagem inteira e transmite de novo, e por isso precisa fechar enlace com os dois lados. Depois de clicar aqui, clique no mapa onde ele ficaria',
   );
   const botaoLigar = botaoDeFerramenta(
     'lora-ligar',
     'Ligar dois pontos',
-    'Cria um enlace: a ligação de rádio entre dois pontos. O simulador calcula se o sinal chega. Clique em um ponto e depois no outro',
+    'Cria um enlace: a ligação direta de rádio entre dois pontos, sem nada no meio. O simulador calcula se o sinal chega. Clique em um ponto e depois no outro',
+  );
+  const botaoSugerir = botaoDeFerramenta(
+    'lora-sugerir',
+    'Sugerir ponto de repetidor',
+    'Procura no relevo até cinco lugares altos que fechem enlace com dois pontos. Com um enlace selecionado, usa os dois pontos dele; senão, clique nos dois pontos. Nada é criado: você escolhe depois',
   );
   const botaoEnquadrar = h('button', { type: 'button', id: 'lora-enquadrar', title: 'Ajusta o mapa para mostrar todos os pontos do projeto' }, 'Ver todos');
   const barra = h(
     'div',
     { class: 'lora-ferramentas', role: 'toolbar', 'aria-label': 'Ferramentas do mapa' },
-    h('div', { class: 'botoes', role: 'group' }, botaoPonto, botaoRepetidor, botaoLigar),
+    h('div', { class: 'botoes', role: 'group' }, botaoPonto, botaoRepetidor, botaoLigar, botaoSugerir),
     botaoEnquadrar,
   );
   const dica = h('p', { class: 'lora-dica', id: 'lora-dica', role: 'status' });
@@ -385,6 +490,8 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
     botaoRepetidor.setAttribute('aria-pressed', String(ferramenta === 'repetidor'));
     botaoLigar.setAttribute('aria-pressed', String(ferramenta === 'ligar'));
     botaoLigar.disabled = p.pontos.length < 2;
+    botaoSugerir.setAttribute('aria-pressed', String(ferramenta === 'sugerir'));
+    botaoSugerir.disabled = p.pontos.length < 2;
     botaoEnquadrar.disabled = p.pontos.length === 0;
     raiz.dataset.ferramenta = ferramenta ?? '';
 
@@ -396,7 +503,16 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
     };
     let conteudo: (Node | string)[] = [];
     if (ferramenta === 'ponto') conteudo = ['Clique no mapa onde fica o lugar. Dá para aproximar antes, com a roda do mouse. Esc cancela.'];
-    else if (ferramenta === 'repetidor') conteudo = ['Clique no mapa onde ficaria o repetidor: de preferência um lugar alto, que enxergue os outros pontos. Esc cancela.'];
+    else if (ferramenta === 'repetidor')
+      conteudo = ['Clique no mapa onde ficaria o repetidor. Ele é um rádio igual aos outros: não amplifica o sinal, recebe a mensagem inteira e transmite de novo. Escolha um lugar alto, que feche enlace com os dois lados. Esc cancela.'];
+    else if (ferramenta === 'sugerir') {
+      const origem = p.pontos.find((x) => x.id === origemDaLigacao);
+      conteudo = origem
+        ? [`Agora clique na outra ponta: o ponto que precisa falar com ${origem.nome}. Esc cancela.`]
+        : ['Clique nos dois pontos que precisam se falar: primeiro um, depois o outro. O simulador procura entre eles lugares altos para um repetidor. Esc cancela.'];
+    } else if (buscaAtual().estado === 'buscando') conteudo = [`${TEXTO_DA_BUSCA} O andamento e o botão de cancelar estão no painel à direita.`];
+    else if (buscaAtual().estado === 'pronta')
+      conteudo = ['Os marcadores tracejados com número são sugestões de lugar para um repetidor. Nenhum rádio foi posto ainda: escolha na lista à direita.'];
     else if (ferramenta === 'ligar') {
       const origem = p.pontos.find((x) => x.id === origemDaLigacao);
       if (origem) conteudo = [`Agora clique no ponto que vai falar com ${origem.nome}. Esc cancela.`];
@@ -420,6 +536,19 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   botaoPonto.addEventListener('click', () => definirFerramenta(ferramenta === 'ponto' ? null : 'ponto'));
   botaoRepetidor.addEventListener('click', () => definirFerramenta(ferramenta === 'repetidor' ? null : 'repetidor'));
   botaoLigar.addEventListener('click', () => definirFerramenta(ferramenta === 'ligar' ? null : 'ligar'));
+  botaoSugerir.addEventListener('click', () => {
+    if (ferramenta === 'sugerir') {
+      definirFerramenta(null);
+      return;
+    }
+    const { projeto, selecao } = estadoLora;
+    // Com um enlace selecionado, a busca é entre os dois pontos dele. Com só dois pontos no projeto, não há o que escolher.
+    const pontas = selecao?.tipo === 'enlace' ? [selecao.de, selecao.para] : projeto.pontos.length === 2 ? [projeto.pontos[0]!.id, projeto.pontos[1]!.id] : null;
+    if (pontas) {
+      definirFerramenta(null);
+      procurarRepetidor(pontas[0]!, pontas[1]!);
+    } else definirFerramenta('sugerir');
+  });
   botaoEnquadrar.addEventListener('click', () => enquadrar(true));
 
   mapa.on('click', (e) => {
@@ -431,7 +560,8 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
       acoesLora.selecionar({ tipo: 'ponto', id });
       return;
     }
-    if (ferramenta === 'ligar') return;
+    if (ferramenta === 'ligar' || ferramenta === 'sugerir') return;
+    destacarRota(null);
     if (estadoLora.selecao !== null) acoesLora.selecionar(null);
   });
 
@@ -543,6 +673,10 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   });
   assinarLora('selecao', desenhar);
   assinarCalculo(desenhar);
+  assinarBusca(() => {
+    atualizarFerramentas();
+    desenhar();
+  });
   atualizarFerramentas();
   desenhar();
 
