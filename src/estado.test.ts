@@ -360,3 +360,90 @@ describe('tutorial: a casa não se perde', () => {
     acoes.sairDoTutorial();
   });
 });
+
+// "Meus projetos": vários projetos gravados no navegador, cada um com a casa, a orientação e a montagem dele.
+describe('meus projetos', () => {
+  beforeEach(() => {
+    if (emTutorial()) acoes.sairDoTutorial();
+    // Deixa só um projeto na biblioteca: apaga os outros e volta o da tela ao cenário inicial.
+    for (const p of acoes.listarProjetos().filter((x) => !x.atual)) acoes.apagarProjeto(p.id);
+    acoes.novoProjeto();
+    recalcularAgora();
+  });
+
+  it('o projeto da tela já está na lista; criar outro grava o primeiro e abre o novo', () => {
+    expect(acoes.listarProjetos().filter((p) => p.atual)).toHaveLength(1);
+    const primeiro = acoes.listarProjetos().find((p) => p.atual)!.id;
+    acoes.alterarCasa({ orientacaoGraus: 90 });
+    const quadro = acoes.adicionarDispositivo('acc-quadro-8', { pos: [0, 1.3, 0], quat: [0, 0, 0, 1], superficie: 'parede-quartinho-fundo', giro: 0 });
+    const minhaCasa = JSON.stringify(estado.projeto);
+
+    const pais = acoes.criarProjeto('Casa dos pais', 'vazia')!;
+    expect(estado.projeto.nome).toBe('Casa dos pais');
+    expect(estado.projeto.cabos).toHaveLength(0);
+    expect(estado.projeto.casa.orientacaoGraus).not.toBe(90);
+    expect(acoes.listarProjetos().find((p) => p.atual)!.id).toBe(pais);
+    // Desfazer não atravessa a troca de projeto.
+    acoes.desfazer();
+    expect(estado.projeto.nome).toBe('Casa dos pais');
+    acoes.alterarCasa({ orientacaoGraus: 270 });
+
+    expect(acoes.abrirProjeto(primeiro)).toBe(true);
+    expect(JSON.stringify(estado.projeto)).toBe(minhaCasa);
+    expect(estado.projeto.dispositivos.some((d) => d.uid === quadro)).toBe(true);
+    expect(acoes.abrirProjeto(pais)).toBe(true);
+    expect(estado.projeto.casa.orientacaoGraus).toBe(270);
+  });
+
+  it('renomear, duplicar e apagar; nome repetido ganha número', () => {
+    const primeiro = acoes.listarProjetos().find((p) => p.atual)!.id;
+    acoes.renomearProjeto(primeiro, '  Minha   casa ');
+    expect(estado.projeto.nome).toBe('Minha casa');
+    const outro = acoes.criarProjeto('Minha casa', 'copia')!;
+    expect(estado.projeto.nome).toBe('Minha casa (2)');
+    // Renomear e duplicar um projeto que não está na tela.
+    acoes.renomearProjeto(primeiro, 'Sítio');
+    const copia = acoes.duplicarProjeto(primeiro)!;
+    const nomes = Object.fromEntries(acoes.listarProjetos().map((p) => [p.id, p.nome]));
+    expect(nomes[primeiro]).toBe('Sítio');
+    expect(nomes[copia]).toBe('Sítio (cópia)');
+    expect(acoes.listarProjetos().find((p) => p.atual)!.id).toBe(outro);
+    // Apagar o da tela abre outro; a lista nunca fica sem o projeto da tela.
+    expect(acoes.apagarProjeto(outro)).toBe(true);
+    expect(acoes.listarProjetos().map((p) => p.id).sort()).toEqual([primeiro, copia].sort());
+    expect(acoes.listarProjetos().filter((p) => p.atual)).toHaveLength(1);
+    acoes.apagarProjeto(primeiro);
+    acoes.apagarProjeto(copia);
+    expect(acoes.listarProjetos()).toHaveLength(1);
+    expect(estado.projeto.nome).toBe('Minha casa');
+    expect(estado.projeto.cabos).toHaveLength(0);
+  });
+
+  it('importar um arquivo cria um projeto novo e não toca no que estava na tela', () => {
+    const primeiro = acoes.listarProjetos().find((p) => p.atual)!.id;
+    const arquivo = JSON.parse(acoes.exportarProjeto());
+    acoes.alterarCasa({ beiral: 1 });
+    const naTela = JSON.stringify(estado.projeto);
+    acoes.importarProjeto(arquivo);
+    expect(acoes.listarProjetos()).toHaveLength(2);
+    expect(acoes.listarProjetos().find((p) => p.atual)!.id).not.toBe(primeiro);
+    expect(() => acoes.importarProjeto({ versao: 2, nome: 'x' })).toThrow();
+    expect(acoes.listarProjetos()).toHaveLength(2);
+    acoes.abrirProjeto(primeiro);
+    expect(JSON.stringify(estado.projeto)).toBe(naTela);
+  });
+
+  it('o tutorial não entra na lista, e a lista não pode ser mexida de dentro dele', () => {
+    const antes = acoes.listarProjetos();
+    const casa = JSON.stringify(estado.projeto);
+    acoes.entrarNoTutorial();
+    acoes.adicionarDispositivo('bat-moura-12mn105', { pos: [0, 0.1, 0], quat: [0, 0, 0, 1], superficie: 'piso-quartinho', giro: 0 });
+    expect(acoes.criarProjeto('Outro', 'vazia')).toBeNull();
+    expect(acoes.abrirProjeto(antes[0]!.id)).toBe(false);
+    expect(acoes.apagarProjeto(antes[0]!.id)).toBe(false);
+    expect(acoes.listarProjetos().map((p) => p.id)).toEqual(antes.map((p) => p.id));
+    acoes.sairDoTutorial();
+    expect(JSON.stringify(estado.projeto)).toBe(casa);
+    expect(acoes.listarProjetos()).toHaveLength(antes.length);
+  });
+});

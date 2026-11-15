@@ -208,3 +208,17 @@ Registradas aqui porque foram decididas pelo coordenador na noite de 14 para 15/
 - **Obstáculos (5.2).** `Projeto.obstaculos`: muro, vizinho e árvore, em coordenadas da casa (giram com ela). Todos tapam o sol no cálculo e na tela; a copa da árvore conta como sólida. Criados e movidos no modo "Editar casa", pela barra "Acrescentar", presos à grade de 0,5 m; não entram na casa, nas varandas nem no quartinho. Medidas iniciais: muro de 6 × 0,15 × 2,2 m, vizinho de 8 × 8 × 6 m a 5 m da lateral, árvore de 6 m com copa de 4 m. Limites: altura de 0,5 a 30 m, medidas de 0,1 a 30 m, posição até ±30 m. Vizinho com mais de 9 m vira prédio de laje. `R` gira 90° e `Delete` remove. O gramado passou a 130 × 130 m.
 - **Placa no chão (5.3).** Superfície `terreno` (tipo `piso`, regra por id), que aceita placa e estação portátil. A placa fica sobre suporte inclinado, com `inclinacaoGraus` de 0 a 60 (padrão: a latitude arredondada, 23° no Rio) e direção livre em passos de 15° (padrão: face para o norte; no hemisfério norte, para o sul). A borda de baixo fica a 0,30 m do chão. A normal vem do `quat`, como nas demais peças. Peça no terreno não acompanha a casa, a não ser que algo venha para cima dela. O painel de qualquer placa mostra quanto a sombra tira da geração dela no dia.
 - **Estação portátil (5.3).** Conferida de ponta a ponta com placa no chão e aparelho na saída: o núcleo já tratava a bateria interna.
+
+## 9. Meus projetos (pedido do Gustavo em 15/11/2026)
+
+Vários projetos gravados no navegador ("Minha casa", "Casa dos pais"), cada um com a casa, a orientação, a cidade e a montagem dele.
+
+- **Gravação** (`src/biblioteca.ts`): o índice fica em `offgrid.projetos` (`atual` e a lista com `id`, `nome` e `alteradoEm`) e cada projeto em `offgrid.projetos.<id>`. A chave de trabalho `offgrid.projeto.v2` continua igual: é o projeto da tela. Sem `localStorage`, tudo vale só na memória.
+- **O projeto da tela sempre tem vaga na lista**, fora do tutorial. O projeto que já estava gravado no navegador vira o primeiro item, com o nome que tinha.
+- **Ações do estado:** `listarProjetos`, `criarProjeto(nome, 'vazia' | 'copia')`, `abrirProjeto`, `renomearProjeto`, `duplicarProjeto`, `apagarProjeto`, `importarProjeto`, e o evento `'projetos'`.
+- **Trocar de projeto** grava antes o da tela e zera o histórico de desfazer e a simulação.
+- **"Casa vazia"** é a casa do cenário inicial só com a tomada da rede.
+- **Importar um arquivo** cria um projeto novo na lista, sem tocar no que estava na tela. Nome repetido ganha número: "Casa (2)".
+- **Apagar o projeto da tela** abre o alterado mais recentemente; se não sobra nenhum, abre uma casa vazia chamada "Minha casa". Apagar não tem desfazer: o painel pede confirmação.
+- **Tutorial:** o projeto do tutorial não entra na lista, e de dentro dele a lista não pode ser mexida.
+- **Painel:** no menu Projeto, "Meus projetos" abre a lista (nome, data da última alteração, marca no que está aberto) com Abrir, Renomear, Duplicar, Apagar e "Novo projeto" (nome e a escolha entre casa vazia e cópia do atual). O nome do projeto aberto aparece no alto. "Exportar" e "Importar" continuam.

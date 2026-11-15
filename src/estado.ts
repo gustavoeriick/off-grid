@@ -3,6 +3,7 @@
 // Projeto editável (dispositivos, cabos, casa, obstáculos), seleção, desfazer, derivados, gravação,
 // simulação no tempo (bateria, queda de luz) e clima real.
 
+import { biblioteca, nomeLimpo, nomeLivre, type ProjetoGravado } from './biblioteca';
 import { CATALOGO, grupoDoItem } from './catalogo';
 import type { Categoria, Item, Protecao, Uso } from './catalogo/tipos';
 import { cenarioPlanoNoPapel, cenarioTutorial } from './nucleo/cenarios';
@@ -105,9 +106,9 @@ export interface EstadoApp {
  * 'casa' (medidas, orientação, varandas, paredes internas, cômodos, quartinho), 'dispositivos' e 'cabos'.
  * 'derivados' avisa quando análise, estimativas, sugestões e orçamento foram recalculados.
  */
-export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima' | 'destaques';
+export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima' | 'destaques' | 'projetos';
 
-const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima', 'destaques'];
+const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima', 'destaques', 'projetos'];
 const ouvintes = Object.fromEntries(EVENTOS.map((e) => [e, new Set<() => void>()])) as Record<Evento, Set<() => void>>;
 
 /** 21/06/2026 ao meio-dia no Rio (UTC − 3). */
@@ -297,6 +298,8 @@ export const estado: EstadoApp = {
   destaques: [],
 };
 
+export type { ProjetoGravado };
+
 /** Verdadeiro com o projeto do tutorial aberto: só o quartinho existe. */
 export function emTutorial(): boolean {
   return estado.projeto.casa.soQuartinho === true;
@@ -437,12 +440,57 @@ function agendarGravacao(): void {
   if (esperaGravar) clearTimeout(esperaGravar);
   esperaGravar = setTimeout(() => {
     esperaGravar = null;
-    try {
-      armazenamento()?.setItem(CHAVE, JSON.stringify(estado.projeto));
-    } catch (erro) {
-      console.warn('Não foi possível gravar o projeto no navegador.', erro);
-    }
+    gravarAgora();
   }, ESPERA_GRAVAR_MS);
+}
+
+/**
+ * Grava o projeto da tela: na chave de trabalho e, fora do tutorial, na vaga dele em "Meus projetos".
+ * O projeto do tutorial não entra na biblioteca; a casa guardada fica como estava.
+ */
+function gravarAgora(): void {
+  const texto = JSON.stringify(estado.projeto);
+  try {
+    armazenamento()?.setItem(CHAVE, texto);
+  } catch (erro) {
+    console.warn('Não foi possível gravar o projeto no navegador.', erro);
+  }
+  if (emTutorial()) return;
+  const atual = biblioteca.atual();
+  if (atual !== null) biblioteca.salvar(atual, estado.projeto.nome, texto, Date.now());
+}
+
+/** Fora do tutorial, o projeto da tela sempre tem uma vaga em "Meus projetos". */
+function garantirBiblioteca(): void {
+  if (emTutorial() || biblioteca.atual() !== null) return;
+  estado.projeto.nome = nomeLivre(estado.projeto.nome ?? 'Minha casa');
+  biblioteca.definirAtual(biblioteca.criar(estado.projeto.nome, JSON.stringify(estado.projeto), Date.now()));
+}
+
+/** Casa do cenário inicial sem equipamentos: só a tomada da rede da rua. */
+function cenarioCasaVazia(nome: string): Projeto {
+  const base = cenarioPlanoNoPapel();
+  return { ...base, nome, dispositivos: base.dispositivos.filter((d) => CATALOGO.get(d.itemId)?.categoria === 'rede'), cabos: [] };
+}
+
+/** Lê, converte e confere um projeto; lança erro se não for um projeto que o simulador consegue abrir. */
+function prepararProjeto(dados: unknown): Projeto {
+  const novo = converterProjeto(dados);
+  conferirEstrutura(novo);
+  sanear(novo);
+  calcularDerivados(novo, estado.tempo.msUtc);
+  return novo;
+}
+
+/** Troca o projeto da tela por outro da biblioteca: histórico e simulação começam do zero. */
+function abrirNaTela(id: string, projeto: Projeto): void {
+  biblioteca.definirAtual(id);
+  passado.length = 0;
+  futuro.length = 0;
+  zerarSimulacao();
+  trocarProjeto(projeto);
+  gravarAgora();
+  avisar('projetos');
 }
 
 // ---------------------------------------------------------------- Histórico (desfazer e refazer)
@@ -966,7 +1014,10 @@ export const acoes = {
    * Dentro do tutorial, recomeça o tutorial sem mexer na casa guardada.
    */
   entrarNoTutorial(): void {
-    if (!emTutorial()) guardarCasa();
+    if (!emTutorial()) {
+      gravarAgora();
+      guardarCasa();
+    }
     passado.length = 0;
     futuro.length = 0;
     // O relógio para: sol e bateria não andam enquanto a pessoa monta.
@@ -1006,6 +1057,7 @@ export const acoes = {
     zerarSimulacao();
     acoes.definirDestaques([]);
     trocarProjeto(casa);
+    garantirBiblioteca();
   },
 
   /** O que a cena deve realçar. Lista igual à atual não avisa ninguém. */
@@ -1013,6 +1065,125 @@ export const acoes = {
     if (JSON.stringify(lista) === JSON.stringify(estado.destaques)) return;
     estado.destaques = lista;
     avisar('destaques');
+  },
+
+  // ---------------------------------------------------------------- Meus projetos
+
+  /** Projetos gravados no navegador, do alterado mais recentemente para o mais antigo. */
+  listarProjetos(): (ProjetoGravado & { atual: boolean })[] {
+    const atual = biblioteca.atual();
+    return biblioteca.listar().map((p) => ({ ...p, atual: p.id === atual }));
+  },
+
+  /**
+   * Cria um projeto e o abre. `vazia`: a casa do cenário inicial, sem equipamentos. `copia`: cópia do projeto da tela.
+   * O projeto da tela é gravado antes. Devolve o `id`, ou nulo dentro do tutorial.
+   */
+  criarProjeto(nome: string, base: 'vazia' | 'copia'): string | null {
+    if (emTutorial()) return null;
+    gravarAgora();
+    const novo = base === 'copia' ? (JSON.parse(JSON.stringify(estado.projeto)) as Projeto) : cenarioCasaVazia('');
+    novo.nome = nomeLivre(nome);
+    const id = biblioteca.criar(novo.nome, JSON.stringify(novo), Date.now());
+    abrirNaTela(id, novo);
+    return id;
+  },
+
+  /** Abre um projeto de "Meus projetos", gravando antes o que está na tela. Devolve falso se não deu para abrir. */
+  abrirProjeto(id: string): boolean {
+    if (emTutorial()) return false;
+    if (id === biblioteca.atual()) return true;
+    const texto = biblioteca.texto(id);
+    if (texto === null) return false;
+    let novo: Projeto;
+    try {
+      novo = prepararProjeto(JSON.parse(texto));
+    } catch (erro) {
+      console.warn('O projeto gravado não pôde ser aberto.', erro);
+      return false;
+    }
+    gravarAgora();
+    abrirNaTela(id, novo);
+    return true;
+  },
+
+  /** Troca o nome de um projeto. Nome repetido ganha um número: "Casa (2)". */
+  renomearProjeto(id: string, nome: string): void {
+    const novoNome = nomeLivre(nomeLimpo(nome), id);
+    if (id === biblioteca.atual() && !emTutorial()) {
+      estado.projeto.nome = novoNome;
+      gravarAgora();
+      avisar('projeto');
+    } else {
+      const item = biblioteca.listar().find((p) => p.id === id);
+      const texto = biblioteca.texto(id);
+      if (!item || texto === null) return;
+      try {
+        const dados = JSON.parse(texto) as { nome?: string };
+        dados.nome = novoNome;
+        biblioteca.salvar(id, novoNome, JSON.stringify(dados), item.alteradoEm);
+      } catch {
+        return;
+      }
+    }
+    avisar('projetos');
+  },
+
+  /** Faz uma cópia de um projeto, sem abri-la. Devolve o `id` da cópia, ou nulo se o projeto não existe. */
+  duplicarProjeto(id: string): string | null {
+    const daTela = id === biblioteca.atual() && !emTutorial();
+    const texto = daTela ? JSON.stringify(estado.projeto) : biblioteca.texto(id);
+    const item = biblioteca.listar().find((p) => p.id === id);
+    if (texto === null || !item) return null;
+    try {
+      const dados = JSON.parse(texto) as { nome?: string };
+      dados.nome = nomeLivre(`${item.nome} (cópia)`);
+      const copia = biblioteca.criar(dados.nome, JSON.stringify(dados), Date.now());
+      avisar('projetos');
+      return copia;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Apaga um projeto de "Meus projetos". Se era o da tela, abre o alterado mais recentemente;
+   * se não sobrou nenhum, abre uma casa vazia. Não vale dentro do tutorial. Não tem desfazer.
+   */
+  apagarProjeto(id: string): boolean {
+    if (emTutorial() || !biblioteca.listar().some((p) => p.id === id)) return false;
+    const eraODaTela = id === biblioteca.atual();
+    biblioteca.apagar(id);
+    if (!eraODaTela) {
+      avisar('projetos');
+      return true;
+    }
+    for (const outro of biblioteca.listar()) {
+      const texto = biblioteca.texto(outro.id);
+      if (texto === null) continue;
+      try {
+        abrirNaTela(outro.id, prepararProjeto(JSON.parse(texto)));
+        return true;
+      } catch {
+        // Projeto que não abre: tenta o seguinte.
+      }
+    }
+    const vazia = cenarioCasaVazia('Minha casa');
+    abrirNaTela(biblioteca.criar(vazia.nome, JSON.stringify(vazia), Date.now()), vazia);
+    return true;
+  },
+
+  /**
+   * Abre um arquivo como projeto novo de "Meus projetos", sem tocar no projeto que estava na tela.
+   * Dentro do tutorial, ou com um arquivo exportado do tutorial, vale o `carregarProjeto`.
+   * Lança erro se o arquivo não for um projeto.
+   */
+  importarProjeto(dados: unknown): void {
+    const novo = prepararProjeto(dados);
+    if (emTutorial() || novo.casa.soQuartinho === true) return acoes.carregarProjeto(dados);
+    gravarAgora();
+    novo.nome = nomeLivre(typeof novo.nome === 'string' && novo.nome.trim() !== '' ? novo.nome : 'Projeto importado');
+    abrirNaTela(biblioteca.criar(novo.nome, JSON.stringify(novo), Date.now()), novo);
   },
 
   /** Texto JSON do projeto, para exportar. */
@@ -1169,3 +1340,6 @@ export type CategoriaDoCatalogo = Categoria;
 
 // Projeto aberto já com o clima real escolhido: pede as medições do dia logo.
 conferirClimaReal();
+
+// O projeto de abertura ganha a vaga dele em "Meus projetos" (o que já estava gravado no navegador vira o primeiro da lista).
+garantirBiblioteca();
