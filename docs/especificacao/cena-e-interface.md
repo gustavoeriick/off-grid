@@ -148,6 +148,15 @@ A cena implementa `AmbientePlacas`:
 
 Outras placas e equipamentos não entram como obstáculo nesta versão.
 
+Como foi implementado (tarefa 3.1):
+
+- Os triângulos das malhas com `userData.sombra`, inclusive as lajes só de sombra e o que o modo de visão escondeu, vão para uma árvore de caixas envolventes em coordenadas da casa; o raio para no primeiro toque e as duas faces tapam. Girar a casa não refaz a árvore. O resultado é igual ao de um `Raycaster` com todas as camadas e filtro por `userData.sombra`.
+- A grade de 5 × 3 pontos cobre 90% de cada lado da placa, centrada.
+- A direção do sol é arredondada a 1/4 de grau, e o resultado fica em cache por placa e direção. O cache de uma placa é refeito quando ela se move ou troca de modelo, ou quando as medidas da casa mudam.
+- Os três pontos do céu tapado ficam a −45%, 0 e +45% da altura da placa.
+- Medido na casa de teste (clima típico, ano): Norte 13,3%, Leste 21,2%, Oeste 21,2%, Sul 29,4%, contra 14%, 23%, 23% e 31% da referência.
+- `window.__offgrid.ambiente()` devolve o ambiente, para conferência.
+
 ## 10. Estado e ações (`src/estado.ts`)
 
 O coordenador escreve este arquivo. O estado guarda: o projeto, a seleção, o tempo (`msUtc` e a velocidade em minutos simulados por segundo), a queda de luz (ativa e início), o estado da simulação, a última saída do passo, o histórico e o modo de visão.
