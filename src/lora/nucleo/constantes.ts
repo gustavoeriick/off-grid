@@ -41,6 +41,23 @@ export const PONTOS_MINIMOS_DO_PERFIL = 20;
 /** Maior número de pontos de um perfil (seção 4.2). */
 export const PONTOS_MAXIMOS_DO_PERFIL = 1500;
 
+// Busca de ponto de repetidor (seção 4.9). Todos os números desta parte são escolhas do projeto para a
+// busca ficar rápida; não são dados de norma.
+/** Passo da grade de candidatos a repetidor, em km. Escolha do projeto. */
+export const PASSO_DA_GRADE_KM = 0.5;
+/** Margem da grade, além das pontas e para os dois lados, como fração da distância do caminho. Escolha do projeto. */
+export const MARGEM_DA_GRADE_FRACAO = 0.3;
+/** Menor margem da grade, em km. Escolha do projeto. */
+export const MARGEM_MINIMA_DA_GRADE_KM = 3;
+/** Quantos candidatos de terreno mais alto entram na conta. Escolha do projeto. */
+export const CANDIDATOS_AVALIADOS = 300;
+/** Candidato a menos de tanto de uma ponta, em km, é descartado. Escolha do projeto. */
+export const DISTANCIA_MINIMA_DAS_PONTAS_KM = 1;
+/** Quantas sugestões de repetidor a busca devolve, no máximo. Escolha do projeto. */
+export const SUGESTOES_MAXIMAS = 5;
+/** Distância mínima, em km, entre duas sugestões devolvidas. Escolha do projeto. */
+export const DISTANCIA_MINIMA_ENTRE_SUGESTOES_KM = 1;
+
 /** Regra da Anatel, Ato 14.448/2017, item 10.3.2: potência de pico máxima, em dBm (1 W). */
 export const POTENCIA_MAXIMA_ANATEL_DBM = 30;
 /** Regra da Anatel, item 10.5: ganho de antena até o qual a potência não precisa cair, em dBi. */

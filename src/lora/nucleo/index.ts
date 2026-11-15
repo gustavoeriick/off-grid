@@ -6,3 +6,4 @@ export * from './perfil';
 export * from './propagacao';
 export * from './regras';
 export * from './enlace';
+export * from './rede';
