@@ -3,8 +3,12 @@ import { perfilDeDistanciaZero, perfilDeTeste, perto } from './apoio-de-teste';
 import {
   comprimentoDeOndaM,
   curvaDaTerraM,
+  difracaoCompleta,
   difracaoDeBullington,
   geometriaDoEnlace,
+  parcelasDaDifracaoCompleta,
+  perdaAlemDoHorizonteDb,
+  perdaDaTerraEsfericaDb,
   perdaNoArLivreDb,
   perdaPorObstaculoDb,
   raioDeFresnelM,
@@ -94,12 +98,12 @@ describe('difracaoDeBullington, 915 MHz, terreno ao nível do mar', () => {
       6,
       915,
     );
-    expect(d).toEqual({ visada: true, lucDb: 0, perdaDb: 0 });
+    expect(d).toEqual({ visada: true, lucDb: 0, perdaDb: 0, terraLisaDb: 0 });
   });
 
   it('distância zero: perda 0, sem NaN', () => {
     const d = difracaoDeBullington(perfilDeDistanciaZero(), 6, 6, 915);
-    expect(d).toEqual({ visada: true, lucDb: 0, perdaDb: 0 });
+    expect(d).toEqual({ visada: true, lucDb: 0, perdaDb: 0, terraLisaDb: 0 });
   });
 
   it('antenas de alturas diferentes mudam o resultado e não dão NaN', () => {
@@ -179,5 +183,156 @@ describe('geometriaDoEnlace', () => {
     for (const p of g.pontos) {
       for (const v of Object.values(p)) expect(Number.isNaN(v)).toBe(false);
     }
+  });
+});
+
+describe('perdaDaTerraEsfericaDb (§ 3.2), 915 MHz', () => {
+  it('20 km com antenas a 8 m: 23,31 dB', () => perto(perdaDaTerraEsfericaDb(20, 8, 8, 915), 23.31));
+  it('20 km a 30 m: 0', () => perto(perdaDaTerraEsfericaDb(20, 30, 30, 915), 0));
+  it('40 km a 8 m: 39,65 dB', () => perto(perdaDaTerraEsfericaDb(40, 8, 8, 915), 39.65));
+  it('40 km a 60 m: 0', () => perto(perdaDaTerraEsfericaDb(40, 60, 60, 915), 0));
+  it('40 km com 300 m e 10 m: 0', () => perto(perdaDaTerraEsfericaDb(40, 300, 10, 915), 0));
+  it('80 km a 10 m (além do horizonte): 68,57 dB', () => perto(perdaDaTerraEsfericaDb(80, 10, 10, 915), 68.57));
+  it('bordas: distância zero, altura zero e antena de 1 m dão número finito', () => {
+    expect(perdaDaTerraEsfericaDb(0, 8, 8, 915)).toBe(0);
+    expect(perdaDaTerraEsfericaDb(20, 0, 8, 915)).toBe(0);
+    for (const d of [0.001, 1, 5, 20, 100, 500]) {
+      const v = perdaDaTerraEsfericaDb(d, 1, 1, 915);
+      expect(Number.isFinite(v)).toBe(true);
+      expect(v).toBeGreaterThanOrEqual(0);
+    }
+    expect(Number.isFinite(perdaDaTerraEsfericaDb(30, 1, 500, 915))).toBe(true);
+  });
+});
+
+describe('perdaAlemDoHorizonteDb (§ 3.1.1.2)', () => {
+  it('é a perda da Terra esférica quando a distância passa do horizonte (80 km, 10 m)', () => {
+    perto(perdaAlemDoHorizonteDb(80, 10, 10, 915, 8494.7), perdaDaTerraEsfericaDb(80, 10, 10, 915), 0.05);
+  });
+  it('cresce com a distância e dá 0 sem distância ou sem altura', () => {
+    expect(perdaAlemDoHorizonteDb(100, 10, 10, 915, 8494.7)).toBeGreaterThan(perdaAlemDoHorizonteDb(80, 10, 10, 915, 8494.7));
+    expect(perdaAlemDoHorizonteDb(0, 10, 10, 915, 8494.7)).toBe(0);
+    expect(perdaAlemDoHorizonteDb(50, 0, 10, 915, 8494.7)).toBe(0);
+  });
+});
+
+describe('método completo de difração (§ 4.5.2), 915 MHz', () => {
+  const plano = (km: number) => perfilDeTeste(km);
+  const comAltitude = (km: number, f: (dKm: number, i: number, n: number) => number) =>
+    perfilDeTeste(km).map((p, i, todos) => ({ dKm: p.dKm, altM: f(p.dKm, i, todos.length) }));
+
+  const caso = (
+    nome: string,
+    perfil: ReturnType<typeof perfilDeTeste>,
+    hInicio: number,
+    hFim: number,
+    lba: number,
+    lbs: number,
+    lsph: number,
+    perda: number,
+  ) =>
+    it(nome, () => {
+      const p = parcelasDaDifracaoCompleta(perfil, hInicio, hFim, 915);
+      perto(p.lbaDb, lba);
+      perto(p.lbsDb, lbs);
+      perto(p.lsphDb, lsph);
+      perto(p.perdaDb, perda);
+      perto(p.terraLisaDb, Math.max(lsph - lbs, 0));
+      const d = difracaoCompleta(perfil, hInicio, hFim, 915);
+      perto(d.perdaDb, perda);
+      perto(d.terraLisaDb, p.terraLisaDb, 1e-12);
+      perto(d.lucDb, p.bullington.lucDb, 1e-12);
+    });
+
+  caso('plano ao nível do mar, 20 km, antenas a 8 m', plano(20), 8, 8, 11.57, 11.57, 23.31, 23.31);
+  caso('plano ao nível do mar, 20 km, antenas a 30 m', plano(20), 30, 30, 0, 0, 0, 0);
+  caso('plano ao nível do mar, 40 km, antenas a 8 m', plano(40), 8, 8, 18.99, 18.99, 39.65, 39.65);
+  caso('plano ao nível do mar, 40 km, antenas a 60 m', plano(40), 60, 60, 0, 0, 0, 0);
+  caso('planalto a 800 m, 20 km, antenas a 8 m', comAltitude(20, () => 800), 8, 8, 11.57, 11.57, 23.31, 23.31);
+  caso('morro de 100 m no meio (um ponto só), 20 km, antenas a 10 m', perfilDeTeste(20, { 10: 100 }), 10, 10, 33.55, 0, 0, 33.55);
+  caso(
+    'serra de 300 m entre 8 e 12 km, 20 km, antenas a 10 m',
+    comAltitude(20, (d) => (d >= 8 - 1e-9 && d <= 12 + 1e-9 ? 300 : 0)),
+    10,
+    10,
+    45.46,
+    0,
+    0,
+    45.46,
+  );
+  caso('rampa de 0 a 400 m, 30 km, antenas a 6 m', comAltitude(30, (d) => (400 * d) / 30), 6, 6, 16.06, 16.06, 36.98, 36.98);
+  caso(
+    'terreno a 300 m só no primeiro ponto e mar depois, 40 km, antenas a 6 m',
+    comAltitude(40, (_d, i) => (i === 0 ? 300 : 0)),
+    6,
+    6,
+    0,
+    0,
+    0,
+    0,
+  );
+
+  it('plano de 20 km: terraLisaDb é 11,74 dB e visada/Luc são os de Bullington', () => {
+    const d = difracaoCompleta(plano(20), 8, 8, 915);
+    perto(d.terraLisaDb, 23.31 - 11.57);
+    expect(d.visada).toBe(true);
+    perto(d.lucDb, 5.4);
+  });
+
+  it('difracaoDeBullington continua com terraLisaDb 0', () => {
+    expect(difracaoDeBullington(plano(20), 8, 8, 915).terraLisaDb).toBe(0);
+  });
+
+  it('perfil de dois pontos: finito, nunca negativo', () => {
+    const d = difracaoCompleta(
+      [
+        { dKm: 0, altM: 0 },
+        { dKm: 5, altM: 0 },
+      ],
+      6,
+      6,
+      915,
+    );
+    expect(Number.isFinite(d.perdaDb)).toBe(true);
+    expect(d.perdaDb).toBeGreaterThanOrEqual(0);
+    expect(d.lucDb).toBe(0);
+  });
+
+  it('distância zero: tudo 0, sem NaN', () => {
+    const d = difracaoCompleta(perfilDeDistanciaZero(), 6, 6, 915);
+    expect(d).toEqual({ visada: true, lucDb: 0, perdaDb: 0, terraLisaDb: 0 });
+  });
+
+  it('perfil com menos de dois pontos lança erro claro', () => {
+    expect(() => difracaoCompleta([{ dKm: 0, altM: 0 }], 6, 6, 915)).toThrow(/dois pontos/);
+  });
+
+  it('alturas muito diferentes (300 m e 1 m) e antena baixa de 1 m: números finitos e não negativos', () => {
+    for (const [a, b] of [
+      [300, 1],
+      [1, 1],
+      [1, 300],
+      [1000, 1],
+    ]) {
+      for (const km of [1, 20, 40, 100]) {
+        const d = difracaoCompleta(perfilDeTeste(km), a, b, 915);
+        for (const v of [d.perdaDb, d.lucDb, d.terraLisaDb]) {
+          expect(Number.isFinite(v)).toBe(true);
+          expect(v).toBeGreaterThanOrEqual(0);
+        }
+      }
+    }
+  });
+
+  it('antena de altura zero não dá NaN nem Infinity', () => {
+    const d = difracaoCompleta(perfilDeTeste(20), 0, 0, 915);
+    expect(Number.isFinite(d.perdaDb)).toBe(true);
+  });
+
+  it('a perda total nunca é menor que a de Bullington do perfil de verdade', () => {
+    const picos = { 5: 80, 14: 120 };
+    const total = difracaoCompleta(perfilDeTeste(20, picos), 10, 10, 915).perdaDb;
+    const bull = difracaoDeBullington(perfilDeTeste(20, picos), 10, 10, 915).perdaDb;
+    expect(total).toBeGreaterThanOrEqual(bull - 1e-9);
   });
 });

@@ -136,3 +136,166 @@ export function difracaoDeBullington(
   const perdaDb = luc + (1 - Math.exp(-luc / 6)) * (10 + 0.02 * d);
   return { visada, lucDb: luc, perdaDb, terraLisaDb: 0 };
 }
+
+/**
+ * Perda além do horizonte, A(a), em dB (ITU-R P.526-16, § 3.1.1.2, eq. 21 a 25, com β = 1).
+ * `dKm` e `raioKm` em km, alturas em METROS, frequência em MHz. Pode dar negativo (o chamador decide o piso).
+ * Altura zero ou negativa não tem G(Y) definido: devolve 0 em vez de -Infinity.
+ */
+export function perdaAlemDoHorizonteDb(
+  dKm: number,
+  h1M: number,
+  h2M: number,
+  mhz: number,
+  raioKm: number,
+): number {
+  if (!(dKm > 0) || !(h1M > 0) || !(h2M > 0) || !(raioKm > 0)) return 0;
+  const x = 2.188 * Math.cbrt(mhz) * Math.pow(raioKm, -2 / 3) * dKm;
+  const y = (h: number) => 9.575e-3 * Math.pow(mhz, 2 / 3) * Math.pow(raioKm, -1 / 3) * h;
+  const fx = x >= 1.6 ? 11 + 10 * Math.log10(x) - 17.6 * x : -20 * Math.log10(x) - 5.6488 * Math.pow(x, 1.425);
+  const gy = (v: number) => (v > 2 ? 17.6 * Math.sqrt(v - 1.1) - 5 * Math.log10(v - 1.1) - 8 : 20 * Math.log10(v + 0.1 * v * v * v));
+  return -(fx + gy(y(h1M)) + gy(y(h2M)));
+}
+
+/**
+ * Perda por difração da Terra esférica, em dB (ITU-R P.526-16, § 3.2). `h1M` e `h2M` são as alturas das
+ * antenas acima da superfície lisa, em METROS (aqui dentro viram km, junto com a distância, o raio e λ).
+ * Distância zero ou altura zero: 0.
+ */
+export function perdaDaTerraEsfericaDb(dKm: number, h1M: number, h2M: number, mhz: number): number {
+  if (!(dKm > 0) || !(h1M > 0) || !(h2M > 0)) return 0;
+  const ae = RAIO_EFETIVO_KM;
+  const h1 = h1M / 1000;
+  const h2 = h2M / 1000;
+  const lambdaKm = comprimentoDeOndaM(mhz) / 1000;
+  const dlos = Math.sqrt(2 * ae) * (Math.sqrt(h1) + Math.sqrt(h2));
+  if (dKm >= dlos) return Math.max(0, perdaAlemDoHorizonteDb(dKm, h1M, h2M, mhz, ae));
+
+  const c = (h1 - h2) / (h1 + h2);
+  const m = (dKm * dKm) / (4 * ae * (h1 + h2));
+  const arg = Math.max(-1, Math.min(1, ((3 * c) / 2) * Math.sqrt((3 * m) / Math.pow(m + 1, 3))));
+  const b = 2 * Math.sqrt((m + 1) / (3 * m)) * Math.cos(Math.PI / 3 + Math.acos(arg) / 3);
+  const d1 = (dKm / 2) * (1 + b);
+  const d2 = dKm - d1;
+  const h = ((h1 - (d1 * d1) / (2 * ae)) * d2 + (h2 - (d2 * d2) / (2 * ae)) * d1) / dKm;
+  const hreq = 0.552 * Math.sqrt((d1 * d2 * lambdaKm) / dKm);
+  if (h > hreq) return 0;
+  const aem = 0.5 * Math.pow(dKm / (Math.sqrt(h1) + Math.sqrt(h2)), 2);
+  const ah = perdaAlemDoHorizonteDb(dKm, h1M, h2M, mhz, aem);
+  if (ah < 0) return 0;
+  return (1 - h / hreq) * ah;
+}
+
+/** As parcelas do método completo de difração (§ 4.5.2), para a tela e para os testes conferirem uma a uma. */
+export interface ParcelasDaDifracao {
+  /** Bullington do perfil de verdade. */
+  lbaDb: number;
+  /** Bullington do caminho liso (alturas zero, antenas a h'ts e h'rs). */
+  lbsDb: number;
+  /** Terra esférica com h'ts e h'rs. */
+  lsphDb: number;
+  /** Altura efetiva da antena do começo acima da superfície lisa, em m (h'ts). */
+  alturaLisaInicioM: number;
+  /** Altura efetiva da antena do fim acima da superfície lisa, em m (h'rs). */
+  alturaLisaFimM: number;
+  /** Perda total: `lba + máx(lsph − lbs; 0)`. */
+  perdaDb: number;
+  /** A parcela `máx(lsph − lbs; 0)`. */
+  terraLisaDb: number;
+  /** A parte de Bullington do perfil de verdade. */
+  bullington: Difracao;
+}
+
+/**
+ * Método completo de difração (ITU-R P.526-16, § 4.5.2, eq. 58 a 66; especificação 4.5.1).
+ * Perfil de dois pontos ou de distância zero: sem superfície a ajustar, a parcela de terra lisa é 0.
+ */
+export function parcelasDaDifracaoCompleta(
+  perfil: Perfil,
+  alturaInicioM: number,
+  alturaFimM: number,
+  mhz: number,
+): ParcelasDaDifracao {
+  const bullington = difracaoDeBullington(perfil, alturaInicioM, alturaFimM, mhz);
+  const n = perfil.length;
+  const d = perfil[n - 1].dKm;
+  const h1 = perfil[0].altM;
+  const hn = perfil[n - 1].altM;
+  const hts = h1 + alturaInicioM;
+  const hrs = hn + alturaFimM;
+  const semTerraLisa: ParcelasDaDifracao = {
+    lbaDb: bullington.perdaDb,
+    lbsDb: 0,
+    lsphDb: 0,
+    alturaLisaInicioM: alturaInicioM,
+    alturaLisaFimM: alturaFimM,
+    perdaDb: bullington.perdaDb,
+    terraLisaDb: 0,
+    bullington,
+  };
+  if (!(d > 0)) return semTerraLisa;
+
+  // Superfície lisa ajustada ao perfil.
+  let v1 = 0;
+  let v2 = 0;
+  for (let i = 1; i < n; i++) {
+    const di = perfil[i].dKm;
+    const da = perfil[i - 1].dKm;
+    const hi = perfil[i].altM;
+    const ha = perfil[i - 1].altM;
+    v1 += (di - da) * (hi + ha);
+    v2 += (di - da) * (hi * (2 * di + da) + ha * (di + 2 * da));
+  }
+  const hstip = (2 * v1 * d - v2) / (d * d);
+  const hsrip = (v2 - v1 * d) / (d * d);
+
+  // Obstrução acima da reta entre as antenas (só pontos do meio, com di entre 0 e d).
+  let hobs = -Infinity;
+  let alfaT = -Infinity;
+  let alfaR = -Infinity;
+  for (const p of perfil.slice(1, n - 1)) {
+    if (!(p.dKm > 0 && p.dKm < d)) continue;
+    const hob = p.altM - (hts * (d - p.dKm) + hrs * p.dKm) / d;
+    hobs = Math.max(hobs, hob);
+    alfaT = Math.max(alfaT, hob / p.dKm);
+    alfaR = Math.max(alfaR, hob / (d - p.dKm));
+  }
+  let hstp = hstip;
+  let hsrp = hsrip;
+  if (hobs > 0) {
+    const soma = alfaT + alfaR;
+    hstp = hstip - (hobs * alfaT) / soma;
+    hsrp = hsrip - (hobs * alfaR) / soma;
+  }
+  const hst = Math.min(hstp, h1);
+  const hsr = Math.min(hsrp, hn);
+  const ats = hts - hst;
+  const ars = hrs - hsr;
+  if (!(ats > 0) || !(ars > 0) || !Number.isFinite(ats + ars)) return semTerraLisa;
+
+  const plano = perfil.map((p) => ({ dKm: p.dKm, altM: 0 }));
+  const lbs = difracaoDeBullington(plano, ats, ars, mhz).perdaDb;
+  const lsph = perdaDaTerraEsfericaDb(d, ats, ars, mhz);
+  const terraLisaDb = Math.max(lsph - lbs, 0);
+  return {
+    lbaDb: bullington.perdaDb,
+    lbsDb: lbs,
+    lsphDb: lsph,
+    alturaLisaInicioM: ats,
+    alturaLisaFimM: ars,
+    perdaDb: bullington.perdaDb + terraLisaDb,
+    terraLisaDb,
+    bullington,
+  };
+}
+
+/** Difração do método completo: Bullington do perfil de verdade mais a parcela do caminho liso. */
+export function difracaoCompleta(
+  perfil: Perfil,
+  alturaInicioM: number,
+  alturaFimM: number,
+  mhz: number,
+): Difracao {
+  const p = parcelasDaDifracaoCompleta(perfil, alturaInicioM, alturaFimM, mhz);
+  return { visada: p.bullington.visada, lucDb: p.bullington.lucDb, perdaDb: p.perdaDb, terraLisaDb: p.terraLisaDb };
+}

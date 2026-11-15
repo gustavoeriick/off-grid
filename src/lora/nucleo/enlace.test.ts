@@ -208,3 +208,51 @@ describe('melhorias', () => {
     expect(tres.aviso).toBeUndefined();
   });
 });
+
+describe('calcularEnlace com o método completo, Long Fast, 22 dBm, 0 dBi, sem cabo', () => {
+  it('plano ao nível do mar, 20 km, antenas a 8 m: folga 11,99 dB, zona não livre, fecha no limite', () => {
+    const r = calcularEnlace(sem, sem, perfilDeTeste(20), ambienteDeTeste());
+    perto(r.conta.folgaDb, 11.99);
+    perto(r.difracao.perdaDb, 23.31);
+    expect(r.geometria.zonaLivre).toBe(false);
+    expect(r.veredito).toBe('limite');
+    expect(r.texto).toContain('Fecha no limite');
+    expect(r.texto).toContain('O caminho é liso (mar, baía ou planície) e a curva da Terra tira 12 dB do sinal.');
+  });
+
+  it('o mesmo com 40 km: folga -10,37 dB, não fecha', () => {
+    const r = calcularEnlace(sem, sem, perfilDeTeste(40), ambienteDeTeste());
+    perto(r.conta.folgaDb, -10.37);
+    expect(r.veredito).toBe('nao-fecha');
+    expect(r.texto).toContain('Não fecha');
+    expect(r.texto).toContain('a curva da Terra tira 21 dB do sinal.');
+  });
+
+  it('sem parcela de terra lisa (morro no caminho): o texto não fala em caminho liso', () => {
+    const r = calcularEnlace(sem, sem, perfilDeTeste(20, { 10: 100 }), ambienteDeTeste());
+    expect(r.difracao.terraLisaDb).toBe(0);
+    expect(r.texto).not.toContain('caminho é liso');
+  });
+
+  it('melhorias usam o método completo: subir a antena em caminho liso de 40 km ajuda muito', () => {
+    const lista = melhorias(sem, sem, ['A', 'B'], perfilDeTeste(40), ambienteDeTeste());
+    const base = calcularEnlace(sem, sem, perfilDeTeste(40), ambienteDeTeste());
+    const duas = lista.find((m) => m.rotulo === 'Subir a antena de A para 20 m')!;
+    expect(duas.folgaDb).toBeGreaterThan(base.conta.folgaDb);
+    for (const m of lista) expect(Number.isFinite(m.folgaDb)).toBe(true);
+  });
+
+  it('antena de 1 m e alturas muito diferentes: sem NaN nem Infinity', () => {
+    const baixa = radioDeTeste({ alturaDaAntenaM: 1 });
+    const alta = radioDeTeste({ alturaDaAntenaM: 300 });
+    for (const [a, b] of [
+      [baixa, baixa],
+      [baixa, alta],
+    ]) {
+      const r = calcularEnlace(a, b, perfilDeTeste(30), ambienteDeTeste());
+      expect(Number.isFinite(r.conta.folgaDb)).toBe(true);
+      expect(Number.isFinite(r.difracao.perdaDb)).toBe(true);
+      expect(r.texto).not.toMatch(/NaN|Infinity/);
+    }
+  });
+});

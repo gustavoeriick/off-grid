@@ -123,7 +123,7 @@ As seis decisões da seção 4 foram aprovadas em 15/11/2026, todas como recomen
 - [x] **L1.1 Núcleo de rádio:** perda no ar livre, curva da Terra, zona de Fresnel, difração em obstáculos, conta do enlace e veredito. `nucleo` (Sonnet).
 - [x] **L1.2 Relevo:** baixar e guardar os blocos, altura de um ponto e perfil entre dois pontos. `nucleo` (Sonnet).
 - [x] **L1.3 Página `lora.html`, seletor de ambiente e projetos de LoRa.** Coordenador.
-- [ ] **L1.4 Correção de Terra esférica** (ITU-R P.526, § 4.5.2 e § 3.2), para a perda em caminho liso (mar, baía, planície) não sair subestimada. As equações têm de ser lidas nas páginas da norma, não no texto extraído, e conferidas contra uma implementação aberta. Fable.
+- [x] **L1.4 Correção de Terra esférica** (ITU-R P.526, § 4.5.2 e § 3.2), para a perda em caminho liso (mar, baía, planície) não sair subestimada. As equações têm de ser lidas nas páginas da norma, não no texto extraído, e conferidas contra uma implementação aberta. Fable.
 
 ### Fase L2: mapa e enlace (primeira versão utilizável)
 

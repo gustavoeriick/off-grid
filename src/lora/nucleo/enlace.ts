@@ -1,7 +1,7 @@
 // Conta do enlace, veredito e melhorias. Especificação: seções 4.6 a 4.8.
 import { FOLGA_COM_SOBRA_DB, FRACAO_DE_FRESNEL, MODOS } from './constantes';
 import { avisosDaRegra } from './regras';
-import { difracaoDeBullington, geometriaDoEnlace, perdaNoArLivreDb } from './propagacao';
+import { difracaoCompleta, geometriaDoEnlace, perdaNoArLivreDb } from './propagacao';
 import type {
   Ambiente,
   ContaDoEnlace,
@@ -56,6 +56,9 @@ export function vereditoDoEnlace(folgaDb: number, zonaLivre: boolean): Veredito 
   return 'limite';
 }
 
+/** A partir de quantos dB da parcela de terra lisa o texto do veredito comenta o caminho liso. */
+const LIMITE_DA_FRASE_DE_CAMINHO_LISO_DB = 3;
+
 function num(n: number, casas = 1): string {
   return n.toFixed(casas).replace('.', ',');
 }
@@ -99,12 +102,16 @@ export function calcularEnlace(
   ambiente: Ambiente,
 ): ResultadoDoEnlace {
   const geometria = geometriaDoEnlace(perfil, inicio.alturaDaAntenaM, fim.alturaDaAntenaM, ambiente.frequenciaMHz);
-  const difracao = difracaoDeBullington(perfil, inicio.alturaDaAntenaM, fim.alturaDaAntenaM, ambiente.frequenciaMHz);
+  const difracao = difracaoCompleta(perfil, inicio.alturaDaAntenaM, fim.alturaDaAntenaM, ambiente.frequenciaMHz);
   const ida = contaDoEnlace(inicio, fim, geometria.distanciaKm, difracao.perdaDb, ambiente);
   const volta = contaDoEnlace(fim, inicio, geometria.distanciaKm, difracao.perdaDb, ambiente);
   const conta = volta.folgaDb < ida.folgaDb ? volta : ida;
   const veredito = vereditoDoEnlace(conta.folgaDb, geometria.zonaLivre);
-  return { geometria, difracao, conta, veredito, texto: textoDoVeredito(veredito, conta.folgaDb, geometria) };
+  let texto = textoDoVeredito(veredito, conta.folgaDb, geometria);
+  if (difracao.terraLisaDb >= LIMITE_DA_FRASE_DE_CAMINHO_LISO_DB) {
+    texto += ` O caminho é liso (mar, baía ou planície) e a curva da Terra tira ${Math.round(difracao.terraLisaDb)} dB do sinal.`;
+  }
+  return { geometria, difracao, conta, veredito, texto };
 }
 
 const ALTURAS_DE_ANTENA_M = [6, 10, 15, 20];
