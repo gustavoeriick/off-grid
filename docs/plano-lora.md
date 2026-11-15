@@ -134,7 +134,7 @@ As seis decisões da seção 4 foram aprovadas em 15/11/2026, todas como recomen
 
 Ao fim desta fase você já responde à pergunta dos 20 km e dos 40 km.
 
-### Fase L3: repetidores
+### Fase L3: repetidores (aprovada pelo Gustavo em 15/11/2026)
 
 - [ ] **L3.1 Repetidor no mapa e rede com vários saltos.** `nucleo` e `interface` (Sonnet).
 - [ ] **L3.2 "Sugerir ponto de repetidor".** `nucleo` (Sonnet), com revisão do Fable.

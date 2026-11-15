@@ -213,11 +213,32 @@ Para um enlace que não fecha com folga, o núcleo calcula o efeito de cada muda
 - trocar o modo pelo seguinte mais lento, até o Long Moderate;
 - antena de 3, 6 e 9 dBi em cada ponta (com o aviso da seção 3 quando passa de 6 dBi).
 
-### 4.9 Rede (fase L3)
+### 4.9 Rede (fase L3, aprovada pelo Gustavo em 15/11/2026)
 
-- Uma rota é uma sequência de pontos; cada trecho é um enlace. A folga da rota é a do pior trecho.
-- A rota cabe se o número de repetidores no meio for menor ou igual ao limite de saltos (3 por padrão).
-- "Sugerir ponto de repetidor": numa grade de 0,5 km dentro de um retângulo em volta dos dois pontos (margem de 30% da distância, no mínimo 3 km), calcula os dois trechos de cada candidato com antena de 6 m e ordena pela menor das duas folgas. Devolve os 5 melhores que fiquem a mais de 1 km um do outro. Os detalhes fecham na especificação da fase L3.
+O repetidor não amplifica o sinal: ele recebe a mensagem inteira e a transmite de novo. No Meshtastic, qualquer rádio da rede repassa mensagens, não só os marcados como repetidor; por isso a rota pode passar por qualquer ponto.
+
+**Rota** (`src/lora/nucleo/rede.ts`, função pura `melhorRota`):
+
+- O grafo são os pontos do projeto; as arestas são os enlaces com resultado pronto, cada um com a folga e o veredito dele.
+- Uma rota de A a B é um caminho sem repetir ponto. O número de **pontos no meio** não pode passar do limite de saltos do projeto (3 por padrão, 7 no máximo).
+- A folga da rota é a do pior trecho. O veredito da rota é o pior veredito dos trechos.
+- Entre as rotas que cabem no limite, vale a de melhor veredito; no empate, a de maior folga; no empate, a de menos pontos no meio.
+- Resultado: os pontos da rota em ordem, os trechos (de, para, folga, veredito), o trecho mais fraco, a folga, o veredito e o número de pontos no meio. Sem caminho nenhum: nulo, com o motivo "não há ligação". Se só existe caminho com mais pontos no meio do que o limite: nulo, com o motivo "passa do limite de saltos" e quantos pontos no meio seriam precisos.
+- A tela mostra a rota de cada par de pontos do tipo casa.
+
+**Sugerir ponto de repetidor** (`sugerirRepetidores`, função pura sobre uma função de altitude):
+
+- Entradas: os dois pontos, o rádio do repetidor (o padrão de um ponto novo: antena a 6 m, 22 dBm, 0 dBi, sem cabo), a função de altitude e o ambiente do projeto.
+- Candidatos: uma grade de 0,5 km em um retângulo alinhado com o caminho, que se estende além das duas pontas e para os dois lados por uma margem de 30% da distância, com no mínimo 3 km. Ficam de fora os candidatos a menos de 1 km de qualquer uma das pontas.
+- Para não calcular a grade inteira, entram na conta só os 300 candidatos de terreno mais alto.
+- Para cada um, calcula os dois trechos (ponta A ao candidato e candidato à ponta B) com o mesmo cálculo do enlace.
+- Ordem: melhor veredito do pior trecho; no empate, maior folga do pior trecho.
+- Devolve até 5, cada um a mais de 1 km dos já escolhidos, com a posição, a altitude do terreno, a folga e o veredito de cada trecho e o veredito do conjunto.
+- A lista pode vir só com candidatos que não fecham: a tela diz que um repetidor só não resolve e sugere repetir a busca entre o melhor candidato e a ponta que ficou sem ligação.
+- A conta é feita em pedaços, sem travar a tela, com o andamento visível. Os números da grade (0,5 km, 30%, 3 km, 300, 1 km, 5) são escolhas do projeto para a busca ficar rápida; não são dados de norma.
+- A busca baixa os blocos de relevo de todo o retângulo. Continua valendo a regra de privacidade: só blocos, nunca coordenadas.
+
+**Limite do que a sugestão sabe:** ela procura terreno alto com boa ligação para os dois lados. Não sabe se o lugar tem acesso, dono, energia ou autorização. É um ponto de partida para olhar no mapa e visitar.
 
 ## 5. Relevo (`src/lora/dados`)
 
