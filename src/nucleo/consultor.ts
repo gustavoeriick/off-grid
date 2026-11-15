@@ -454,7 +454,7 @@ export function analisarConsultor(
         nivel: 'alerta',
         titulo: `Esta placa perde ${inteiro(perda * 100)}% da geração para a sombra`,
         texto:
-          'A sombra da casa cobre a placa em parte do dia. Mude a placa de lugar ou gire a casa para testar outra posição do telhado.',
+          'A sombra da casa ou do que está em volta dela cobre a placa em parte do dia. Mude a placa de lugar ou gire a casa para testar outra posição do telhado.',
         alvos: [d.uid],
       });
     }

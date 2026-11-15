@@ -263,19 +263,24 @@ export const ROTEIRO_24V: Roteiro = {
       id: 'protecoes-das-placas',
       titulo: 'Disjuntor CC e DPS nas placas, em um quadro',
       texto:
-        'Arraste um quadro de sobrepor para uma parede do quartinho. Depois arraste o disjuntor CC de 32 A e o DPS para o cabo positivo das placas: eles vão para dentro do quadro. O disjuntor CC deixa desligar as placas para a manutenção, e o DPS (protetor contra surtos) ajuda a limitar picos de tensão.',
+        'Arraste um quadro de sobrepor para uma parede do quartinho. Depois arraste o disjuntor CC de 32 A e o DPS para um cabo das placas, de preferência o positivo: eles vão para dentro do quadro. O disjuntor CC deixa desligar as placas para a manutenção, e o DPS (protetor contra surtos) ajuda a limitar picos de tensão.',
       dica: 'Use sempre um disjuntor feito para corrente contínua nas placas: o disjuntor comum da casa é para CA. O DPS não garante proteção contra um raio direto.',
       itemId: 'prot-disjuntor-cc-32',
-      feito: (p, _d, c) =>
-        p.cabos.some((cabo) => {
-          const dasPlacas =
-            cabo.de.terminal === 'pvPos' || cabo.para.terminal === 'pvPos' || [cabo.de.disp, cabo.para.disp].some((uid) => {
-              const d = p.dispositivos.find((x) => x.uid === uid);
-              return d !== undefined && itemDe(c, d)?.categoria === 'placa';
-            });
-          const quadro = cabo.quadro === null ? undefined : p.dispositivos.find((x) => x.uid === cabo.quadro);
-          return dasPlacas && temProtecao(cabo, c, 'disjuntorCC') && temProtecao(cabo, c, 'dps') && quadro !== undefined;
-        }),
+      feito: (p, _d, c) => {
+        // Vale qualquer cabo do circuito das placas: o que chega em PV+ ou PV−, ou o que sai de uma placa.
+        const noQuadro = (tipo: 'disjuntorCC' | 'dps'): boolean =>
+          p.cabos.some((cabo) => {
+            const dasPlacas =
+              [cabo.de.terminal, cabo.para.terminal].some((t) => t === 'pvPos' || t === 'pvNeg') ||
+              [cabo.de.disp, cabo.para.disp].some((uid) => {
+                const d = p.dispositivos.find((x) => x.uid === uid);
+                return d !== undefined && itemDe(c, d)?.categoria === 'placa';
+              });
+            const quadro = cabo.quadro === null ? undefined : p.dispositivos.find((x) => x.uid === cabo.quadro);
+            return dasPlacas && temProtecao(cabo, c, tipo) && quadro !== undefined;
+          });
+        return noQuadro('disjuntorCC') && noQuadro('dps');
+      },
     },
     {
       id: 'tomada-da-rede',

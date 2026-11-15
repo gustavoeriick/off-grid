@@ -63,7 +63,7 @@ Com placas de modelos diferentes, `vocFrio`, `vmpQuente` e `n × vmp` de uma fil
 | `corrente-das-placas` | erro | `correnteEntradaMaxA` definida e `f × isc` maior que ela | Corrente das placas acima do que a entrada aceita | {2} fileiras em paralelo somam {28,4} A e a entrada aceita {18} A. Ligue as placas em série: a corrente fica a de uma placa e a tensão soma. | |
 | `potencia-das-placas` | alerta | Soma de `wp` maior que `potenciaMaxW` | Placas além da potência da entrada | São {4.680} W de placas para uma entrada de {4.000} W. Funciona, mas o que passar disso é desperdiçado. | |
 | `pwm-desperdica` | alerta | PWM e `1 − tensaoCarga / (n × vmp × 0,90)` maior que 0,15 | O controlador PWM desperdiça cerca de {29}% desta placa | O PWM prende a placa na tensão da bateria, {28,1} V, e esta placa rende mais perto de {39} V. Um controlador MPPT aproveita essa diferença. | Ver controladores |
-| `placa-na-sombra` | alerta | `perdaSombra` da placa maior que 0,20 | Esta placa perde {31}% da geração para a sombra | A sombra da casa cobre a placa em parte do dia. Mude a placa de lugar ou gire a casa para testar outra posição do telhado. | |
+| `placa-na-sombra` | alerta | `perdaSombra` da placa maior que 0,20 | Esta placa perde {31}% da geração para a sombra | A sombra da casa ou do que está em volta dela cobre a placa em parte do dia. Mude a placa de lugar ou gire a casa para testar outra posição do telhado. | |
 | `sem-placas` | dica | Entrada solar sem fileira e nenhum problema de placa | Sem placas, a bateria só recarrega pela rede | Arraste uma placa para o telhado e ligue o positivo no PV+ e o negativo no PV−. | Ver placas |
 
 ## 5. Regras das cargas e do inversor
