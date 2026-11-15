@@ -182,7 +182,7 @@ Coordenação: Fable 5.2 (a maior parte é cena).
 - [x] **7.3 Cena só com o quartinho.** Casa, varandas e cômodos fora da cena e da sombra; câmera enquadrada no quartinho; destaque do lugar onde a peça do passo deve ser solta e do terminal onde o cabo deve chegar. `cena3d` (Fable).
 - [x] **7.4 Textos do tutorial.** O que é cada peça, por que ela entra nessa ordem e o cuidado de segurança do passo. Escritos pelo coordenador (Fable), junto com o roteiro.
 - [x] **7.5 Painel do tutorial.** Passo atual, "Mostrar no catálogo", avanço automático quando o passo é cumprido, e o teste do fim: escolher o aparelho, acelerar o tempo e ler "a bateria segurou X h Y min". `interface` (Sonnet).
-- [ ] **7.6 Verificação com mouse e revisão.** O roteiro de capturas percorre o tutorial inteiro. `verificador` (Haiku) e `revisor` (Fable).
+- [x] **7.6 Verificação com mouse e revisão.** O roteiro de capturas percorre o tutorial inteiro. `verificador` (Haiku) e `revisor` (Fable).
 
 ## 5. Como uma entrega é aceita
 

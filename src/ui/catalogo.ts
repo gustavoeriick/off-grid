@@ -48,7 +48,7 @@ function arrastavelParaACena(item: Item): boolean {
     case 'rede':
       return true;
     case 'acessorio':
-      return item.id === ID_QUADRO;
+      return item.id === ID_QUADRO || item.tipo === 'grampo';
     default:
       return false;
   }
@@ -58,13 +58,14 @@ function arrastavelParaACena(item: Item): boolean {
 function comoEntra(item: Item): string {
   if (item.categoria === 'protecao') return 'Arraste para um cabo.';
   if (item.categoria === 'cabo') return 'Escolhido ao ligar o cabo.';
+  if (item.categoria === 'acessorio' && item.tipo === 'grampo') return 'Arraste para uma parede, um piso ou um telhado, perto de um cabo: o cabo passa a correr preso ali.';
   if (arrastavelParaACena(item)) return item.id === ID_QUADRO ? 'Arraste para uma parede.' : 'Arraste para a casa.';
   return 'Entra no orçamento automaticamente.';
 }
 
 /** Modelo escolhido em cada tipo (o que será arrastado). Sem escolha, vale o de referência. */
 const escolhidos = new Map<string, string>();
-/** Tipos com a lista de modelos aberta. */
+/** Tipos com o detalhe aberto. Fechado, o cartão mostra só o título. */
 const abertos = new Set<string>();
 
 function naLinha(item: Item): boolean {
@@ -107,14 +108,20 @@ function listaDeModelos(g: GrupoDoCatalogo, atual: Item, aoEscolher: (id: string
       ),
     );
   }
-  return h('div', { class: 'modelos-caixa' }, h('p', { class: 'rotulo-secao' }, 'Modelos deste tipo. O marcado é o que você arrasta.'), lista);
+  return h('div', { class: 'modelos-caixa' }, h('p', { class: 'rotulo-secao' }, `${g.itens.length} modelos no mercado. O marcado é o que você arrasta.`), lista);
 }
 
 function cartao(g: GrupoDoCatalogo): HTMLElement {
   const atual = modeloDoCartao(g);
   const arrasta = arrastavelParaACena(g.referencia) || g.referencia.categoria === 'protecao';
-  const aberto = abertos.has(g.chave) && g.itens.length > 1;
+  const aberto = abertos.has(g.chave);
   const varios = g.itens.length > 1;
+  // O botão fica na linha do título: fechado, o cartão é só o nome do equipamento.
+  const botaoDetalhe = h(
+    'button',
+    { type: 'button', class: 'ver-modelos', 'aria-expanded': String(aberto), title: aberto ? 'Esconder os dados, o preço e os modelos' : 'Mostrar os dados, o preço e os modelos' },
+    aberto ? 'Esconder detalhe' : 'Mostrar detalhe',
+  );
   const c = h(
     'article',
     {
@@ -125,29 +132,28 @@ function cartao(g: GrupoDoCatalogo): HTMLElement {
       'data-modelos': String(g.itens.length),
       ...(arrasta ? { 'data-arrastavel': '' } : {}),
     },
-    h('h4', null, g.nome),
-    h('p', { class: 'detalhe' }, g.referencia.detalhe),
-    blocoDePrecoDoTipo(g),
-    ...avisosDoItem(g.referencia),
-    varios ? h('p', { class: 'modelo-atual' }, atual.id === g.referencia.id ? 'Modelo de referência.' : `Modelo escolhido: ${atual.nome}.`) : null,
-    h('p', { class: 'como-entra' }, comoEntra(g.referencia)),
+    h('div', { class: 'cartao-topo' }, h('h4', null, g.nome), botaoDetalhe),
   );
-  if (varios) {
-    const botaoModelos = h('button', { type: 'button', class: 'ver-modelos', 'aria-expanded': String(aberto) }, `${g.itens.length} modelos no mercado`, h('span', { 'aria-hidden': 'true' }, aberto ? ' ▴' : ' ▾'));
-    botaoModelos.addEventListener('click', () => {
-      if (abertos.has(g.chave)) abertos.delete(g.chave);
-      else abertos.add(g.chave);
-      c.replaceWith(cartao(g));
-    });
-    c.append(botaoModelos);
-    if (aberto) {
-      c.append(
-        listaDeModelos(g, atual, (id) => {
-          escolhidos.set(g.chave, id);
-          c.replaceWith(cartao(g));
-        }),
-      );
-    }
+  botaoDetalhe.addEventListener('click', () => {
+    if (abertos.has(g.chave)) abertos.delete(g.chave);
+    else abertos.add(g.chave);
+    c.replaceWith(cartao(g));
+  });
+  if (aberto) {
+    const partes: (Node | null)[] = [
+      h('p', { class: 'detalhe' }, g.referencia.detalhe),
+      blocoDePrecoDoTipo(g),
+      ...avisosDoItem(g.referencia),
+      varios ? h('p', { class: 'modelo-atual' }, atual.id === g.referencia.id ? 'Modelo de referência.' : `Modelo escolhido: ${atual.nome}.`) : null,
+      h('p', { class: 'como-entra' }, comoEntra(g.referencia)),
+      varios
+        ? listaDeModelos(g, atual, (id) => {
+            escolhidos.set(g.chave, id);
+            c.replaceWith(cartao(g));
+          })
+        : null,
+    ];
+    c.append(...partes.filter((n): n is Node => n !== null));
   }
   if (arrasta) {
     c.addEventListener('pointerdown', (e) => {

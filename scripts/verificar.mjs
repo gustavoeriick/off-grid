@@ -146,7 +146,8 @@ async function principal() {
     await pagina.locator('#abas-catalogo [data-cat="aparelhos"]').click();
     conferir((await pagina.locator('#lista-catalogo .cartao .preco').count()) === 0, 'aparelhos não mostram preço');
     await pagina.locator('#abas-catalogo [data-cat="instalacao"]').click();
-    conferir((await pagina.locator('#lista-catalogo .cartao[data-arrastavel]').count()) === 1, 'na aba Instalação só o quadro é arrastável');
+    const arrastaveis = await pagina.locator('#lista-catalogo .cartao[data-arrastavel]').evaluateAll((lista) => lista.map((c) => c.dataset.itemId).sort());
+    conferir(JSON.stringify(arrastaveis) === JSON.stringify(['acc-grampo', 'acc-quadro-8']), `na aba Instalação só o quadro e o grampo de parede são arrastáveis: ${JSON.stringify(arrastaveis)}`);
     await captura('14b-catalogo-instalacao');
     await pagina.locator('#abas-catalogo [data-cat="placas"]').click();
     const todas = await cartoes();
@@ -154,16 +155,23 @@ async function principal() {
     const simples = await pagina.locator('#lista-catalogo .cartao').evaluateAll((l) => l.map((c) => c.dataset.linha));
     conferir(simples.every((x) => x === 'simples') && simples.length <= todas, 'o filtro "simples" deveria mostrar só a linha simples');
     await pagina.locator('#filtro-linha [data-linha="todas"]').click();
+    // Fechado, o cartão é só o título e o botão "Mostrar detalhe": sem dados, preço, data nem link.
+    const fechados = await pagina.locator('#lista-catalogo .cartao').evaluateAll((l) => l.map((c) => [c.querySelectorAll('a, .preco, .detalhe, .como-entra').length, c.querySelector('.ver-modelos')?.textContent]));
+    conferir(fechados.length > 0 && fechados.every(([n, t]) => n === 0 && t === 'Mostrar detalhe'), `os cartões fechados deveriam mostrar só o título e "Mostrar detalhe": ${JSON.stringify(fechados)}`);
+    await captura('14-catalogo-placas');
+    // Aberto, o detalhe traz os dados, o preço e o link do anúncio, que abre em nova aba com rel seguro.
+    await pagina.locator('#lista-catalogo .cartao .ver-modelos').first().click();
     const links = await pagina.locator('#lista-catalogo .cartao a').evaluateAll((l) => l.map((a) => [a.target, a.rel]));
     conferir(links.length > 0 && links.every(([t, r]) => t === '_blank' && r === 'noopener noreferrer'), 'links de anúncio abrem em nova aba com rel seguro');
-    await captura('14-catalogo-placas');
+    conferir((await pagina.locator('#lista-catalogo .cartao .detalhe').count()) === 1 && (await pagina.locator('#lista-catalogo .cartao .preco').count()) >= 1, 'o detalhe aberto mostra os dados e o preço');
+    await pagina.locator('#lista-catalogo .cartao .ver-modelos').first().click();
 
     // Catálogo por tipo: um cartão só para as placas de 585 W, com 2 modelos; os links ficam no detalhe.
     const cartoesPlaca = pagina.locator('#lista-catalogo .cartao', { has: pagina.locator('h4', { hasText: /^Placa solar de 585 W$/ }) });
     conferir((await cartoesPlaca.count()) === 1, 'as placas de 585 W deveriam ser um cartão só');
     const c585 = cartoesPlaca.first();
     conferir((await c585.getAttribute('data-modelos')) === '2', 'o cartão de 585 W deveria ter 2 modelos');
-    conferir((await c585.locator('.ver-modelos').textContent()).includes('2 modelos no mercado'), 'o cartão mostra "2 modelos no mercado"');
+    conferir((await c585.locator('.ver-modelos').textContent()) === 'Mostrar detalhe', 'o cartão fechado mostra "Mostrar detalhe"');
     conferir((await c585.locator('a').count()) === 0 && (await c585.locator('.modelos').count()) === 0, 'fechado, o cartão de 585 W não lista modelos nem links');
     const ordemW = await pagina.locator('#lista-catalogo .cartao h4').allTextContents();
     const pot = ordemW.map((t) => Number(/de (\d+) W/.exec(t)?.[1]));
@@ -171,6 +179,7 @@ async function principal() {
     const idReferencia = await c585.getAttribute('data-item-id');
     await c585.locator('.ver-modelos').click();
     conferir((await c585.locator('.modelos .modelo').count()) === 2, 'abrir o detalhe lista os 2 modelos');
+    conferir((await c585.locator('.rotulo-secao').textContent()).includes('2 modelos no mercado'), 'o detalhe diz "2 modelos no mercado"');
     const linksDetalhe = await c585.locator('.modelos a').evaluateAll((l) => l.map((a) => [a.textContent, a.target, a.rel]));
     conferir(linksDetalhe.length === 2 && linksDetalhe.every(([t, a, r]) => t === 'ver anúncio' && a === '_blank' && r === 'noopener noreferrer'), 'o detalhe mostra o link "ver anúncio" de cada modelo');
     await captura('14c-catalogo-detalhe-aberto');
@@ -2020,8 +2029,8 @@ async function principal() {
     e = await estado();
     let texto = await painel().textContent();
     conferir(/A bateria segurou (\d+ h( \d+ min)?|\d+ min): das 18:00 às \d\d:\d\d\./.test(texto), `texto do resultado com o ventilador: "${texto}"`);
-    conferir(/Aparelhos ligados: Ventilador, somando 50 W\./.test(texto), `o resultado deveria listar o ventilador e os 50 W: "${texto}"`);
-    conferir(texto.includes('inversor de 500 W') && texto.includes('Geladeira e micro-ondas'), 'o resultado deveria avisar da geladeira e do micro-ondas');
+    conferir(/Aparelhos ligados: Ventilador, somando 50 W de consumo médio./.test(texto), `o resultado deveria listar o ventilador e os 50 W: "${texto}"`);
+    conferir(texto.includes('inversor de 500 W') && texto.includes('Micro-ondas e chuveiro') && texto.includes('confira no manual'), 'o resultado deveria avisar do micro-ondas e do chuveiro e do corte do inversor');
     conferir(e.tempo.velocidade === 0 && !e.simulacao.quedaDeLuz.ativa, 'ao terminar o teste o tempo deveria parar e a contagem sem rede acabar');
     conferir(e.simulacao.estadoSim.soc < 0.55, `no teste do ventilador a bateria deveria estar no limite de descarga: ${e.simulacao.estadoSim.soc}`);
     conferir((await pagina.locator('button[data-acao="testar-de-novo"]').count()) === 1 && (await pagina.locator('#passo-a-passo button[data-acao="sair"]').count()) === 1, 'o resultado deveria ter "Testar de novo" e "Sair do tutorial"');
@@ -2050,8 +2059,8 @@ async function principal() {
     await esperarTeste('rodando', 5000);
     await esperarTeste('resultado', 150000);
     texto = await painel().textContent();
-    conferir(texto.includes('A bateria passou de 24 horas. O ponto mais baixo foi') && /às \d\d:\d\d; de dia a placa repôs o que foi gasto à noite\./.test(texto), `texto do resultado com a lâmpada: "${texto}"`);
-    conferir(/Aparelhos ligados: Lâmpada LED, somando 9 W\./.test(texto) && !texto.includes('Ventilador, somando'), `o resultado deveria listar só a lâmpada ligada: "${texto}"`);
+    conferir(texto.includes('A bateria passou de 24 horas. O ponto mais baixo foi') && /às \d\d:\d\d\. Ao fim das 24 horas ela estava em \d+ %: a placa não repôs tudo/.test(texto), `texto do resultado com a lâmpada: "${texto}"`);
+    conferir(/Aparelhos ligados: Lâmpada LED, somando 9 W de consumo médio./.test(texto) && !texto.includes('Ventilador, somando'), `o resultado deveria listar só a lâmpada ligada: "${texto}"`);
     e = await estado();
     conferir(e.simulacao.quedaDeLuz.ativa === false && e.tempo.velocidade === 0, 'o teste da lâmpada deveria parar o tempo e encerrar a contagem');
     await captura('89-tutorial-resultado-lampada');
@@ -2094,6 +2103,145 @@ async function principal() {
   await verificarTutorial();
 
   await verificarConjunto();
+
+  // Grampo de parede (cena-e-interface.md, seção 8): dois grampos postos com o mouse em um cabo do quartinho,
+  // a ordem em `cabo.grampos`, o comprimento novo, o desfazer, o Delete e a recusa quando não há cabo.
+  async function verificarGrampo() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const projeto = async () => (await estado()).projeto;
+    const noMundo = (p) => [-p[0], p[1], -p[2]];
+    const telaDoPonto = (p) => og((q) => window.__offgrid.telaDoPonto(q), p);
+    const parado = async () => {
+      await esperar(300);
+      await og(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return og(() => window.__offgrid.interacao());
+    };
+    /** Aperta no cartão do grampo e leva o ponteiro até o ponto da casa, sem soltar. */
+    const levarGrampo = async (ponto) => {
+      const de = await og(() => window.__offgrid.telaDoCartao('acc-grampo'));
+      conferir(Array.isArray(de), 'o catálogo deveria ter o cartão do grampo de parede');
+      const ate = await telaDoPonto(ponto);
+      await pagina.mouse.move(de[0], de[1]);
+      await esperar(150);
+      await pagina.mouse.down();
+      await pagina.mouse.move(ate[0], ate[1], { steps: 10 });
+      return parado();
+    };
+    const soltar = async () => {
+      await pagina.mouse.up();
+      await esperar(300);
+    };
+    const c5 = async () => (await projeto()).cabos.find((c) => c.uid === 'c5');
+    const grampos = async () => (await projeto()).dispositivos.filter((d) => d.itemId === 'acc-grampo');
+    /**
+     * `(|dx| + |dy| + |dz|) × 1,1` somado pelos trechos do cabo c5: terminal, grampos na ordem, terminal.
+     * O ponto do grampo aqui é o centro da peça; o cabo passa a milímetros dele, dentro do arco.
+     */
+    const brutoDeC5 = () =>
+      og(() => {
+        const o = window.__offgrid;
+        const p = o.estado().projeto;
+        const c = p.cabos.find((x) => x.uid === 'c5');
+        const ponta = (x) => o.camadas.dispositivos.terminal(x.disp, x.terminal).pos.toArray();
+        const pontos = [ponta(c.de), ...(c.grampos ?? []).map((g) => p.dispositivos.find((d) => d.uid === g).pos), ponta(c.para)];
+        let soma = 0;
+        for (let i = 0; i + 1 < pontos.length; i++) soma += [0, 1, 2].reduce((s, k) => s + Math.abs(pontos[i][k] - pontos[i + 1][k]), 0) * 1.1;
+        return soma;
+      });
+    /** O comprimento gravado é a soma arredondada a 0,1 m: até 0,05 do arredondamento, mais 1 cm do ponto dentro do grampo. */
+    const conferirComprimento = async (quando) => {
+      const bruto = await brutoDeC5();
+      const c = await c5();
+      conferir(Math.abs(c.comprimento - bruto) <= 0.06 && Math.abs(c.comprimento * 10 - Math.round(c.comprimento * 10)) < 1e-9, `${quando}: o comprimento do cabo deveria ser a soma dos trechos (${bruto.toFixed(3)} m), arredondada a 0,1 m; está em ${c.comprimento}`);
+      return c.comprimento;
+    };
+
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await esperar(600);
+    let p = await projeto();
+    const inversor = p.dispositivos.find((d) => d.uid === 'inversor');
+    const comprimentoInicial = (await c5()).comprimento;
+    const sugestoesAntes = JSON.stringify((await estado()).derivados.sugestoes.map((s) => s.titulo));
+    const pecasAntes = p.dispositivos.length;
+    // De dentro do quartinho, de frente para a parede do fundo, onde ficam o inversor e a tomada da rede.
+    const zParede = inversor.pos[2] - 0.06;
+    await mudarCamera(noMundo([inversor.pos[0] + 0.25, 1.0, inversor.pos[2] + 1.6]), noMundo([inversor.pos[0] + 0.3, 0.95, zParede]));
+    await esperar(400);
+
+    // ---- Primeiro grampo, sem nada selecionado: prende o cabo mais próximo (o do inversor à tomada da rede), que acende.
+    let s = await levarGrampo([inversor.pos[0] + 0.6, 0.85, zParede]);
+    conferir(s.modo === 'catalogo' && s.valido === true && s.cabo === 'c5', `o grampo sobre a parede, abaixo da tomada, deveria prender o cabo c5: ${JSON.stringify(s)}`);
+    conferir(/Solte para prender o cabo aqui/.test((await pagina.locator('[data-offgrid-dica]').textContent()) ?? ''), 'a dica deveria dizer que o grampo vai prender o cabo');
+    await captura('92-grampo-fantasma-e-cabo-aceso');
+    await soltar();
+    let c = await c5();
+    let g = await grampos();
+    conferir(g.length === 1 && g[0].superficie === 'parede-quartinho-fundo' && JSON.stringify(c.grampos) === JSON.stringify([g[0].uid]), `soltar o grampo deveria criar a peça na parede e pôr o uid dela no cabo: ${JSON.stringify([c.grampos, g])}`);
+    const sel = (await estado()).selecao;
+    conferir(sel?.tipo === 'cabo' && sel.uid === 'c5', `o cabo preso deveria ficar selecionado: ${JSON.stringify(sel)}`);
+    const comUm = await conferirComprimento('com um grampo');
+    const primeiro = g[0].uid;
+
+    // ---- Segundo grampo, com o cabo selecionado: vai para ele, e entra na ordem antes do primeiro (fica do lado do inversor).
+    s = await levarGrampo([inversor.pos[0] + 0.28, 0.45, zParede]);
+    conferir(s.valido === true && s.cabo === 'c5', `com o cabo c5 selecionado, o grampo deveria ir para ele: ${JSON.stringify(s)}`);
+    await soltar();
+    c = await c5();
+    g = await grampos();
+    const segundo = g.find((x) => x.uid !== primeiro)?.uid;
+    conferir(g.length === 2 && JSON.stringify(c.grampos) === JSON.stringify([segundo, primeiro]), `o segundo grampo deveria entrar antes do primeiro, que é a ordem que menos alonga o cabo: ${JSON.stringify(c.grampos)}`);
+    const comDois = await conferirComprimento('com dois grampos');
+    conferir(comDois > comUm, `o desvio pelo segundo grampo deveria alongar o cabo: ${comUm} -> ${comDois}`);
+    // O cabo passa pelos dois grampos: um trecho reto entre eles, mais os dois das pontas.
+    const tubos = await og(() => window.__offgrid.camadas.cabos.grupoDe('c5').children.filter((o) => o.name === 'tubo').length);
+    conferir(tubos === 3, `o cabo com dois grampos deveria ser desenhado em três trechos; tem ${tubos}`);
+    // Não atrapalha: nenhuma sugestão nova do consultor, e o grampo não tem terminais.
+    await esperar(900);
+    conferir(JSON.stringify((await estado()).derivados.sugestoes.map((x) => x.titulo)) === sugestoesAntes, 'o grampo não deveria mudar as sugestões do consultor');
+    conferir(await og((u) => window.__offgrid.camadas.dispositivos.grupoDe(u).children.every((o) => !o.name.startsWith('terminal-')), segundo), 'o grampo não deveria ter terminais');
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await captura('93-cabo-preso-por-dois-grampos');
+
+    // ---- Desfazer tira um grampo de cada vez e devolve o comprimento; refazer põe de volta.
+    await og(() => window.__offgrid.acoes.desfazer());
+    await esperar(300);
+    c = await c5();
+    conferir(JSON.stringify(c.grampos) === JSON.stringify([primeiro]) && c.comprimento === comUm && (await grampos()).length === 1, `desfazer deveria tirar o segundo grampo e devolver o comprimento: ${JSON.stringify(c)}`);
+    await og(() => window.__offgrid.acoes.desfazer());
+    await esperar(300);
+    c = await c5();
+    conferir((c.grampos ?? []).length === 0 && c.comprimento === comprimentoInicial && (await grampos()).length === 0 && (await projeto()).dispositivos.length === pecasAntes, `desfazer de novo deveria deixar o cabo como era: ${JSON.stringify(c)}`);
+    await og(() => window.__offgrid.acoes.refazer());
+    await og(() => window.__offgrid.acoes.refazer());
+    await esperar(300);
+    c = await c5();
+    conferir(JSON.stringify(c.grampos) === JSON.stringify([segundo, primeiro]) && c.comprimento === comDois, `refazer deveria devolver os dois grampos: ${JSON.stringify(c)}`);
+
+    // ---- Clique no grampo seleciona o grampo; Delete solta o cabo naquele ponto.
+    const noGrampo = await og((u) => window.__offgrid.telaDe(u), segundo);
+    await pagina.mouse.click(noGrampo[0], noGrampo[1]);
+    await esperar(300);
+    conferir((await estado()).selecao?.uid === segundo, `clicar no grampo deveria selecionar o grampo, e não o cabo: ${JSON.stringify((await estado()).selecao)}`);
+    await pagina.keyboard.press('Delete');
+    await esperar(300);
+    c = await c5();
+    conferir(JSON.stringify(c.grampos) === JSON.stringify([primeiro]) && c.comprimento === comUm, `Delete no grampo deveria soltar o cabo naquele ponto: ${JSON.stringify(c)}`);
+
+    // ---- Sem cabo no projeto, o grampo é recusado, com a mensagem.
+    await og(() => {
+      for (const cabo of window.__offgrid.estado().projeto.cabos) window.__offgrid.acoes.removerCabo(cabo.uid);
+    });
+    await esperar(300);
+    conferir((await grampos()).length === 0, 'apagar o cabo deveria apagar o grampo dele');
+    s = await levarGrampo([inversor.pos[0] + 0.6, 0.85, zParede]);
+    conferir(s.valido === false && s.motivo === 'Puxe um cabo antes de pôr o grampo.', `sem cabo, o grampo deveria ser recusado com a mensagem: ${JSON.stringify(s)}`);
+    await soltar();
+    conferir((await grampos()).length === 0, 'sem cabo, soltar o grampo não deveria criar nada');
+    conferir(((await pagina.locator('[data-offgrid-dica]').textContent()) ?? '') === 'Puxe um cabo antes de pôr o grampo.' && (await pagina.locator('[data-offgrid-dica]').isVisible()), 'a recusa deveria aparecer perto do ponteiro');
+    await captura('94-grampo-recusado-sem-cabo');
+  }
+  await verificarGrampo();
 
   if (erros.length) throw new Error(`Erros na página:\n${erros.join('\n')}`);
   console.log('Verificação concluída sem erros.');

@@ -1947,3 +1947,32 @@ body {
 .rotulo-tutorial:not([hidden]) + .botoes {
   margin-left: auto;
 }
+
+/* ---------------------------------------------------------------- Catálogo simplificado
+   Fechado, o cartão é uma linha: o nome do equipamento e "Mostrar detalhe". */
+.cartao-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cartao-topo h4 {
+  margin: 0;
+}
+
+.cartao .cartao-topo .ver-modelos {
+  margin-top: 0;
+  flex: none;
+  padding: 2px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cartao-topo + * {
+  margin-top: 6px;
+}
+
+.cartao {
+  margin-bottom: 6px;
+}

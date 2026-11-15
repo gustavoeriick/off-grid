@@ -138,8 +138,8 @@ function acompanharTeste(): void {
       // Os 50 % (no chumbo) são a conta do simulador, não uma proteção garantida do inversor.
       texto:
         `A bateria segurou ${duracaoTexto(minuto(apagou) - minuto(inicio))}: das ${horaTexto(inicio)} às ${horaTexto(apagou)}. ` +
-        `O simulador para a conta com a bateria em ${Math.round(sim.estadoSim.soc * 100)} %, o limite saudável deste tipo de bateria: descarregar mais que isso encurta a vida dela. ` +
-        'Na vida real, confira no manual em que tensão o seu inversor desliga; muitos só desligam com a bateria quase vazia.',
+        `O simulador para a conta em ${Math.round(sim.estadoSim.soc * 100)} %, o limite saudável desta bateria. ` +
+        'Na vida real, confira no manual em que tensão o seu inversor desliga.',
       aparelhos: nomes,
       somaW,
     };
@@ -165,7 +165,7 @@ function acompanharTeste(): void {
     const conclusao =
       fim >= 99
         ? 'De dia a placa repôs tudo o que foi gasto à noite.'
-        : `Ao fim das 24 horas ela estava em ${num(fim)} %: a placa não repôs tudo o que foi gasto. Nesse ritmo a bateria perde carga a cada dia, até faltar. Mais placa ou menos consumo fecham a conta.`;
+        : `Ao fim das 24 horas ela estava em ${num(fim)} %: a placa não repôs tudo. Mais placa ou menos consumo fecham a conta.`;
     resultado = {
       tipo: 'passou',
       texto: `A bateria passou de 24 horas. O ponto mais baixo foi ${num(pct)} %, às ${baixo ? horaTexto(baixo.msUtc) : horaTexto(estado.tempo.msUtc)}. ${conclusao}`,
@@ -331,7 +331,7 @@ function resumoDoTutorial(r: Roteiro): Node[] {
       h(
         'p',
         { class: 'passo-texto' },
-        'Quer ver como outro aparelho muda o resultado? Desligue o atual, arraste outro do catálogo, ligue o plugue dele na saída do inversor e teste de novo. Micro-ondas e chuveiro pedem mais do que o inversor de 500 W aguenta: o consultor mostra o motivo.',
+        'Para comparar, desligue este aparelho, ligue outro na saída do inversor e teste de novo. Micro-ondas e chuveiro pedem mais do que o inversor de 500 W aguenta.',
       ),
       h('div', { class: 'passo-botoes' }, deNovo, botaoSair),
     ];
