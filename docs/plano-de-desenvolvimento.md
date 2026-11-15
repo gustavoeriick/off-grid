@@ -262,3 +262,10 @@ Decisões do Gustavo, tomadas em 14/11/2026:
 5. Aprovada a especificação, com os ajustes de horário de uso e de tipos de aparelho.
 
 A coleta complementar (parte D) foi feita em 14/11/2026 e está no mesmo arquivo da pesquisa. Os itens dela estão na seção 5 da especificação do catálogo.
+
+Ideias para depois, anotadas a pedido do Gustavo em 15/11/2026 (nada disso está planejado nem aprovado):
+
+- **Segunda área do projeto sobre Lora.** Ele pediu só para anotar; o escopo está em aberto.
+- **Acabamento da instalação:** preço e mais opções de grampo, canaleta ou eletroduto para os circuitos de tomada, e prateleira para bateria e inversor.
+
+O objetivo do projeto, nas palavras dele em 15/11/2026: aprender sobre instalação solar off-grid e ter uma noção da autonomia do conjunto.
