@@ -5,6 +5,7 @@ import { acoes, assinar, estado, type ModoVisao } from '../estado';
 import { localDoProjeto } from '../nucleo/irradiancia';
 import type { CasaConfig, Clima, Varanda } from '../nucleo/tipos';
 import { montarGlossario } from './aprender';
+import { h } from './formato';
 import { montarAvisos, reiniciarAvisosVistos } from './avisos';
 import { montarCatalogo } from './catalogo';
 import { montarCidade } from './cidade';
@@ -84,7 +85,57 @@ export function montarInterface(): void {
   montarBarraDeObstaculos();
   montarCidade();
   montarPassoAPasso();
+  montarBoasVindas();
   registrarAuxiliaresDeVerificacao();
+}
+
+// ---------------------------------------------------------------- Primeira abertura
+
+const CHAVE_BOAS_VINDAS = 'offgrid.boasvindas.vista';
+
+/**
+ * Cartão "Por onde começar", no canto da cena, só na primeira abertura neste navegador.
+ * Some com "Entendi", ao abrir o passo a passo ou na primeira mudança feita no projeto.
+ */
+function montarBoasVindas(): void {
+  try {
+    if (localStorage.getItem(CHAVE_BOAS_VINDAS) === '1') return;
+  } catch {
+    return; // sem gravação no navegador, o cartão voltaria a cada abertura: melhor não mostrar
+  }
+  // Um passo a passo em andamento (página recarregada) ocupa o mesmo canto.
+  if (!el<HTMLElement>('#passo-a-passo').hidden) return;
+  const entendi = h('button', { type: 'button', 'data-acao': 'entendi' }, 'Entendi');
+  const roteiro = h('button', { type: 'button', 'data-acao': 'passo-a-passo' }, 'Abrir o passo a passo');
+  const cartao = h(
+    'aside',
+    { id: 'boas-vindas', class: 'boas-vindas', 'aria-label': 'Por onde começar' },
+    h('h4', null, 'Por onde começar'),
+    h(
+      'ul',
+      null,
+      h('li', null, 'A casa já vem com o seu plano montado como está no papel: placa na varanda, inversor e bateria no quartinho.'),
+      h('li', null, 'À direita, o Consultor lista o que precisa mudar. Cada item tem um botão que resolve e um “Por quê?” que explica.'),
+      h('li', null, 'Embaixo, mude a hora, acelere o tempo e simule uma queda de luz para ver quanto a bateria dura.'),
+      h('li', null, 'Para aprender montando do zero, peça por peça, use o passo a passo.'),
+    ),
+    h('div', { class: 'boas-vindas-botoes' }, roteiro, entendi),
+  );
+  el('#centro').append(cartao);
+  let cancelar: () => void = () => undefined;
+  const fechar = (): void => {
+    cartao.remove();
+    cancelar();
+    try {
+      localStorage.setItem(CHAVE_BOAS_VINDAS, '1');
+    } catch {
+      /* ignora */
+    }
+  };
+  cancelar = assinar('projeto', fechar);
+  entendi.addEventListener('click', fechar);
+  el('#botao-passo-a-passo').addEventListener('click', fechar);
+  roteiro.addEventListener('click', () => el<HTMLButtonElement>('#botao-passo-a-passo').click());
 }
 
 /** Acrescenta ao `window.__offgrid`, que a cena cria, o que o roteiro de verificação usa para os avisos. */
@@ -155,11 +206,16 @@ function montarTempo(): void {
 /** Avanço do tempo com a velocidade escolhida. O laço completo de simulação vem na fase 3. */
 function montarAvancoDoTempo(): void {
   let anterior = performance.now();
+  // Em "Editar casa", cada passo de um arraste refaz a casa e a sombra das placas. Com o relógio correndo, a simulação pediria
+  // essa sombra de novo a cada quadro e o arraste travaria: o relógio espera o botão do mouse ser solto.
+  let arrastandoNaCena = false;
+  el('#cena').addEventListener('pointerdown', () => (arrastandoNaCena = true), true);
+  for (const tipo of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(tipo, () => (arrastandoNaCena = false), true);
   const passo = (agora: number) => {
     const dt = Math.min(0.1, (agora - anterior) / 1000);
     anterior = agora;
     const v = estado.tempo.velocidade;
-    if (v > 0 && dt > 0) {
+    if (v > 0 && dt > 0 && !(arrastandoNaCena && estado.edicaoCasa.ativa)) {
       // Avança simulando: geração, consumo e bateria andam junto com o relógio.
       acoes.avancarTempo(v * dt);
       // Passou do fim de 2026: volta ao começo do ano.

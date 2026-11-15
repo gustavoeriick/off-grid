@@ -5,7 +5,9 @@ import { el, mostrarMensagem } from './formato';
 
 function emCampoDeTexto(alvo: EventTarget | null): boolean {
   if (!(alvo instanceof HTMLElement)) return false;
-  return alvo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(alvo.tagName);
+  if (alvo.isContentEditable || alvo.tagName === 'TEXTAREA') return true;
+  // Controle deslizante, caixa de marcar e botão não recebem texto: com o foco neles, os atalhos continuam valendo.
+  return alvo instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button', 'file'].includes(alvo.type);
 }
 
 function exportar(): void {
@@ -31,7 +33,28 @@ async function importar(arquivo: File): Promise<void> {
   }
 }
 
+/** Menu "Projeto": abre com o botão; fecha ao escolher um item, ao clicar fora e com Esc. */
+function montarMenuDoProjeto(): void {
+  const botao = el<HTMLButtonElement>('#botao-projeto');
+  const lista = el<HTMLElement>('#lista-projeto');
+  const alternar = (aberto: boolean): void => {
+    lista.hidden = !aberto;
+    botao.setAttribute('aria-expanded', String(aberto));
+  };
+  botao.addEventListener('click', () => alternar(lista.hidden === true));
+  lista.addEventListener('click', (e) => {
+    if ((e.target as Element).closest('button')) alternar(false);
+  });
+  window.addEventListener('pointerdown', (e) => {
+    if (!lista.hidden && !(e.target as Element).closest?.('#menu-projeto')) alternar(false);
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !lista.hidden) alternar(false);
+  });
+}
+
 export function montarTopo(): void {
+  montarMenuDoProjeto();
   el('#botao-desfazer').addEventListener('click', () => acoes.desfazer());
   el('#botao-refazer').addEventListener('click', () => acoes.refazer());
   el('#botao-novo').addEventListener('click', () => {
@@ -47,14 +70,24 @@ export function montarTopo(): void {
     if (f) void importar(f);
   });
 
+  // Com o botão do mouse apertado (peça, cabo ou medida sendo arrastada), desfazer e refazer esperam o arraste acabar:
+  // trocar o projeto no meio dele deixaria o arraste sem ponto de retorno.
+  let arrastando = false;
+  // Só conta o que começa na cena ou em um cartão do catálogo: uma lista de opções aberta não devolve o "soltar" à página.
+  window.addEventListener('pointerdown', (e) => (arrastando = e.target instanceof Element && e.target.closest('#cena, #lista-catalogo') !== null), true);
+  for (const tipo of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(tipo, () => (arrastando = false), true);
+
   window.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey || emCampoDeTexto(e.target)) return;
+    if (arrastando) return;
     const tecla = e.key.toLowerCase();
     if (tecla === 'z' && !e.shiftKey) acoes.desfazer();
     else if (tecla === 'y' || (tecla === 'z' && e.shiftKey)) acoes.refazer();
     else return;
     e.preventDefault();
   });
+
+  el('#botao-vista-inicial').addEventListener('click', () => window.dispatchEvent(new CustomEvent('offgrid:vista-inicial')));
 
   // Editar casa.
   const botao = el<HTMLButtonElement>('#botao-editar-casa');
@@ -98,6 +131,7 @@ export function montarTopo(): void {
     botao.setAttribute('aria-pressed', String(ativa));
     botao.textContent = ativa ? 'Sair da edição' : 'Editar casa';
     faixa.hidden = !ativa;
+    el('#ajuda-camera').hidden = ativa;
     seletor.hidden = !ativa || estado.projeto.casa.andares < 2;
     andares.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.andar) === andar)));
   };

@@ -4,8 +4,8 @@
 import { CATALOGO } from '../catalogo';
 import { acoes, assinar, estado } from '../estado';
 import { comodoDe } from '../nucleo/comodos';
-import type { Acao, GrupoOrcamento, Nivel, Sugestao } from '../nucleo/tipos';
-import { abrirCatalogo } from './catalogo';
+import type { Acao, CasaConfig, Dispositivo, GrupoOrcamento, Nivel, Sugestao } from '../nucleo/tipos';
+import { abrirCatalogo, destacarQuadroNoCatalogo } from './catalogo';
 import { blocoPorQue } from './aprender';
 import { rodapeDeLimite } from './avisos';
 import { brl, dataBr, el, h, num, substituir } from './formato';
@@ -19,7 +19,11 @@ export function abrirAbaDireita(nome: string): void {
 
 function executar(acao: Acao): void {
   if (acoes.aplicarAcao(acao)) return;
-  if (acao.tipo === 'ver-catalogo') abrirCatalogo(acao.categoria);
+  if (acao.tipo === 'ver-catalogo') {
+    // "Ver instalação" pede o quadro de energia: a lista dessa aba é longa, então o cartão dele é mostrado e destacado.
+    if (acao.categoria === 'acessorio') destacarQuadroNoCatalogo();
+    else abrirCatalogo(acao.categoria);
+  }
   else if (acao.tipo === 'mais-placa' || acao.tipo === 'mais-bateria') window.dispatchEvent(new CustomEvent('offgrid:acao', { detail: acao }));
 }
 
@@ -124,6 +128,26 @@ function desenharOrcamento(): void {
   substituir(el('#painel-orcamento'), nos);
 }
 
+/**
+ * Cômodo de cada aparelho, guardado enquanto a planta (largura, profundidade, andares, paredes internas e cômodos) e o lugar
+ * da peça são os mesmos. Achar o cômodo percorre a planta inteira, e a lista é refeita a cada recálculo: sem guardar,
+ * isso custava mais que o próprio cálculo e travava os arrastes.
+ */
+let plantaDosComodos: readonly unknown[] = [];
+const comodosGuardados = new Map<string, ReturnType<typeof comodoDe>>();
+
+function comodoDoAparelho(d: Dispositivo): ReturnType<typeof comodoDe> {
+  const casa: CasaConfig = estado.projeto.casa;
+  const planta = [casa.largura, casa.profundidade, casa.andares, casa.paredesInternas, casa.comodos];
+  if (planta.some((x, i) => x !== plantaDosComodos[i])) {
+    plantaDosComodos = planta;
+    comodosGuardados.clear();
+  }
+  const chave = `${d.uid}|${d.superficie}|${d.pos.join(',')}`;
+  if (!comodosGuardados.has(chave)) comodosGuardados.set(chave, comodoDe(casa, d));
+  return comodosGuardados.get(chave) ?? null;
+}
+
 function desenharSistema(): void {
   const e = estado.derivados.estimativas;
   const aparelhos = estado.projeto.dispositivos.filter((d) => CATALOGO.get(d.itemId)?.categoria === 'aparelho');
@@ -146,7 +170,7 @@ function desenharSistema(): void {
   for (const d of aparelhos) {
     const item = CATALOGO.get(d.itemId);
     if (item?.categoria !== 'aparelho') continue;
-    const comodo = comodoDe(estado.projeto.casa, d);
+    const comodo = comodoDoAparelho(d);
     nos.push(
       h(
         'div',

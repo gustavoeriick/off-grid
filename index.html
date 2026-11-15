@@ -11,24 +11,25 @@
     <div id="app">
       <header id="topo">
         <h1 id="nome-projeto">Simulador off-grid</h1>
-        <div class="botoes" id="botoes-projeto" role="group" aria-label="Projeto">
-          <button type="button" id="botao-desfazer" title="Desfazer (Ctrl+Z)">Desfazer</button>
-          <button type="button" id="botao-refazer" title="Refazer (Ctrl+Y)">Refazer</button>
+        <div class="botoes" id="botoes-projeto" role="group" aria-label="Desfazer e refazer">
+          <button type="button" id="botao-desfazer" title="Desfazer a última mudança (Ctrl+Z)">Desfazer</button>
+          <button type="button" id="botao-refazer" title="Refazer o que foi desfeito (Ctrl+Y)">Refazer</button>
         </div>
-        <div class="grupo-linha" role="group" aria-label="Arquivo">
-          <button type="button" id="botao-novo">Novo</button>
-          <button type="button" id="botao-exportar" title="Baixa o projeto em um arquivo .json">Exportar</button>
-          <button type="button" id="botao-importar" title="Abre um arquivo .json exportado antes">Importar</button>
+        <div class="menu-topo" id="menu-projeto">
+          <button type="button" id="botao-projeto" aria-haspopup="true" aria-expanded="false" title="Começar de novo, guardar o projeto em um arquivo ou abrir um arquivo">Projeto ▾</button>
+          <div class="menu-lista" id="lista-projeto" role="group" aria-label="Projeto" hidden>
+            <button type="button" id="botao-novo" title="Volta ao plano inicial. Dá para desfazer.">Novo: voltar ao plano inicial</button>
+            <button type="button" id="botao-exportar" title="Baixa o projeto em um arquivo .json">Exportar: guardar em um arquivo</button>
+            <button type="button" id="botao-importar" title="Abre um arquivo .json exportado antes">Importar: abrir um arquivo</button>
+            <p class="menu-nota">O projeto também fica gravado neste navegador a cada mudança.</p>
+          </div>
           <input type="file" id="arquivo-importar" accept=".json,application/json" hidden />
         </div>
-        <div class="grupo-linha" role="group" aria-label="Editar casa">
-          <button type="button" id="botao-editar-casa" aria-pressed="false" title="Mexer no quartinho, nas varandas, nas paredes e nos cômodos">Editar casa</button>
-          <div class="botoes" id="seletor-andar" hidden>
-            <button type="button" data-andar="0" aria-pressed="true">Térreo</button>
-            <button type="button" data-andar="1" aria-pressed="false">Superior</button>
-          </div>
+        <div class="botoes" id="botoes-casa" role="group" aria-label="Casa">
+          <button type="button" id="abrir-casa" aria-expanded="false" title="Largura, andares, telhado, varandas e quartinho, em números">Medidas da casa</button>
+          <button type="button" id="botao-editar-casa" aria-pressed="false" title="Mexer com o mouse no quartinho, nas varandas, nas paredes, nos cômodos e nos vizinhos">Editar casa</button>
         </div>
-        <div class="grupo-linha" role="group" aria-label="Aprender">
+        <div class="botoes" id="botoes-aprender" role="group" aria-label="Aprender">
           <button type="button" id="botao-passo-a-passo" title="Monta um sistema com um roteiro, um passo de cada vez">Passo a passo</button>
           <button type="button" id="botao-glossario" title="Explica os termos de eletricidade">Glossário</button>
           <button type="button" id="botao-seguranca" title="Avisos para não se machucar">Segurança</button>
@@ -52,15 +53,26 @@
 
       <main id="centro">
         <div id="cena"></div>
-        <p id="faixa-edicao" class="faixa-edicao" role="status" hidden>Editando a casa: arraste o quartinho para mudar de lugar, clique em “+ Varanda” para criar uma varanda (e arraste as bolinhas azuis para mudar o tamanho), arraste no piso para desenhar uma parede e clique no piso para dar nome ao cômodo; Esc sai.</p>
-        <div id="barra-obstaculos" class="barra-obstaculos" role="group" aria-label="Acrescentar o que faz sombra em volta da casa" hidden>
-          <span title="O que faz sombra em volta da casa. Depois de criar, arraste para o lugar e ajuste as medidas no painel.">Acrescentar:</span>
-          <button type="button" data-obstaculo="muro">Muro</button>
-          <button type="button" data-obstaculo="vizinho">Vizinho</button>
-          <button type="button" data-obstaculo="arvore">Árvore</button>
+        <p id="ajuda-camera" class="ajuda-camera">
+          <span>Girar: arrastar · Deslizar: botão direito · Aproximar: roda do mouse · Centralizar: duplo clique</span>
+          <button type="button" id="botao-vista-inicial" title="Volta a câmera para a vista de quando o simulador abre">Vista inicial</button>
+        </p>
+        <p id="faixa-edicao" class="faixa-edicao" role="status" hidden>Editando a casa. Arraste o quartinho, as paredes e as bolinhas azuis das varandas. Clique em “+ Varanda” para criar uma varanda, arraste no piso para desenhar uma parede e clique no piso para dar nome ao cômodo. Esc sai.</p>
+        <div id="barra-obstaculos" class="barra-obstaculos" role="group" aria-label="Ferramentas de Editar casa" hidden>
+          <div class="botoes" id="seletor-andar" role="group" aria-label="Andar em edição" hidden>
+            <button type="button" data-andar="0" aria-pressed="true">Térreo</button>
+            <button type="button" data-andar="1" aria-pressed="false">Superior</button>
+          </div>
+          <span title="O que faz sombra em volta da casa. Depois de criar, arraste para o lugar e ajuste as medidas no painel.">Acrescentar o que faz sombra:</span>
+          <button type="button" data-obstaculo="muro" title="Cria um muro no terreno; depois arraste para o lugar">Muro</button>
+          <button type="button" data-obstaculo="vizinho" title="Cria a casa ou o prédio do vizinho; depois arraste para o lugar">Vizinho</button>
+          <button type="button" data-obstaculo="arvore" title="Cria uma árvore; depois arraste para o lugar">Árvore</button>
         </div>
         <section id="form-casa" class="painel-casa" hidden aria-label="Medidas da casa">
-          <h3>Casa</h3>
+          <div class="titulo-casa">
+            <h3>Medidas da casa</h3>
+            <button type="button" id="fechar-casa">Fechar</button>
+          </div>
           <div class="colunas-casa">
             <fieldset>
               <legend>Corpo</legend>
@@ -122,7 +134,6 @@
             </fieldset>
           </div>
           <p class="aviso-quartinho" id="aviso-quartinho" role="status" hidden></p>
-          <button type="button" id="fechar-casa">Fechar</button>
         </section>
       </main>
 
@@ -191,10 +202,6 @@
               <button type="button" data-graus="270" title="Frente para o oeste">O</button>
             </div>
           </div>
-        </div>
-        <div class="grupo">
-          <span class="rotulo">Medidas</span>
-          <button type="button" id="abrir-casa" aria-expanded="false">Casa</button>
         </div>
       </footer>
     </div>

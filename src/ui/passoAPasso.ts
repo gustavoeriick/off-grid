@@ -21,6 +21,8 @@ let atualAntes: string | null = null;
 let feitoRecente: string | null = null;
 let esperaDoFeito: ReturnType<typeof setTimeout> | null = null;
 let painel: HTMLElement | null = null;
+/** A lista de todos os passos começa fechada, para o painel cobrir pouco da cena. */
+let listaAberta = false;
 
 // ---------------------------------------------------------------- Andamento
 
@@ -145,13 +147,18 @@ function emAndamento(r: Roteiro, f: boolean[], atual: number): Node[] {
     gravar();
     avaliar();
   });
+  const verLista = h('button', { type: 'button', class: 'passo-botao', 'data-acao': 'lista', 'aria-expanded': String(listaAberta) }, listaAberta ? 'Esconder os passos' : 'Ver os passos');
+  verLista.addEventListener('click', () => {
+    listaAberta = !listaAberta;
+    desenhar();
+  });
   const botaoSair = h('button', { type: 'button', class: 'passo-botao', 'data-acao': 'sair' }, 'Sair do passo a passo');
   botaoSair.addEventListener('click', sair);
-  botoes.append(pular, botaoSair);
+  botoes.append(pular, verLista, botaoSair);
 
   const lista = h(
     'ol',
-    { class: 'passo-lista' },
+    { class: 'passo-lista', hidden: !listaAberta },
     ...r.passos.map((p, i) => {
       const situacao = f[i] ? 'feito' : pulados.has(p.id) ? 'pulado' : i === atual ? 'atual' : 'adiante';
       return h('li', { class: `passo-item ${situacao}`, 'data-passo-id': p.id }, h('span', { class: 'passo-marca', 'aria-hidden': 'true' }, marca(situacao)), h('span', null, p.titulo));

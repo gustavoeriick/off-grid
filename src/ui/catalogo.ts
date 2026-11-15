@@ -213,6 +213,11 @@ export function destacarNoCatalogo(itemId: string): boolean {
   return true;
 }
 
+/** Consultor, "Ver instalação": abre a aba, rola até o quadro de energia (a peça que se arrasta para a parede) e o destaca. */
+export function destacarQuadroNoCatalogo(): void {
+  if (!destacarNoCatalogo(ID_QUADRO)) abrirCatalogo('acessorio');
+}
+
 /** Passo a passo, sem um item só: abre a aba da categoria e destaca a lista. */
 export function destacarCategoriaNoCatalogo(categoria: Categoria): void {
   abrirCatalogo(categoria);

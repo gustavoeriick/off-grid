@@ -99,7 +99,9 @@ const metros = (v: number, casas = 1): string => v.toLocaleString('pt-BR', { min
 
 function emCampoDeTexto(alvo: EventTarget | null): boolean {
   if (!(alvo instanceof HTMLElement)) return false;
-  return alvo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(alvo.tagName);
+  if (alvo.isContentEditable || alvo.tagName === 'TEXTAREA' || alvo.tagName === 'SELECT') return true;
+  // Controle deslizante, caixa de marcar e botão não recebem texto: com o foco neles, os atalhos continuam valendo.
+  return alvo instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button', 'file'].includes(alvo.type);
 }
 
 /** Desenho de uma alça: botão "+ Varanda", ou um botão redondo com a cor dada. */

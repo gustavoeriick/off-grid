@@ -285,7 +285,12 @@ async function principal() {
       return a.exportarProjeto() === antes;
     });
     conferir(igual, 'exportar e importar por código deveria manter o projeto');
+    // Novo, Exportar e Importar ficam no menu "Projeto" da barra de cima.
+    conferir(await pagina.locator('#lista-projeto').isHidden(), 'o menu Projeto começa fechado');
+    await pagina.locator('#botao-projeto').click();
+    conferir(await pagina.locator('#botao-exportar').isVisible(), 'o menu Projeto deveria mostrar Exportar');
     const [download] = await Promise.all([pagina.waitForEvent('download'), pagina.locator('#botao-exportar').click()]);
+    conferir(await pagina.locator('#lista-projeto').isHidden(), 'escolher um item deveria fechar o menu Projeto');
     conferir(download.suggestedFilename().endsWith('.json'), 'Exportar baixa um .json');
     const caminho = join(pasta, 'exportado.json');
     await download.saveAs(caminho);
@@ -300,6 +305,7 @@ async function principal() {
 
     // Novo pergunta antes.
     pagina.once('dialog', (dlg) => dlg.dismiss());
+    await pagina.locator('#botao-projeto').click();
     await pagina.locator('#botao-novo').click();
     conferir(JSON.stringify((await estado()).projeto) === antes, 'cancelar o "Novo" não muda o projeto');
 
@@ -328,9 +334,19 @@ async function principal() {
   await captura('01-tela-inicial');
   let e = await estado();
   conferir(e.visao === 'completa' && e.projeto.casa.andares === 2, 'estado inicial inesperado');
+  // Primeira abertura: o cartão "Por onde começar" aparece, e as barras de cima e de baixo cabem em uma linha.
+  conferir(await pagina.locator('#boas-vindas').isVisible(), 'na primeira abertura deveria aparecer o cartão "Por onde começar"');
+  const barras = await pagina.evaluate(() => ({
+    base: document.querySelector('#base').getBoundingClientRect().height,
+    topo: Math.max(...[...document.querySelectorAll('#topo button')].filter((b) => b.offsetParent !== null).map((b) => b.offsetHeight)),
+    sobra: document.querySelector('#topo').scrollWidth - document.querySelector('#topo').clientWidth,
+  }));
+  conferir(barras.base < 76, `a barra de baixo deveria caber em uma linha em 1440 de largura: ${JSON.stringify(barras)}`);
+  conferir(barras.topo < 36 && barras.sobra <= 0, `os botões da barra de cima não deveriam quebrar em duas linhas nem sair da tela: ${JSON.stringify(barras)}`);
 
   // 1b. Painéis da fase 2 (catálogo, consultor, orçamento, item selecionado, barra de cima).
   await verificarPaineis();
+  conferir((await pagina.locator('#boas-vindas').count()) === 0, 'o cartão "Por onde começar" deveria sumir na primeira mudança do projeto');
 
   // 2. 21/06 pelos controles: data, depois hora.
   await pagina.locator('#mes').selectOption('5');
@@ -371,7 +387,7 @@ async function principal() {
   }
 
   // 4. Casa térrea, pelo formulário.
-  await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+  await pagina.locator('#abrir-casa').click();
   await pagina.locator('[data-casa="andares"]').selectOption('1');
   e = await estado();
   conferir(e.projeto.casa.andares === 1, 'a casa deveria ter 1 andar');
@@ -392,11 +408,11 @@ async function principal() {
   }
   await pagina.locator('[data-casa="andares"]').selectOption('1');
   await captura('08b-casa-medidas-alteradas');
-  await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await pagina.locator('#fechar-casa').click();
   await captura('09-casa-terrea');
 
   // 5. Varanda nos quatro lados (casa de volta com 2 andares).
-  await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+  await pagina.locator('#abrir-casa').click();
   await pagina.locator('[data-casa="andares"]').selectOption('2');
   /** Liga ou desliga a varanda de um lado pela caixa "tem varanda". */
   const marcar = async (seletor, ligado) => {
@@ -410,9 +426,9 @@ async function principal() {
     await apenas(lado);
     e = await estado();
     conferir(e.projeto.casa.varandas.length === 1 && e.projeto.casa.varandas[0].lado === lado, `varanda deveria estar só em ${lado}`);
-    await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await pagina.locator('#fechar-casa').click();
     await captura(`10-varanda-${lado}`);
-    await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+    await pagina.locator('#abrir-casa').click();
   }
   await apenas('frente');
   await preencher('#varanda-frente-prof', 4);
@@ -433,9 +449,9 @@ async function principal() {
     e = await estado();
     conferir(e.projeto.casa.quartinho[chave] === valor, `quartinho.${chave} deveria ser ${valor}, veio ${e.projeto.casa.quartinho[chave]}`);
   }
-  await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await pagina.locator('#fechar-casa').click();
   await captura('10b-quartinho-alterado');
-  await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+  await pagina.locator('#abrir-casa').click();
 
   await apenas(null);
   e = await estado();
@@ -452,19 +468,19 @@ async function principal() {
   let vd = e.projeto.casa.varandas.find((x) => x.lado === 'direita');
   let vf = e.projeto.casa.varandas.find((x) => x.lado === 'frente');
   conferir(e.projeto.casa.varandas.length === 2 && vf?.largura === null && vd?.largura === 3 && vd?.deslocamento === 1, 'deveria haver varanda na frente inteira e meia varanda na direita');
-  await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await pagina.locator('#fechar-casa').click();
   await captura('11b-frente-inteira-e-meia-direita');
   await de_cima('11c-de-cima-frente-inteira-e-meia-direita');
-  await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+  await pagina.locator('#abrir-casa').click();
 
   // Quatro varandas.
   for (const l of lados) await marcar(`#varanda-${l}-tem`, true);
   e = await estado();
   conferir(e.projeto.casa.varandas.length === 4 && lados.every((l) => e.projeto.casa.varandas.some((x) => x.lado === l)), 'deveria haver quatro varandas');
-  await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await pagina.locator('#fechar-casa').click();
   await captura('11d-quatro-varandas');
   await de_cima('11e-de-cima-quatro-varandas');
-  await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+  await pagina.locator('#abrir-casa').click();
 
   // Altura mínima da beira: varanda de 6 m a 100% em casa térrea de pé-direito 2,2 deve ser cortada.
   await apenas(null);
@@ -487,7 +503,7 @@ async function principal() {
   await preencher('[data-casa="peDireito"]', 3);
   await pagina.locator('[data-casa="andares"]').selectOption('2');
   await apenas('frente');
-  await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+  await pagina.locator('#fechar-casa').click();
 
   // 6. Orientação 90 pela letra L, e pelo controle deslizante.
   await pagina.getByRole('button', { name: 'L', exact: true }).click();
@@ -725,9 +741,9 @@ async function principal() {
     const deCima = p.dispositivos.filter((d) => d.superficie === 'piso-superior').map((d) => d.uid);
     const yDaPlaca = p.dispositivos.find((d) => d.uid === 'placa1').pos[1];
     conferir(deCima.length === 3, 'o cenário deveria ter três aparelhos no andar de cima');
-    await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+    await pagina.locator('#abrir-casa').click();
     await pagina.locator('[data-casa="andares"]').selectOption('1');
-    await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await pagina.locator('#fechar-casa').click();
     await esperar(300);
     p = await projeto();
     const aVista = await og(() => window.__offgrid.superficies());
@@ -1599,6 +1615,95 @@ async function principal() {
     conferir((await og(() => sessionStorage.getItem('offgrid.passoapasso'))) === null, 'sair deveria apagar o andamento da sessão');
   }
   await verificarClimaCidadePassoAPasso();
+
+  // ---------------------------------------------------------------- O conjunto: cabo com dois cliques, atalhos com o foco em um controle e câmera
+  async function verificarConjunto() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const situacao = () => og(() => window.__offgrid.interacao());
+    const noMundo = (p) => [-p[0], p[1], -p[2]];
+    const terminal = (uid, t) => og(([u, x]) => window.__offgrid.telaDoTerminal(u, x), [uid, t]);
+    await og(() => {
+      const a = window.__offgrid.acoes;
+      if (window.__offgrid.estado().edicaoCasa.ativa) a.definirEdicaoDaCasa(false);
+      a.novoProjeto();
+      a.selecionar(null);
+    });
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    for (let i = 0; i < 20 && (await pagina.locator('#avisos-seguranca .entendi').count()); i++) await pagina.locator('#avisos-seguranca .entendi').click();
+
+    // Cabo com dois cliques: clique no terminal, câmera livre no caminho, clique no destino.
+    let p = (await estado()).projeto;
+    const inversor = p.dispositivos.find((d) => d.uid === 'inversor');
+    const doPositivo = p.cabos.find((c) => [c.de, c.para].some((x) => x.disp === 'bateria1' && x.terminal === 'pos') && [c.de, c.para].some((x) => x.disp === 'inversor' && x.terminal === 'batPos'));
+    conferir(doPositivo, 'o cenário deveria ter o cabo do positivo da bateria ao BAT+ do inversor');
+    await og((uid) => window.__offgrid.acoes.removerCabo(uid), doPositivo.uid);
+    for (let i = 0; i < 20 && (await pagina.locator('#avisos-seguranca .entendi').count()); i++) await pagina.locator('#avisos-seguranca .entendi').click();
+    const cabos = (await estado()).projeto.cabos.length;
+    await mudarCamera(noMundo([inversor.pos[0] + 0.4, 1.5, inversor.pos[2] + 5.4]), noMundo([inversor.pos[0], 1.1, inversor.pos[2]]));
+    await esperar(400);
+    let ponto = await terminal('bateria1', 'pos');
+    await pagina.mouse.click(ponto[0], ponto[1]);
+    await esperar(200);
+    conferir((await situacao()).modo === 'cabo', `um clique no terminal deveria prender o cabo ao ponteiro: ${JSON.stringify(await situacao())}`);
+    // Girar a câmera (arrastar no vazio) não solta o cabo; a câmera volta ao lugar para o segundo clique.
+    const tela = await pagina.locator('#cena canvas').boundingBox();
+    await pagina.mouse.move(tela.x + 40, tela.y + 60);
+    await pagina.mouse.down();
+    await pagina.mouse.move(tela.x + 90, tela.y + 70, { steps: 5 });
+    await pagina.mouse.up();
+    await esperar(200);
+    conferir((await situacao()).modo === 'cabo', 'girar a câmera não deveria soltar o cabo preso ao ponteiro');
+    await mudarCamera(noMundo([inversor.pos[0] + 0.4, 1.5, inversor.pos[2] + 5.4]), noMundo([inversor.pos[0], 1.1, inversor.pos[2]]));
+    await esperar(300);
+    ponto = await terminal('inversor', 'batPos');
+    await pagina.mouse.move(ponto[0], ponto[1], { steps: 6 });
+    await esperar(300);
+    await og(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    conferir((await situacao()).valido === true, `o cabo preso ao ponteiro sobre o BAT+ deveria poder ser ligado: ${JSON.stringify(await situacao())}`);
+    await captura('81-cabo-com-dois-cliques');
+    await pagina.mouse.click(ponto[0], ponto[1]);
+    await esperar(300);
+    p = (await estado()).projeto;
+    conferir(p.cabos.length === cabos + 1 && (await situacao()).modo === 'ocioso', 'o segundo clique deveria criar o cabo e encerrar');
+    const novo = p.cabos[p.cabos.length - 1];
+    conferir(novo.de.disp === 'bateria1' && novo.de.terminal === 'pos' && novo.para.disp === 'inversor' && novo.para.terminal === 'batPos', `o cabo deveria ligar o positivo da bateria ao BAT+: ${JSON.stringify(novo)}`);
+    for (let i = 0; i < 20 && (await pagina.locator('#avisos-seguranca .entendi').count()); i++) await pagina.locator('#avisos-seguranca .entendi').click();
+    // Esc larga o cabo preso ao ponteiro.
+    ponto = await terminal('bateria1', 'neg');
+    await pagina.mouse.click(ponto[0], ponto[1]);
+    await esperar(200);
+    conferir((await situacao()).modo === 'cabo', 'outro clique em um terminal deveria prender outro cabo');
+    await pagina.keyboard.press('Escape');
+    conferir((await situacao()).modo === 'ocioso' && (await estado()).projeto.cabos.length === cabos + 1, 'Esc deveria largar o cabo preso ao ponteiro sem criar nada');
+
+    // Atalhos com o foco no controle da hora: Ctrl+Z continua desfazendo.
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await pagina.locator('#hora').focus();
+    await pagina.keyboard.press('Control+Z');
+    conferir((await estado()).projeto.cabos.length === cabos, 'Ctrl+Z deveria desfazer mesmo com o foco no controle da hora');
+    await pagina.keyboard.press('Control+Y');
+    conferir((await estado()).projeto.cabos.length === cabos + 1, 'Ctrl+Y deveria refazer mesmo com o foco no controle da hora');
+    await og(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+
+    // Câmera: "Vista inicial" volta à vista da abertura; a roda aproxima do ponto sob o ponteiro.
+    await pagina.locator('#botao-vista-inicial').click();
+    let camera = await og(() => window.__offgrid.camera());
+    conferir(Math.abs(camera.pos[0] - CAMERA_INICIAL.pos[0]) < 1e-6 && Math.abs(camera.alvo[1] - CAMERA_INICIAL.alvo[1]) < 1e-6, `"Vista inicial" deveria devolver a câmera: ${JSON.stringify(camera)}`);
+    const q = (await estado()).projeto.casa.quartinho;
+    for (let i = 0; i < 8; i++) {
+      const alvo = await og((pt) => window.__offgrid.telaDoPonto(pt), [q.x, 0.3, q.z + 0.4]);
+      await pagina.mouse.move(alvo[0], alvo[1]);
+      await pagina.mouse.wheel(0, -240);
+      await esperar(80);
+    }
+    await esperar(300);
+    camera = await og(() => window.__offgrid.camera());
+    const perto = Math.hypot(camera.alvo[0] + q.x, camera.alvo[2] + q.z);
+    conferir(perto < 3.5, `a roda deveria aproximar a câmera do quartinho, que estava sob o ponteiro: alvo a ${perto.toFixed(1)} m dele`);
+    await captura('82-roda-aproxima-do-ponteiro');
+    await pagina.locator('#botao-vista-inicial').click();
+  }
+  await verificarConjunto();
 
   if (erros.length) throw new Error(`Erros na página:\n${erros.join('\n')}`);
   console.log('Verificação concluída sem erros.');

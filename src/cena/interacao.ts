@@ -66,7 +66,12 @@ type Modo =
   | { tipo: 'catalogo'; item: Item; giro: number; chao: NoChao; candidato: Candidato | null }
   | { tipo: 'protecao'; item: Protecao; cabo: string | null }
   | { tipo: 'mover'; uid: string; item: Item; giro: number; chao: NoChao; desvio: [number, number]; marcado: boolean; candidato: Candidato | null }
-  | { tipo: 'cabo'; de: PontaCabo; tipoDoTerminal: TipoTerminal; x: number; y: number; moveu: boolean; para: PontaCabo | null; motivo: string | null };
+  /**
+   * Cabo sendo puxado. `fixo` é o cabo começado com um clique no terminal, sem arrastar: ele segue o ponteiro com o botão solto,
+   * a câmera continua livre (girar, deslizar, aproximar, trocar a visão) e um clique no terminal de destino o liga.
+   * É o jeito de ligar duas peças que não aparecem juntas na tela, como um aparelho da sala e o inversor do quartinho.
+   */
+  | { tipo: 'cabo'; de: PontaCabo; tipoDoTerminal: TipoTerminal; x: number; y: number; moveu: boolean; fixo: boolean; para: PontaCabo | null; motivo: string | null };
 
 /** Distância, em pixels, a partir da qual apertar e mexer vira arraste. */
 const LIMIAR_DE_ARRASTE = 4;
@@ -81,7 +86,9 @@ const NOME_DA_SUPERFICIE: Record<TipoSuperficie, string> = { telhado: 'um telhad
 
 function emCampoDeTexto(alvo: EventTarget | null): boolean {
   if (!(alvo instanceof HTMLElement)) return false;
-  return alvo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(alvo.tagName);
+  if (alvo.isContentEditable || alvo.tagName === 'TEXTAREA' || alvo.tagName === 'SELECT') return true;
+  // Controle deslizante, caixa de marcar e botão não recebem texto: com o foco neles, os atalhos continuam valendo.
+  return alvo instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button', 'file'].includes(alvo.type);
 }
 
 export function criarInteracao(c: PartesDaCena): Interacao {
@@ -365,7 +372,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     mostrarTerminal(alvo?.tipo === 'terminal' ? alvo : null);
     mostrarNomeDaPeca(alvo?.tipo === 'dispositivo' ? alvo.uid : null);
     c.canvas.style.cursor = alvo?.tipo === 'terminal' ? 'crosshair' : alvo?.tipo === 'dispositivo' ? 'grab' : alvo?.tipo === 'cabo' ? 'pointer' : '';
-    if (alvo?.tipo === 'terminal') mostrarDica('Aperte e arraste para puxar um cabo', x, y);
+    if (alvo?.tipo === 'terminal') mostrarDica('Arraste até outro terminal para puxar um cabo. Ou clique aqui e depois no outro terminal: assim dá para mexer a câmera no caminho.', x, y);
     else if (alvo?.tipo === 'cabo') {
       const cabo = estado.projeto.cabos.find((k) => k.uid === alvo.uid);
       const tipo = cabo ? CATALOGO.get(cabo.caboId) : undefined;
@@ -418,6 +425,14 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     else mostrarDica(m.candidato.motivo, x, y, 'ruim');
   }
 
+  /** "Cabo de + (placa) até PV+ (inversor)": diz em qual cabo a proteção vai cair, quando dois passam juntos. */
+  function descricaoDoCabo(uid: string): string {
+    const cabo = estado.projeto.cabos.find((k) => k.uid === uid);
+    if (!cabo) return '';
+    const ponta = (p: PontaCabo): string => `${c.dispositivos.terminal(p.disp, p.terminal)?.rotulo ?? p.terminal} (${nomeDaPeca(p.disp)})`;
+    return `Cabo de ${ponta(cabo.de)} até ${ponta(cabo.para)}.`;
+  }
+
   function atualizarProtecao(m: Modo & { tipo: 'protecao' }, x: number, y: number): void {
     const cabo = sobreACena(x, y) && mirar(x, y) ? (caboSob()?.uid ?? null) : null;
     if (cabo !== caboNoAlvo) {
@@ -425,7 +440,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       refazerRealce();
     }
     m.cabo = cabo;
-    if (cabo) mostrarDica(`Solte para instalar neste cabo: ${m.item.nome}`, x, y, 'bom');
+    if (cabo) mostrarDica(`Solte para instalar: ${m.item.nome}. ${descricaoDoCabo(cabo)}`, x, y, 'bom');
     else mostrarDica(`${m.item.nome}: leve até um cabo`, x, y);
   }
 
@@ -518,7 +533,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
 
   function comecarCabo(alvo: Alvo & { tipo: 'terminal' }, x: number, y: number): void {
     const de = { disp: alvo.disp, terminal: alvo.terminal };
-    modo = { tipo: 'cabo', de, tipoDoTerminal: alvo.tipoDoTerminal, x, y, moveu: false, para: null, motivo: null };
+    modo = { tipo: 'cabo', de, tipoDoTerminal: alvo.tipoDoTerminal, x, y, moveu: false, fixo: false, para: null, motivo: null };
     mostrarNomeDaPeca(null);
     mostrarTerminal(de);
     c.dispositivos.realcarTerminais((disp, terminal) => {
@@ -531,7 +546,11 @@ export function criarInteracao(c: PartesDaCena): Interacao {
 
   function atualizarCabo(m: Modo & { tipo: 'cabo' }, x: number, y: number): void {
     const origem = c.dispositivos.terminal(m.de.disp, m.de.terminal);
-    if (!origem) return;
+    if (!origem) {
+      // A peça de origem sumiu (desfazer, apagar): o cabo em andamento acaba.
+      if (m.fixo) encerrar();
+      return;
+    }
     mirar(x, y);
     const alvo = sobreACena(x, y) ? terminalSob(true) : null;
     const outro = alvo && !(alvo.disp === m.de.disp && alvo.terminal === m.de.terminal) ? alvo : null;
@@ -547,7 +566,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
         m.para = destino;
         cor = corDoCabo(m.tipoDoTerminal, outro.tipoDoTerminal);
         ponta = info?.pos ?? null;
-        mostrarDica(`Solte para ligar em ${info?.rotulo ?? outro.terminal} (${nomeDaPeca(outro.disp)})`, x, y, 'bom');
+        mostrarDica(`${m.fixo ? 'Clique' : 'Solte'} para ligar em ${info?.rotulo ?? outro.terminal} (${nomeDaPeca(outro.disp)})`, x, y, 'bom');
       } else mostrarDica(m.motivo, x, y, 'ruim');
       // O rótulo do terminal de destino aparece no lugar do de origem.
       if (sobTerminal && !(sobTerminal.disp === destino.disp && sobTerminal.terminal === destino.terminal)) c.dispositivos.mostrarRotulo(sobTerminal.disp, sobTerminal.terminal, false);
@@ -561,7 +580,9 @@ export function criarInteracao(c: PartesDaCena): Interacao {
         c.dispositivos.destacarTerminal(m.de);
         c.dispositivos.mostrarRotulo(m.de.disp, m.de.terminal, true);
       }
-      mostrarDica('Leve até um terminal aceso', x, y);
+      // Com o cabo preso ao ponteiro, a dica não acompanha o ponteiro por cima dos painéis.
+      if (m.fixo && !sobreACena(x, y)) mostrarDica(null);
+      else mostrarDica(m.fixo ? 'Clique em um terminal aceso para ligar. Dá para girar e aproximar a câmera. Esc cancela.' : 'Leve até um terminal aceso', x, y);
     }
     if (!ponta) {
       // Ponta solta: no plano que passa pelo terminal de origem e fica de frente para a câmera.
@@ -627,8 +648,26 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       // Os comprimentos dos cabos da peça saem agora, de uma vez.
       c.cabos.adiarComprimentos(false);
     } else if (m.tipo === 'cabo') {
-      if (!m.moveu) acoes.selecionar({ tipo: 'dispositivo', uid: m.de.disp });
-      else {
+      if (m.fixo) {
+        // Cabo começado com clique: soltar o botão depois de girar a câmera não acaba com ele; um clique no vazio, sim.
+        if (cliqueNoVazio && Math.hypot(x - cliqueNoVazio[0], y - cliqueNoVazio[1]) <= LIMIAR_DE_ARRASTE) {
+          cliqueNoVazio = null;
+          encerrar();
+          if (sobreACena(x, y)) pairar(x, y);
+        }
+        cliqueNoVazio = null;
+        return;
+      }
+      if (!m.moveu) {
+        // Clique no terminal, sem arrastar: a peça fica selecionada (é assim que se seleciona uma tomada, que é quase só terminal)
+        // e o cabo fica preso ao ponteiro até o clique no destino.
+        acoes.selecionar({ tipo: 'dispositivo', uid: m.de.disp });
+        m.fixo = true;
+        m.moveu = true;
+        c.controles.enabled = true;
+        atualizarCabo(m, x, y);
+        return;
+      } else {
         atualizarCabo(m, x, y);
         if (m.para) {
           const uid = acoes.adicionarCabo(m.de, m.para, c.cabos.comprimentoEntre(m.de, m.para) ?? 0.3);
@@ -663,7 +702,32 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     if (p) tratarMovimento(p[0], p[1]);
   }
 
+  /** Com um cabo preso ao ponteiro, onde o botão foi apertado fora de um terminal: se soltar no mesmo lugar, o cabo é cancelado. */
+  let cliqueNoVazio: [number, number] | null = null;
+
+  /** Clique com um cabo preso ao ponteiro: liga no terminal sob o ponteiro, ou deixa a câmera girar. */
+  function apertarComCaboFixo(m: Modo & { tipo: 'cabo' }, e: PointerEvent): void {
+    cliqueNoVazio = null;
+    if (e.button !== 0 || e.target !== c.canvas) return;
+    atualizarCabo(m, e.clientX, e.clientY);
+    if (modo !== m) return;
+    if (m.para) {
+      // O controle da câmera não vê este clique.
+      e.stopPropagation();
+      const uid = acoes.adicionarCabo(m.de, m.para, c.cabos.comprimentoEntre(m.de, m.para) ?? 0.3);
+      if (uid) acoes.selecionar({ tipo: 'cabo', uid });
+      encerrar();
+      pairar(e.clientX, e.clientY);
+    } else if (m.motivo) {
+      e.stopPropagation();
+    } else cliqueNoVazio = [e.clientX, e.clientY];
+  }
+
   function aoApertar(e: PointerEvent): void {
+    if (modo.tipo === 'cabo' && modo.fixo) {
+      if (!estado.edicaoCasa.ativa) apertarComCaboFixo(modo, e);
+      return;
+    }
     if (e.button !== 0 || modo.tipo !== 'ocioso' || e.target !== c.canvas) return;
     if (estado.edicaoCasa.ativa) return; // a edição da casa trata o ponteiro
     mirar(e.clientX, e.clientY);
@@ -710,12 +774,15 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       encerrar();
       return;
     }
+    if (modo.tipo === 'cabo' && modo.fixo && e.target !== c.canvas && !cliqueNoVazio) return; // clique em um painel, com o cabo preso ao ponteiro
     soltar(e.clientX, e.clientY);
   }
 
   function aoArrastarItem(e: Event): void {
     const detalhe = (e as CustomEvent<{ itemId: string; clientX: number; clientY: number }>).detail;
     const item = detalhe ? CATALOGO.get(detalhe.itemId) : undefined;
+    // Pegar uma peça do catálogo larga o cabo que estava preso ao ponteiro.
+    if (modo.tipo === 'cabo' && modo.fixo) encerrar();
     if (!item || modo.tipo !== 'ocioso') return;
     if (estado.edicaoCasa.ativa) {
       avisar('Saia de "Editar casa" para pôr equipamentos', detalhe.clientX, detalhe.clientY);
@@ -773,8 +840,14 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   function apagarSelecionado(): void {
     const s = estado.selecao;
     if (estado.edicaoCasa.ativa) return;
-    if (s?.tipo === 'dispositivo') acoes.removerDispositivo(s.uid);
-    else if (s?.tipo === 'cabo') acoes.removerCabo(s.uid);
+    if (s?.tipo === 'dispositivo') {
+      // Os cabos da peça vão junto: o aviso diz quantos foram e como voltar atrás.
+      const cabos = estado.projeto.cabos.filter((k) => k.de.disp === s.uid || k.para.disp === s.uid).length;
+      const nome = nomeDaPeca(s.uid);
+      const [x, y] = telaDaPeca(s.uid);
+      acoes.removerDispositivo(s.uid);
+      if (cabos > 0) avisar(`${nome}: apagou a peça e ${cabos === 1 ? 'o cabo ligado' : `os ${cabos} cabos ligados`} a ela. Ctrl+Z desfaz.`, x, y, 'neutro');
+    } else if (s?.tipo === 'cabo') acoes.removerCabo(s.uid);
   }
 
   function aoTeclar(e: KeyboardEvent): void {
@@ -791,10 +864,16 @@ export function criarInteracao(c: PartesDaCena): Interacao {
         else m.giro = (m.giro + 90) % 360;
         if (ultimo) tratarMovimento(ultimo[0], ultimo[1]);
       } else if (m.tipo === 'ocioso') girarSelecionado();
+      else if (m.tipo === 'cabo' && m.fixo) {
+        // Com o cabo preso ao ponteiro a peça clicada está selecionada: R larga o cabo e gira a peça.
+        encerrar();
+        girarSelecionado();
+      }
       return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && modo.tipo === 'ocioso' && estado.selecao) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && estado.selecao && (modo.tipo === 'ocioso' || (modo.tipo === 'cabo' && modo.fixo))) {
       e.preventDefault();
+      if (modo.tipo !== 'ocioso') encerrar();
       apagarSelecionado();
     }
   }

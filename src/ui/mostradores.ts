@@ -4,6 +4,8 @@
 
 import { acoes, assinar, estado, horaLocalDe } from '../estado';
 import { infoBanco } from '../nucleo/eletrica';
+import { localDoProjeto } from '../nucleo/irradiancia';
+import { posicaoSol } from '../nucleo/sol';
 import { CATALOGO } from '../catalogo';
 import type { AvisoPasso, OrigemEnergia } from '../nucleo/tipos';
 import { el, h, num } from './formato';
@@ -59,6 +61,7 @@ function mostrador(id: string, rotulo: string, extra?: HTMLElement): { raiz: HTM
 export function montarMostradores(): void {
   // ---- Mostradores no alto da coluna da direita.
   const sol = mostrador('m-sol', 'Sol');
+  sol.raiz.title = 'Potência das placas que o sistema está aproveitando agora. Com a bateria cheia, as placas só entregam o que os aparelhos pedem; se os aparelhos estão na rede, ficam em espera.';
   const consumo = mostrador('m-consumo', 'Consumo');
   const barraPreenchida = h('span', { class: 'barra-cheia' });
   const barra = h('span', { class: 'barra', role: 'progressbar', 'aria-label': 'Carga da bateria', 'aria-valuemin': '0', 'aria-valuemax': '100' }, barraPreenchida);
@@ -96,7 +99,20 @@ export function montarMostradores(): void {
     const banco = sistema ? infoBanco(sistema, estado.projeto, CATALOGO) : null;
 
     trocarTexto(sol.valor, watts(s.pvW));
-    trocarTexto(sol.nota, !Number.isFinite(s.pvW) ? 'calculando' : s.pvW > 0 ? 'gerados agora' : 'sem geração agora');
+    // O número é o que o sistema aproveita das placas, não o que elas poderiam dar: com a bateria cheia e os aparelhos
+    // na rede, ele fica em zero mesmo ao meio-dia. A nota diz o motivo, para o zero não parecer defeito.
+    const local = localDoProjeto(estado.projeto);
+    const solNoCeu = local ? posicaoSol(estado.tempo.msUtc, local.lat, local.lon).elevacao > 3 : false;
+    let notaDoSol: string;
+    if (!Number.isFinite(s.pvW)) notaDoSol = 'calculando';
+    else if (s.pvW > 0) notaDoSol = 'aproveitados agora';
+    else if (!sistema || sistema.fileiras.length === 0) notaDoSol = 'sem placas ligadas';
+    else if (s.avisos.includes('placas-tensao-baixa')) notaDoSol = 'tensão das placas baixa';
+    else if (s.avisos.includes('placas-tensao-alta')) notaDoSol = 'tensão das placas alta demais';
+    else if (!solNoCeu) notaDoSol = 'sem sol agora';
+    else if (sim.estadoSim.soc >= 0.995 && !sim.estadoSim.cortado) notaDoSol = 'bateria cheia: placas em espera';
+    else notaDoSol = 'sem geração agora';
+    trocarTexto(sol.nota, notaDoSol);
 
     if (s.cargaPedidaW > 0 && s.cargaAtendidaW <= 0) {
       trocarTexto(consumo.valor, 'desligado');
@@ -122,8 +138,8 @@ export function montarMostradores(): void {
     barra.setAttribute('aria-valuenow', String(tem ? pct : 0));
     bateria.raiz.dataset.cor = cor;
     if (!tem) {
-      trocarTexto(bateria.valor, 'sem bateria');
-      trocarTexto(bateria.nota, 'ligada ao inversor');
+      trocarTexto(bateria.valor, 'nenhuma');
+      trocarTexto(bateria.nota, 'falta uma bateria ligada ao inversor');
     } else {
       trocarTexto(bateria.valor, `${num(pct)} %`);
       const bw = Number.isFinite(s.bateriaW) ? s.bateriaW : 0;
@@ -134,10 +150,10 @@ export function montarMostradores(): void {
     let textoRede: string;
     if (queda.ativa) textoRede = 'em queda';
     else if (sistema?.redeLigada) textoRede = 'ligada';
-    else textoRede = 'não ligada ao inversor';
+    else textoRede = 'não ligada';
     trocarTexto(rede.valor, textoRede);
     rede.raiz.dataset.estado = queda.ativa ? 'queda' : sistema?.redeLigada ? 'ligada' : 'solta';
-    trocarTexto(rede.nota, queda.ativa ? 'sem luz na rua' : sistema?.redeLigada ? (Number.isFinite(s.redeW) && s.redeW > 1 ? `puxando ${num(s.redeW)} W` : 'disponível') : 'sem a tomada da rede no inversor');
+    trocarTexto(rede.nota, queda.ativa ? 'sem luz na rua' : sistema?.redeLigada ? (Number.isFinite(s.redeW) && s.redeW > 1 ? `puxando ${num(s.redeW)} W` : 'disponível') : 'falta o cabo da tomada da rede até o inversor');
 
     trocarTexto(origem, ORIGENS[s.origem]);
     origem.dataset.origem = s.origem;

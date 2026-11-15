@@ -73,7 +73,18 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
 
   const linha = h('div', { class: 'acoes-item' });
   linha.append(botao('Girar', () => window.dispatchEvent(new CustomEvent('offgrid:girar-selecionado')), { title: d.superficie === 'terreno' && item.categoria === 'placa' ? 'Vira a face da placa 15° no sentido dos ponteiros do relógio' : 'Gira a peça em 90° sobre a superfície' }));
-  linha.append(botao('Apagar', () => acoes.removerDispositivo(d.uid), { class: 'perigo' }));
+  linha.append(
+    botao(
+      'Apagar',
+      () => {
+        // Os cabos da peça vão junto: a mensagem diz quantos foram e como voltar atrás.
+        const cabos = estado.projeto.cabos.filter((c) => c.de.disp === d.uid || c.para.disp === d.uid).length;
+        acoes.removerDispositivo(d.uid);
+        if (cabos > 0) mostrarMensagem(`Apagou a peça e ${cabos === 1 ? 'o cabo ligado' : `os ${cabos} cabos ligados`} a ela. Ctrl+Z desfaz.`);
+      },
+      { class: 'perigo', title: 'Apaga a peça e os cabos ligados a ela (tecla Delete)' },
+    ),
+  );
   nos.push(linha);
   nos.push(...camposDaPlacaNoChao(d, item, redesenhar));
 
@@ -281,7 +292,10 @@ export function montarSelecionado(): void {
       return;
     }
     raiz.dataset.tipo = s?.tipo ?? '';
-    substituir(raiz, nos);
+    // Fechar o painel é tirar a seleção (o mesmo que Esc ou clicar no vazio da cena).
+    const fechar = h('button', { type: 'button', class: 'fechar-item', 'data-acao': 'fechar-item', title: 'Fechar este painel (Esc)', 'aria-label': 'Fechar o painel do item' }, '×');
+    fechar.addEventListener('click', () => acoes.selecionar(null));
+    substituir(raiz, [fechar, ...nos]);
   };
   const forcar = (): void => {
     delete raiz.dataset.assinatura;

@@ -156,9 +156,12 @@ export function criarCena(container: HTMLElement): Cena {
   controles.minDistance = 0.8;
   controles.maxDistance = 60;
   controles.maxPolarAngle = Math.PI / 2 - 0.02;
+  // A roda aproxima do ponto sob o ponteiro, e não do meio da casa: é assim que se chega ao quartinho ou a um borne.
+  controles.zoomToCursor = true;
   controles.update();
 
-  cena.add(criarChao());
+  const chao = criarChao();
+  cena.add(chao);
   cena.add(criarRosaDosVentos());
   const casa = criarCasa();
   cena.add(casa.grupo);
@@ -405,6 +408,37 @@ export function criarCena(container: HTMLElement): Cena {
     return mundoNaTela(pontoNaCasa.clone().applyMatrix4(casa.grupo.matrixWorld));
   };
 
+  // Duplo clique: o ponto clicado vira o centro da órbita, e a câmera chega mais perto dele.
+  const raioDoFoco = new THREE.Raycaster();
+  const aVista = (o: THREE.Object3D | null): boolean => {
+    for (let x = o; x; x = x.parent) if (!x.visible) return false;
+    return true;
+  };
+  const focar = (e: MouseEvent): void => {
+    if (estado.edicaoCasa.ativa || e.target !== renderizador.domElement) return;
+    const r = renderizador.domElement.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    camera.updateMatrixWorld();
+    raioDoFoco.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+    const toque = raioDoFoco.intersectObjects([casa.grupo, chao], true).find((t) => aVista(t.object) && t.distance < 200);
+    if (!toque) return;
+    const direcao = camera.position.clone().sub(controles.target).normalize();
+    const distancia = THREE.MathUtils.clamp(toque.distance * 0.6, 2, 14);
+    controles.target.copy(toque.point);
+    camera.position.copy(toque.point).addScaledVector(direcao, distancia);
+    controles.update();
+    sujo = true;
+  };
+  const vistaInicial = (): void => {
+    if (estado.edicaoCasa.ativa) return;
+    camera.position.set(-14, 11, -16);
+    controles.target.set(0, 2.5, 0);
+    controles.update();
+    sujo = true;
+  };
+  renderizador.domElement.addEventListener('dblclick', focar);
+  window.addEventListener('offgrid:vista-inicial', vistaInicial);
+
   const interacao = criarInteracao({
     container,
     canvas: renderizador.domElement,
@@ -512,6 +546,7 @@ export function criarCena(container: HTMLElement): Cena {
       interacao.destruir();
       edicao.destruir();
       cancelAnimationFrame(quadro);
+      window.removeEventListener('offgrid:vista-inicial', vistaInicial);
       observador.disconnect();
       controles.dispose();
       // Geometrias, materiais, texturas e mapa de sombra de tudo: casa, terreno, rosa dos ventos e sol.

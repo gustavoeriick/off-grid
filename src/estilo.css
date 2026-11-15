@@ -1470,3 +1470,395 @@ button:disabled {
   background: #fff3e0;
   transition: background 0.3s;
 }
+
+/* ---------------------------------------------------------------- Acabamento do conjunto: barra de cima, barra de baixo, mostradores e painéis sobre a cena */
+
+/* Barra de cima: grupos colados e o menu "Projeto". Nada quebra em duas linhas. */
+#topo {
+  gap: 12px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+#topo h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#topo button {
+  white-space: nowrap;
+}
+
+.menu-topo {
+  position: relative;
+}
+
+#botao-projeto[aria-expanded='true'] {
+  background: #eef2f6;
+}
+
+.menu-lista {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 250px;
+  padding: 6px;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.menu-lista button {
+  border: 0;
+  text-align: left;
+  padding: 6px 8px;
+}
+
+.menu-nota {
+  margin: 4px 0 0;
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--borda);
+  font-size: 12px;
+  color: var(--suave);
+  white-space: normal;
+}
+
+@media (max-width: 1320px) {
+  #topo {
+    gap: 8px;
+  }
+
+  #topo button {
+    padding: 4px 6px;
+  }
+}
+
+/* Barra de baixo: uma linha só a partir de 1280 de largura. */
+#base {
+  gap: 6px 18px;
+  padding: 6px 12px 8px;
+}
+
+#base .grupo-hora {
+  flex: 1 1 150px;
+  min-width: 140px;
+}
+
+#base .grupo-rotacao {
+  min-width: 0;
+}
+
+#base #rotacao {
+  width: 110px;
+  flex: none;
+}
+
+#base #mes {
+  padding: 4px 4px;
+}
+
+#base #dia {
+  width: 50px;
+}
+
+@media (max-width: 1400px) {
+  #base {
+    gap: 6px 12px;
+  }
+
+  #base button,
+  #base select {
+    padding: 4px 6px;
+  }
+
+  #base #rotacao {
+    width: 80px;
+  }
+}
+
+/* Formulário das medidas: abre embaixo do botão, no alto da cena, e é mais baixo. */
+.painel-casa {
+  top: 12px;
+  bottom: auto;
+  z-index: 5;
+  padding: 8px 12px 10px;
+}
+
+.titulo-casa {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.painel-casa .titulo-casa h3 {
+  margin: 0;
+}
+
+.painel-casa fieldset {
+  gap: 4px;
+  padding: 4px 10px 6px;
+}
+
+.painel-casa input[type='number'],
+.painel-casa select {
+  padding: 2px 6px;
+}
+
+.colunas-casa {
+  gap: 8px 12px;
+  margin-bottom: 4px;
+}
+
+.painel-casa fieldset:not(.varandas) label {
+  white-space: nowrap;
+}
+
+/* Corpo e quartinho em duas colunas de campos: metade da altura. */
+.painel-casa fieldset:not(.varandas) {
+  flex: 1 1 260px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+  align-content: start;
+}
+
+/* "Editar casa": as ferramentas (andar e o que faz sombra) e a explicação ficam juntas no alto da cena,
+   longe do passo a passo e dos avisos, que ficam embaixo. */
+.barra-obstaculos {
+  top: 8px;
+  bottom: auto;
+  left: 12px;
+  right: 12px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 0 auto;
+  padding: 4px 8px;
+  z-index: 3;
+  white-space: nowrap;
+}
+
+.barra-obstaculos #seletor-andar {
+  margin-right: 10px;
+}
+
+.faixa-edicao {
+  top: 50px;
+  left: 12px;
+  right: 12px;
+  transform: none;
+  width: fit-content;
+  max-width: min(44rem, calc(100% - 24px));
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+#barra-obstaculos:not([hidden]) ~ .passo-a-passo {
+  bottom: 12px;
+}
+
+#faixa-edicao:not([hidden]) ~ .faixa-queda {
+  top: 124px;
+}
+
+/* A faixa da queda de luz também se centra sem depender da metade da largura, e fica abaixo da linha de ajuda da câmera. */
+.faixa-queda {
+  top: 36px;
+  left: 12px;
+  right: 12px;
+  transform: none;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+/* Mostradores compactos: rótulo e valor na mesma linha. */
+#mostradores {
+  padding: 8px 12px 6px;
+}
+
+.m-grade {
+  gap: 4px 6px;
+}
+
+.mostrador {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 0 6px;
+  padding: 3px 8px 4px;
+}
+
+.mostrador .m-valor {
+  text-align: right;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.mostrador .barra,
+.mostrador .m-nota {
+  grid-column: 1 / -1;
+}
+
+.mostrador .m-nota {
+  line-height: 1.25;
+}
+
+.mostrador[data-estado='solta'] .m-valor {
+  font-size: 12px;
+  white-space: normal;
+}
+
+.m-origem {
+  margin-top: 5px;
+}
+
+/* Passo a passo: painel estreito; a lista de passos só aparece quando pedida. */
+.passo-a-passo {
+  width: 300px;
+  padding: 6px 10px 8px;
+}
+
+.passo-a-passo .passo-titulo {
+  font-size: 13.5px;
+}
+
+.passo-a-passo p {
+  margin-bottom: 4px;
+  line-height: 1.35;
+}
+
+.passo-botoes {
+  gap: 4px;
+}
+
+.passo-botao {
+  padding: 3px 7px;
+}
+
+/* Com a cena estreita, o aviso de segurança encolhe para não ficar por cima do passo a passo. */
+#avisos-seguranca {
+  width: clamp(220px, calc(100% - 336px), 300px);
+}
+
+/* Como mexer a câmera: uma linha discreta no alto da cena. Só o botão responde ao ponteiro. */
+.ajuda-camera {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  padding: 2px 4px 2px 8px;
+  font-size: 11.5px;
+  color: #fff;
+  background: rgba(31, 41, 51, 0.55);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.ajuda-camera span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ajuda-camera button {
+  flex: none;
+  color: #1f2933;
+  pointer-events: auto;
+  padding: 1px 8px;
+  font-size: 11.5px;
+}
+
+/* Janela menor que o mínimo (1200 × 700): a página rola, em vez de cortar a coluna da direita e a barra de baixo. */
+body {
+  overflow: auto;
+}
+
+#app {
+  position: absolute;
+}
+
+/* Cartão "Por onde começar", na primeira abertura. Só os botões respondem ao ponteiro. */
+.boas-vindas {
+  position: absolute;
+  left: 8px;
+  top: 36px;
+  z-index: 3;
+  width: 320px;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  padding: 8px 12px 10px;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--destaque);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  font-size: 12.5px;
+  pointer-events: none;
+}
+
+.boas-vindas h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.boas-vindas ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  line-height: 1.35;
+}
+
+.boas-vindas li {
+  margin-bottom: 3px;
+}
+
+.boas-vindas-botoes {
+  display: flex;
+  gap: 6px;
+}
+
+.boas-vindas button {
+  pointer-events: auto;
+}
+
+.boas-vindas button[data-acao='passo-a-passo'] {
+  background: var(--destaque);
+  border-color: var(--destaque);
+  color: #fff;
+}
+
+/* Painel do item selecionado: botão de fechar no canto. */
+.item-selecionado {
+  position: relative;
+}
+
+.item-selecionado h3 {
+  padding-right: 22px;
+}
+
+.fechar-item {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 7px;
+  border: 0;
+  background: none;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--suave);
+}
