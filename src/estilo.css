@@ -2063,3 +2063,39 @@ body {
 #botao-cabos[aria-expanded='true'] {
   background: #eef2f6;
 }
+
+/* ---------------------------------------------------------------- Seletor de ambiente (energia solar | rádio LoRa)
+   Fica logo depois do nome do simulador, nas duas páginas. */
+#topo h1:has(+ .ambientes) {
+  flex: none;
+}
+
+.ambientes {
+  display: flex;
+  flex: 1;
+  gap: 0;
+  font-size: 12.5px;
+}
+
+.ambientes a {
+  padding: 3px 9px;
+  border: 1px solid var(--borda);
+  color: inherit;
+  text-decoration: none;
+  background: #fff;
+}
+
+.ambientes a:first-child {
+  border-radius: 12px 0 0 12px;
+}
+
+.ambientes a:last-child {
+  border-radius: 0 12px 12px 0;
+  border-left: 0;
+}
+
+.ambientes a[aria-current='page'] {
+  background: var(--destaque);
+  border-color: var(--destaque);
+  color: #fff;
+}

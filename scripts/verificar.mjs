@@ -2435,6 +2435,59 @@ async function principal() {
   }
   await verificarArrumarCabos();
 
+  // Ambiente de rádio LoRa (especificacao/lora.md, seção 1): página própria, seletor de ambiente e projetos separados.
+  // Os pontos de teste ficam em lugares neutros, sem relação com casa nenhuma.
+  async function verificarLora() {
+    const solarAntes = await pagina.evaluate(() => JSON.stringify(window.__offgrid.estado().projeto));
+    // O seletor fica na barra do alto, que continua com uma linha só em 1280 px.
+    const topo = await pagina.locator('#topo').boundingBox();
+    conferir(topo.height <= 49, `a barra do alto do solar deveria ter uma linha só: ${topo.height} px`);
+    conferir((await pagina.locator('.ambientes a[aria-current="page"]').textContent()) === 'Solar', 'no solar, o seletor deveria marcar "Solar"');
+    await pagina.locator('.ambientes a', { hasText: 'LoRa' }).click();
+    await pagina.waitForFunction(() => window.__lora && window.__lora.pronto === true, null, { timeout: 30000 });
+    conferir(pagina.url().endsWith('lora.html'), `o seletor deveria abrir lora.html: ${pagina.url()}`);
+    conferir((await pagina.locator('.ambientes a[aria-current="page"]').textContent()) === 'LoRa', 'no LoRa, o seletor deveria marcar "LoRa"');
+    const lora = () => pagina.evaluate(() => JSON.parse(JSON.stringify(window.__lora.estado())));
+    let e = await lora();
+    conferir(e.projeto.pontos.length === 0 && e.projeto.regiao === 'ANZ' && e.projeto.modo === 'long-fast', `o projeto de rádio começa vazio: ${JSON.stringify(e.projeto)}`);
+    await captura('101-lora-pagina-inicial');
+
+    // Projetos de LoRa: criar pelo painel, com o mouse; não se misturam com os do solar.
+    await pagina.locator('#lora-botao-projeto').click();
+    await pagina.locator('#lora-meus-projetos').click();
+    await pagina.locator('#lora-novo-projeto-nome').fill('Rede de teste');
+    await pagina.locator('#lora-painel-projetos [data-acao="criar"]').click();
+    e = await lora();
+    conferir(e.projeto.nome === 'Rede de teste' && (await pagina.title()).startsWith('Rede de teste'), `o projeto novo deveria abrir: ${e.projeto.nome}`);
+    await pagina.evaluate(() => {
+      const a = window.__lora.acoes;
+      const p1 = a.adicionarPonto(-10, -50, 'casa', 'Ponto A');
+      const p2 = a.adicionarPonto(-10.2, -50.3, 'casa', 'Ponto B');
+      a.ligar(p1, p2);
+    });
+    conferir((await pagina.locator('#lora-resumo').textContent()).includes('2 pontos e 1 enlace'), 'o resumo deveria contar os pontos e o enlace');
+    await pagina.keyboard.press('Control+z');
+    conferir((await lora()).projeto.enlaces.length === 0, 'Ctrl+Z deveria desfazer o enlace');
+    await esperar(600);
+    await pagina.reload();
+    await pagina.waitForFunction(() => window.__lora && window.__lora.pronto === true, null, { timeout: 30000 });
+    e = await lora();
+    conferir(e.projeto.nome === 'Rede de teste' && e.projeto.pontos.length === 2, 'recarregar deveria manter o projeto de rádio');
+    await pagina.locator('#lora-botao-projeto').click();
+    await pagina.locator('#lora-meus-projetos').click();
+    await captura('102-lora-meus-projetos');
+    pagina.once('dialog', (dlg) => dlg.accept());
+    await pagina.locator('#lora-lista-de-projetos .projeto-item[data-nome="Rede de teste"] [data-acao="apagar"]').click();
+    conferir((await lora()).projeto.nome !== 'Rede de teste', 'apagar deveria abrir outro projeto');
+    await pagina.locator('#lora-painel-projetos .fechar-sobreposto').click();
+
+    // De volta ao solar: o projeto dele está como estava.
+    await pagina.locator('.ambientes a', { hasText: 'Solar' }).click();
+    await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true, null, { timeout: 30000 });
+    conferir((await pagina.evaluate(() => JSON.stringify(window.__offgrid.estado().projeto))) === solarAntes, 'o projeto do solar não deveria mudar ao visitar o LoRa');
+  }
+  await verificarLora();
+
   if (erros.length) throw new Error(`Erros na página:\n${erros.join('\n')}`);
   console.log('Verificação concluída sem erros.');
 }

@@ -66,7 +66,7 @@ O que a cópia diz para "sequência direta ou outras técnicas de modulação di
 Consequência para o simulador, enquanto a tarefa L0.2 não fecha:
 
 - O campo de potência aceita de 0 a 30 dBm.
-- A tela mostra um aviso, sem bloquear, quando `potência > 30 − máx(0; ganho − 6)`, e outro quando a potência passa do limite estimado pela densidade espectral: `8 + 10·log(banda em kHz / 3)`, que dá 24,2 dBm em 125 kHz, 27,2 dBm em 250 kHz e 30 dBm em 500 kHz. Esse segundo limite supõe espectro plano e é uma estimativa; o texto do aviso diz isso.
+- A tela mostra um aviso, sem bloquear, quando `potência > 30 − máx(0; ganho − 6)`, e outro quando a potência passa do limite estimado pela densidade espectral: `mín(30; 8 + 10·log(banda em kHz / 3))`, que dá 24,2 dBm em 125 kHz, 27,2 dBm em 250 kHz e 30 dBm em 500 kHz (a fórmula daria 30,2; vale o teto de 1 W). Esse segundo limite supõe espectro plano e é uma estimativa; o texto do aviso diz isso.
 - Todo aviso de regra termina com: "Confira a regra vigente na Anatel. O rádio precisa ser homologado."
 
 ## 4. Núcleo de rádio (`src/lora/nucleo`)

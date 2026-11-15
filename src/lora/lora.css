@@ -1,0 +1,43 @@
+/* Ambiente de rádio LoRa. As cores e os botões vêm de src/estilo.css; aqui fica só o que é desta página. */
+
+#app-lora {
+  position: absolute;
+  inset: 0;
+  min-width: 1000px;
+  min-height: 600px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-areas:
+    'topo topo'
+    'centro dir';
+}
+
+#lora-centro {
+  grid-area: centro;
+  position: relative;
+  overflow: hidden;
+  background: #e9edf1;
+}
+
+#lora-direita {
+  grid-area: dir;
+  overflow-y: auto;
+  background: var(--painel);
+  border-left: 1px solid var(--borda);
+  padding: 10px 12px;
+}
+
+.lora-espera {
+  max-width: 34rem;
+  margin: 12vh auto 0;
+  padding: 16px 20px;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+}
+
+.lora-espera h2 {
+  margin: 0 0 8px;
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rádio LoRa · Simulador off-grid</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/src/estilo.css" />
+    <link rel="stylesheet" href="/src/lora/lora.css" />
+  </head>
+  <body class="ambiente-lora">
+    <div id="app-lora">
+      <header id="topo">
+        <h1>Simulador off-grid</h1>
+        <nav class="ambientes" aria-label="Ambiente de simulação">
+          <a href="./index.html" title="Ir para o simulador de energia solar">Solar</a>
+          <a href="./lora.html" aria-current="page" title="Você está no simulador de rádio LoRa">LoRa</a>
+        </nav>
+        <div class="botoes" role="group" aria-label="Desfazer e refazer">
+          <button type="button" id="lora-desfazer" title="Desfazer a última mudança (Ctrl+Z)">Desfazer</button>
+          <button type="button" id="lora-refazer" title="Refazer o que foi desfeito (Ctrl+Y)">Refazer</button>
+        </div>
+        <div class="menu-topo" id="lora-menu-projeto">
+          <button type="button" id="lora-botao-projeto" aria-haspopup="true" aria-expanded="false" title="Trocar de projeto, guardar em um arquivo ou abrir um arquivo">Projeto ▾</button>
+          <div class="menu-lista" id="lora-lista-projeto" role="group" aria-label="Projeto" hidden>
+            <p class="menu-nota" id="lora-projeto-aberto"></p>
+            <button type="button" id="lora-meus-projetos" title="Lista dos projetos de rádio gravados neste navegador">Meus projetos: abrir, criar e trocar</button>
+            <button type="button" id="lora-exportar" title="Baixa o projeto em um arquivo .json">Exportar: guardar em um arquivo</button>
+            <button type="button" id="lora-importar" title="Abre um arquivo .json exportado antes, como um projeto novo da lista">Importar: abrir um arquivo como projeto novo</button>
+            <p class="menu-nota">Os projetos ficam gravados neste navegador. Os pontos do mapa nunca são enviados para fora dele.</p>
+          </div>
+          <input type="file" id="lora-arquivo" accept=".json,application/json" hidden />
+        </div>
+      </header>
+
+      <main id="lora-centro" aria-label="Mapa"></main>
+      <aside id="lora-direita" aria-label="Painéis"></aside>
+    </div>
+    <div id="mensagem" role="status" hidden></div>
+    <script type="module" src="/src/lora/main.ts"></script>
+  </body>
+</html>
