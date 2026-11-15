@@ -553,8 +553,12 @@ export const acoes = {
   nomearComodo(uid: string | null, andar: 0 | 1, ponto: [number, number], nome: string): void {
     mudar(['casa'], undefined, (p) => {
       const limpo = nome.trim();
-      let comodos: Comodo[] = p.casa.comodos.filter((c) => c.uid !== uid);
-      if (limpo) comodos = [...comodos, { uid: uid ?? novoUid('cm', p.casa.comodos.map((c) => c.uid)), andar, nome: limpo, ponto }];
+      // Renomear mantém o lugar na lista: quando duas áreas se juntam, vale o cômodo que vem primeiro.
+      const existe = uid !== null && p.casa.comodos.some((c) => c.uid === uid);
+      let comodos: Comodo[];
+      if (!limpo) comodos = p.casa.comodos.filter((c) => c.uid !== uid);
+      else if (existe) comodos = p.casa.comodos.map((c) => (c.uid === uid ? { ...c, andar, nome: limpo, ponto } : c));
+      else comodos = [...p.casa.comodos, { uid: uid ?? novoUid('cm', p.casa.comodos.map((c) => c.uid)), andar, nome: limpo, ponto }];
       p.casa = { ...p.casa, comodos };
     });
   },

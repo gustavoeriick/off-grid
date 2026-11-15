@@ -188,14 +188,13 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   const matFantasma = new THREE.MeshLambertMaterial({ color: COR_VALIDO, emissive: COR_VALIDO, emissiveIntensity: 0.45, transparent: true, opacity: 0.62, depthWrite: false });
   const matMolduraDoFantasma = new THREE.MeshBasicMaterial({ color: COR_VALIDO, toneMapped: false });
   const matSelecao = new THREE.MeshBasicMaterial({ color: COR_SELECAO, toneMapped: false });
-  const matVeuDaSelecao = new THREE.MeshBasicMaterial({ color: COR_SELECAO, transparent: true, opacity: 0.13, depthWrite: false, toneMapped: false });
   const matHaloDoCabo = new THREE.MeshBasicMaterial({ color: COR_SELECAO, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false });
   const matCaboNoAlvo = new THREE.MeshBasicMaterial({ color: COR_VALIDO, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false });
   const geoBarra = new THREE.BoxGeometry(1, 1, 1);
   const semRaio = (): void => {};
 
   /** Contorno de uma caixa, com barras de espessura real (a linha de 1 px some de longe). */
-  function criarMoldura(caixa: THREE.Box3, material: THREE.Material, veu?: THREE.Material): THREE.Group {
+  function criarMoldura(caixa: THREE.Box3, material: THREE.Material): THREE.Group {
     const g = new THREE.Group();
     const folga = 0.012;
     const min = caixa.min.clone().subScalar(folga);
@@ -218,13 +217,6 @@ export function criarInteracao(c: PartesDaCena): Interacao {
           g.add(barra);
         }
       }
-    }
-    if (veu) {
-      const corpo = new THREE.Mesh(geoBarra, veu);
-      corpo.raycast = semRaio;
-      corpo.scale.copy(t);
-      corpo.position.copy(min).add(max).multiplyScalar(0.5);
-      g.add(corpo);
     }
     return g;
   }
@@ -306,7 +298,8 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     if (s?.tipo === 'dispositivo') {
       const grupo = c.dispositivos.grupoDe(s.uid);
       if (grupo && !c.dispositivos.escondida(s.uid)) {
-        molduraDaSelecao = criarMoldura(grupo.userData.volume as THREE.Box3, matSelecao, matVeuDaSelecao);
+        // Só a moldura: a peça selecionada continua opaca, com as cores dela.
+        molduraDaSelecao = criarMoldura(grupo.userData.volume as THREE.Box3, matSelecao);
         molduraDaSelecao.name = 'realce';
         grupo.add(molduraDaSelecao);
       }
@@ -353,7 +346,9 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   }
 
   function pairar(x: number, y: number): void {
-    if (estado.edicaoCasa.ativa || !sobreACena(x, y) || !mirar(x, y)) {
+    // Em "Editar casa" quem cuida do ponteiro, do cursor e da dica é edicao.ts.
+    if (estado.edicaoCasa.ativa) return;
+    if (!sobreACena(x, y) || !mirar(x, y)) {
       limparPairar();
       mostrarDica(null);
       return;
@@ -578,8 +573,8 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     const m = modo;
     if (m.tipo === 'ocioso' || m.tipo === 'alheio' || m.tipo === 'apertado') return false;
     if (m.tipo === 'mover' && m.marcado) {
-      // Volta ao ponto marcado no começo do arraste, sem deixar um passo vazio no histórico.
-      acoes.desfazer();
+      // Volta ao ponto marcado no começo do arraste, sem deixar nada para refazer.
+      acoes.cancelarArraste();
       c.cabos.adiarComprimentos(false);
     }
     encerrar();
@@ -838,7 +833,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       elastico.geometry.dispose();
       (elastico.material as THREE.Material).dispose();
       geoBarra.dispose();
-      for (const m of [matFantasma, matMolduraDoFantasma, matSelecao, matVeuDaSelecao, matHaloDoCabo, matCaboNoAlvo]) m.dispose();
+      for (const m of [matFantasma, matMolduraDoFantasma, matSelecao, matHaloDoCabo, matCaboNoAlvo]) m.dispose();
     },
   };
 }

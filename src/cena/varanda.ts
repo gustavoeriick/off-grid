@@ -46,13 +46,23 @@ export interface MedidaVaranda {
 }
 
 /** Leva um ponto do quadro da fachada (x ao longo, z para fora) para as coordenadas da casa. */
-function paraACasa(casa: CasaConfig, lado: LadoCasa, x: number, z: number): [x: number, z: number] {
+export function paraACasa(casa: Pick<CasaConfig, 'largura' | 'profundidade'>, lado: LadoCasa, x: number, z: number): [x: number, z: number] {
   const W = casa.largura / 2;
   const D = casa.profundidade / 2;
   if (lado === 'frente') return [x, D + z];
   if (lado === 'fundos') return [-x, -D - z];
   if (lado === 'direita') return [W + z, -x];
   return [-W - z, x];
+}
+
+/** O inverso de `paraACasa`: um ponto da casa visto do quadro da fachada (x ao longo dela, z para fora). */
+export function naFachada(casa: Pick<CasaConfig, 'largura' | 'profundidade'>, lado: LadoCasa, x: number, z: number): [x: number, z: number] {
+  const W = casa.largura / 2;
+  const D = casa.profundidade / 2;
+  if (lado === 'frente') return [x, z - D];
+  if (lado === 'fundos') return [-x, -z - D];
+  if (lado === 'direita') return [-z, x - W];
+  return [z, -x - W];
 }
 
 /**

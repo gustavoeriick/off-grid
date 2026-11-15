@@ -108,6 +108,26 @@ function medidasDaEscada(casa: CasaConfig): Escada | null {
   };
 }
 
+/** Pé das paredes internas de um andar (o piso acabado) e altura do teto dele. */
+export function alturasDoAndar(casa: CasaConfig, andar: 0 | 1): { yPe: number; yTeto: number } {
+  const k = Math.hypot(1, casa.inclinacaoTelhadoPct / 100);
+  const yT = casa.andares * casa.peDireito - (FUNDO_RIPA + CAIBRO) * k - 0.02;
+  return { yPe: andar === 0 ? PISO : casa.peDireito, yTeto: andar === 0 && casa.andares === 2 ? casa.peDireito - LAJE : yT - FORRO };
+}
+
+/**
+ * Onde uma parede interna não passa, em um andar: no térreo, a escada; em cima, o vão dela com a mureta.
+ * Nulo quando a casa não tem escada.
+ */
+export function vaoDaEscada(casa: CasaConfig, andar: 0 | 1): Planta | null {
+  const escada = medidasDaEscada(casa);
+  if (!escada) return null;
+  const xb = casa.largura / 2 - ESPESSURA_PAREDE;
+  return andar === 0
+    ? { x0: escada.x0 - 0.15, x1: xb, z0: escada.zTopo, z1: escada.zPe }
+    : { x0: escada.buraco.x0 - 0.08, x1: xb, z0: escada.buraco.z0, z1: escada.buraco.z1 + 0.08 };
+}
+
 // ---------------------------------------------------------------- Quartinho
 
 function construirQuartinho(casa: CasaConfig): THREE.Group {
@@ -442,14 +462,9 @@ export function criarCasa(): CasaCena {
     const interior: Planta = { x0: xa, x1: xb, z0: za, z1: zb };
     for (const andar of (andares === 2 ? [0, 1] : [0]) as (0 | 1)[]) {
       const pai = andar === 0 ? estrutura : superior;
-      const yPe = andar === 0 ? PISO : pd;
-      const yTeto = andar === 0 && andares === 2 ? pd - LAJE : yT - FORRO;
+      const { yPe, yTeto } = alturasDoAndar(casa, andar);
       // No térreo a parede para antes da escada; em cima, antes da mureta do vão.
-      const vedado: Planta | null = !escada
-        ? null
-        : andar === 0
-          ? { x0: escada.x0 - 0.15, x1: xb, z0: escada.zTopo, z1: escada.zPe }
-          : { x0: escada.buraco.x0 - 0.08, x1: xb, z0: escada.buraco.z0, z1: escada.buraco.z1 + 0.08 };
+      const vedado = vaoDaEscada(casa, andar);
       for (const parede of construirParedesInternas(casa, { andar, yPe, altura: yTeto - yPe, interior, vedado })) pai.add(parede);
       for (const comodo of casa.comodos) {
         if (comodo.andar !== andar || comodo.nome.trim() === '') continue;

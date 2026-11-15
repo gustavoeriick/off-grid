@@ -4,12 +4,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOGO } from '../catalogo';
-import { acoes, assinar, type Encaixe, estado, recalcularAgora } from '../estado';
+import { acoes, assinar, type Encaixe, estado, recalcularAgora, registrarAmbiente } from '../estado';
 import { localPorId } from '../nucleo/irradiancia';
 import { type CamadaDeCabos, criarCamadaDeCabos } from './cabos';
 import { criarCasa } from './casa';
 import { colocarIniciais } from './colocacao';
 import { type CamadaDeDispositivos, criarCamadaDeDispositivos } from './dispositivos';
+import { criarEdicao } from './edicao';
 import { encaixar, encaixarNoToque } from './encaixe';
 import { liberarEstampas } from './estampas';
 import { criarInteracao } from './interacao';
@@ -22,6 +23,7 @@ import { criarChao, criarRosaDosVentos } from './mundo';
 import { liberarProtecoes } from './protecoes';
 import { lembrar, reassentar } from './reassentar';
 import { criarSol } from './sol';
+import { criarSombra } from './sombra';
 
 export { comprimentoDoTrecho, corDoCabo } from './cabos';
 export type { CamadaDeCabos } from './cabos';
@@ -68,6 +70,14 @@ export interface OffgridGlobal {
   interacao?: () => { modo: string; valido: boolean | null; motivo: string | null };
   /** Recalcula análise, sugestões e orçamento na hora, sem esperar os 150 ms. */
   recalcular?: () => void;
+  /** Auxiliar de verificação: o cálculo de sombra das placas que a cena entrega ao núcleo (`cena/sombra.ts`). */
+  ambiente?: () => import('../nucleo/tipos').AmbientePlacas;
+  /** O que o ponteiro está fazendo em "Editar casa" (`ocioso`, `quartinho`, `profundidade`, `ponta-varanda`, `desenhar`, `mover-parede`, `esticar`). */
+  edicao?: () => { modo: string; valido: boolean | null; motivo: string | null };
+  /** Posição na janela de uma alça de "Editar casa": `nova-{lado}`, `borda-{lado}`, `ponta-{lado}-a`, `ponta-{lado}-b`, `parede-de`, `parede-para`. */
+  telaDaAlca?: (id: string) => [x: number, y: number] | null;
+  /** Posição e alvo da câmera, no mundo. */
+  camera?: () => { pos: [number, number, number]; alvo: [number, number, number] };
 }
 
 declare global {
@@ -253,7 +263,13 @@ export function criarCena(container: HTMLElement): Cena {
   refazerVisao();
   refazerSol();
 
+  // Sombra para o cálculo (tarefa 3.1): a partir daqui o núcleo pergunta à cena a sombra e o céu tapado de cada placa.
+  const sombra = criarSombra(casa.grupo);
+  registrarAmbiente(sombra.ambiente);
+
   const cancelar = [
+    assinar('casa', sombra.invalidar),
+    assinar('dispositivos', sombra.invalidar),
     // A casa só é refeita quando as medidas ou a orientação mudam; equipamentos e cabos não passam por aqui.
     assinar('casa', refazerCasa),
     assinar('dispositivos', sincronizar),
@@ -360,6 +376,18 @@ export function criarCena(container: HTMLElement): Cena {
     naTela,
   });
 
+  const edicao = criarEdicao({
+    container,
+    canvas: renderizador.domElement,
+    camera,
+    controles,
+    casa: casa.grupo,
+    superficies: () => casa.superficies(),
+    cabos,
+    pedirQuadroLeve,
+    naTela,
+  });
+
   window.__offgrid = {
     // A interface pode ter registrado auxiliares antes da cena (`telaDoCartao`): eles continuam.
     ...window.__offgrid,
@@ -392,7 +420,11 @@ export function criarCena(container: HTMLElement): Cena {
       return p ? naTela(p) : null;
     },
     interacao: () => interacao.situacao(),
+    edicao: () => edicao.situacao(),
+    telaDaAlca: (id) => edicao.telaDaAlca(id),
+    camera: () => ({ pos: camera.position.toArray(), alvo: controles.target.toArray() }),
     recalcular: recalcularAgora,
+    ambiente: () => sombra.ambiente,
     triangulosDosModelos: () => dispositivos.triangulos(),
     camadas: { dispositivos, cabos },
     pedirQuadro,
@@ -431,7 +463,9 @@ export function criarCena(container: HTMLElement): Cena {
     naTela,
     destruir() {
       cancelar.forEach((c) => c());
+      registrarAmbiente(null);
       interacao.destruir();
+      edicao.destruir();
       cancelAnimationFrame(quadro);
       observador.disconnect();
       controles.dispose();

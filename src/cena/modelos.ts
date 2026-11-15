@@ -80,8 +80,8 @@ function estampaDeCelulas(item: Placa, l: number, a: number): THREE.Material {
             grad.addColorStop(0, '#22428a');
             grad.addColorStop(1, '#1a3270');
           } else {
-            grad.addColorStop(0, '#111a2e');
-            grad.addColorStop(1, '#0a1020');
+            grad.addColorStop(0, '#16285a');
+            grad.addColorStop(1, '#0c1838');
           }
           g.fillStyle = grad;
           g.fillRect(x + 1.2, y + 1.2, lc - 2.4, hc - 2.4);
@@ -118,9 +118,11 @@ function placa(item: Placa, m: Molde, T: Marcar): void {
   m.caixa('metal', alu, -W / 2, -H / 2, z0, W / 2, -H / 2 + f, z1);
   m.caixa('metal', alu, -W / 2, -H / 2 + f, z0, -W / 2 + f, H / 2 - f, z1);
   m.caixa('metal', alu, W / 2 - f, -H / 2 + f, z0, W / 2, H / 2 - f, z1);
-  // Laminado: fundo branco atrás, vidro com as células na frente, um pouco abaixo da borda da moldura.
-  m.caixa('plastico', '#e4e6e8', -W / 2 + f, -H / 2 + f, z1 - 0.012, W / 2 - f, H / 2 - f, z1 - 0.004);
-  m.estampa(estampaDeCelulas(item, W - 2 * f, H - 2 * f), 0, 0, z1 - 0.0038, W - 2 * f, H - 2 * f, 'pz');
+  // Laminado: vidro com as células na frente, um pouco abaixo da borda da moldura, e o fundo branco atrás.
+  // O fundo fica 2 cm atrás do vidro: a 0,2 mm, de longe, as duas faces disputavam o mesmo ponto da tela
+  // e a placa aparecia branca ou riscada em diagonal.
+  m.caixa('plastico', '#e4e6e8', -W / 2 + f, -H / 2 + f, z0 + 0.004, W / 2 - f, H / 2 - f, z0 + 0.01);
+  m.estampa(estampaDeCelulas(item, W - 2 * f, H - 2 * f), 0, 0, z1 - 0.004, W - 2 * f, H - 2 * f, 'pz');
 
   // Atrás: caixa de junção e os dois cabos curtos, que dão a volta na borda de cima e terminam em conectores MC4.
   const yCaixa = H / 2 - 0.22;
