@@ -34,9 +34,11 @@ Não basta uma linha reta livre entre as antenas. O sinal ocupa um volume em for
 
 Contas: a curva é `d1·d2 / (2·k·R)`, com `k = 4/3` e `R = 6.371 km`; o raio da zona de Fresnel é `17,32·√(d1·d2 / (GHz·d))`, em metros com distâncias em km.
 
-Antena no telhado de um sobrado fica a 6 ou 8 m, bem abaixo disso. Mas caminho sem a zona livre não é caminho fechado: o sinal contorna o obstáculo e perde força (difração). Pela conta da norma ITU-R P.526, em terreno liso e sem nada em cima, antenas a 8 m perdem cerca de 12 dB a mais em 20 km e 19 dB em 40 km. Sobra folga de uns 24 dB em 20 km e de uns 10 dB em 40 km.
+Antena no telhado de um sobrado fica a 6 ou 8 m, bem abaixo disso. Mas caminho sem a zona livre não é caminho fechado: o sinal contorna o obstáculo e perde força (difração).
 
-**Correção de 15/11/2026, com o método completo da norma (tarefa L1.4):** esses números eram otimistas. Em caminho liso, como sobre o mar ou a baía, antenas a 8 m perdem 23 dB a mais em 20 km e 40 dB em 40 km. A folga fica em 12 dB em 20 km e em 10 dB **negativos** em 40 km. Ou seja: sobre água, de telhado a telhado, os 20 km fecham e os 40 km não. E terreno liso e vazio quase não existe: o que derruba o enlace na prática são os prédios, as árvores e os morros do caminho.
+Pela conta completa da norma ITU-R P.526 (tarefa L1.4), em caminho liso e vazio, como sobre o mar ou a baía, antenas a 8 m perdem 23 dB a mais em 20 km e 40 dB em 40 km. A folga fica em 12 dB em 20 km e em 10 dB **negativos** em 40 km. Ou seja: sobre água, de telhado a telhado, os 20 km fecham e os 40 km não. (Uma primeira versão deste plano dava números mais otimistas, calculados só com a parte simples do método.)
+
+Terreno liso e vazio quase não existe: o que derruba o enlace na prática são os prédios, as árvores e os morros do caminho.
 
 ### 1.4 A resposta honesta à pergunta, por enquanto
 
@@ -62,7 +64,8 @@ Relatos de uso real, de fóruns e guias (qualidade variável): 1 a 3 km em cidad
 ### 1.6 Peças envolvidas
 
 - **Rádio:** placas com o chip SX1262, na versão de 915 MHz: Heltec V3/V4, LilyGO T-Beam, RAK WisBlock (RAK4631).
-- **Antena:** é o que mais muda o resultado, junto com a altura.
+- **Antena:** é o que mais muda o resultado, junto com a altura. O rádio nunca deve ser ligado sem a antena: transmitir sem ela pode queimar o transmissor (guia do MeshBrasil sobre a frequência no Brasil).
+- **Modo do rádio:** todos os rádios da rede precisam estar no mesmo modo; rádios em modos diferentes não se ouvem, a nenhuma distância (blog do Meshtastic, "why your mesh should switch from longfast").
 - **Repetidor solar:** um rádio de baixo consumo, bateria e uma placa pequena, em caixa à prova de chuva. O consumo de um RAK4631 como repetidor é estimado em 5 a 40 mA (estimativa de um guia, sem medição publicada). **Aqui os dois simuladores se encontram:** dimensionar a placa e a bateria do repetidor é a mesma conta de autonomia do simulador solar.
 - **Alternativa de firmware:** o MeshCore usa os mesmos rádios, mas só repetidores dedicados repassam mensagens, e aceita até 64 saltos. No papel, serve melhor a enlaces fixos planejados. É menos maduro, e as duas redes não se falam.
 
@@ -140,7 +143,7 @@ Ao fim desta fase você já responde à pergunta dos 20 km e dos 40 km.
 - [x] **L3.2 "Sugerir ponto de repetidor".** `nucleo` (Sonnet), com revisão do Fable.
 - [x] **L3.3 Nó repetidor solar:** placa e bateria, com a conta de autonomia do solar. `nucleo` (Sonnet).
 
-### Fase L4: aprender
+### Fase L4: aprender (aprovada pelo Gustavo em 15/11/2026)
 
 - [ ] **L4.1 Glossário, "por quê?" e regras da Anatel.** Texto por Opus; revisão do Fable.
 - [ ] **L4.2 Tutorial "meu primeiro enlace".** `interface` (Sonnet).
@@ -155,7 +158,7 @@ Ao fim desta fase você já responde à pergunta dos 20 km e dos 40 km.
 ## 6. Riscos e limites
 
 - **O simulador prevê o relevo, não a cidade.** Prédios e árvores não entram na conta. Em área urbana, o resultado real costuma ser pior que o previsto. O simulador vai dizer isso na tela e deixar uma margem ajustável.
-- **Relevo de 90 m de resolução** não enxerga um morro estreito nem um prédio. Serve para decidir onde vale a pena testar, não para garantir.
+- **Relevo com um ponto a cada 70 m, mais ou menos,** não enxerga um morro estreito nem um prédio. Serve para decidir onde vale a pena testar, não para garantir.
 - **A previsão não substitui o teste de campo.** Antes de comprar e instalar um repetidor em um morro, o certo é testar com dois rádios na mão.
 - **Repetidor em ponto alto precisa de lugar:** terreno de alguém, autorização, acesso para manutenção. O simulador acha o ponto; conseguir o lugar é outra história.
 - **Regra da Anatel a confirmar** (tarefa L0.2). Até lá, o simulador não afirma limite de potência.

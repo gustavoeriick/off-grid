@@ -72,8 +72,8 @@ export function vereditoEmDestaque(v: Veredito): string {
 
 /** O que cada veredito quer dizer, em uma frase para quem está começando. */
 export const EXPLICACAO_DO_VEREDITO: Record<Veredito, string> = {
-  folga: 'O sinal chega com 10 dB ou mais acima do mínimo e o caminho está livre. Aguenta chuva, folhagem e pequenas variações.',
-  limite: 'O sinal chega acima do mínimo, mas sem grande sobra: pode falhar com tempo ruim ou obstáculo novo.',
+  folga: 'O sinal chega com 10 dB ou mais acima do mínimo e o caminho está livre: sobra reserva para o sinal variar. Prédios e árvores não entram na conta.',
+  limite: 'O sinal chega acima do mínimo, mas sem grande sobra: pode falhar quando o sinal variar ou surgir um obstáculo novo.',
   'nao-fecha': 'O sinal chega abaixo do mínimo que o rádio consegue entender.',
 };
 
@@ -152,7 +152,7 @@ export const GLOSSARIO = {
   cabo: 'Perda no cabo, em dB (decibel): o que o cabo entre o rádio e a antena consome do sinal. Cabo longo ou fino perde mais.',
   altitude: 'Altitude do terreno acima do nível do mar, lida do mapa de relevo no lugar do ponto.',
   repetidor: 'Repetidor: um rádio igual aos outros, posto por você em um lugar alto, que recebe a mensagem inteira e a transmite de novo, para chegar onde o sinal direto não chega. Ele não amplifica o sinal.',
-  fresnel: 'Zona de Fresnel: uma região em forma de bola de rúgbi em volta da linha reta entre as antenas. Se algo entra nela, o sinal enfraquece mesmo sem tapar a linha.',
+  fresnel: 'Zona de Fresnel: um espaço em forma de charuto em volta da linha reta entre as antenas. Se algo entra nela, o sinal enfraquece mesmo sem tapar a linha.',
   folga: 'Folga: o quanto o sinal que chega passa do mínimo que o rádio entende, em dB. Quanto maior, mais seguro.',
   sensibilidade: 'Sensibilidade: o sinal mais fraco, em dBm, que o rádio ainda consegue entender neste modo.',
 } as const;
