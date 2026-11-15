@@ -121,6 +121,8 @@ export interface Cabo {
   protecoes: string[];
   /** `uid` do quadro de energia por onde o cabo passa. Nulo sem quadro. */
   quadro: string | null;
+  /** `uid` dos grampos de parede por onde o cabo passa, na ordem de `de` para `para`. Cada grampo prende um cabo só. */
+  grampos?: string[];
 }
 
 /** 'real' usa as medições horárias do dia simulado, quando foram baixadas; sem elas, vale o típico. */

@@ -182,12 +182,26 @@ function sanear(projeto: Projeto): void {
     const item = CATALOGO.get(pecas.get(uid)?.itemId ?? '');
     return item?.categoria === 'acessorio' && item.tipo === 'quadro';
   };
+  const ehGrampo = (uid: string): boolean => {
+    const item = CATALOGO.get(pecas.get(uid)?.itemId ?? '');
+    return item?.categoria === 'acessorio' && item.tipo === 'grampo';
+  };
   let mudou = false;
   const cabos: Cabo[] = [];
-  for (const c of projeto.cabos) {
+  /** Grampos já tomados por um cabo: cada grampo prende um cabo só. */
+  const presos = new Set<string>();
+  for (let c of projeto.cabos) {
     if (!pecas.has(c.de.disp) || !pecas.has(c.para.disp)) {
       mudou = true;
       continue;
+    }
+    if (c.grampos !== undefined) {
+      const validos = c.grampos.filter((g) => ehGrampo(g) && !presos.has(g));
+      validos.forEach((g) => presos.add(g));
+      if (validos.length !== c.grampos.length) {
+        mudou = true;
+        c = { ...c, grampos: validos };
+      }
     }
     if (c.quadro !== null && c.quadro !== undefined && !ehQuadro(c.quadro)) {
       mudou = true;
@@ -197,6 +211,10 @@ function sanear(projeto: Projeto): void {
     }
   }
   if (mudou) projeto.cabos = cabos;
+  // Grampo que não prende cabo nenhum (o cabo foi apagado) sai junto.
+  if (projeto.dispositivos.some((d) => ehGrampo(d.uid) && !presos.has(d.uid))) {
+    projeto.dispositivos = projeto.dispositivos.filter((d) => !ehGrampo(d.uid) || presos.has(d.uid));
+  }
 }
 
 function armazenamento(): Storage | null {
@@ -706,6 +724,27 @@ export const acoes = {
     const uid = novoUid('d', estado.projeto.dispositivos.map((d) => d.uid));
     mudar(['dispositivos'], undefined, (p) => {
       p.dispositivos = [...p.dispositivos, { uid, itemId, ...encaixe, ligado: true, uso: null }];
+    });
+    return uid;
+  },
+
+  /**
+   * Põe um grampo de parede no lugar dado e passa o cabo por ele, na posição `indice` da lista de grampos do cabo
+   * (0 é o mais perto da ponta `de`). Devolve o `uid` do grampo, ou nulo se o cabo não existe.
+   */
+  adicionarGrampo(caboUid: string, indice: number, encaixe: Encaixe, itemId = 'acc-grampo'): string | null {
+    const item = CATALOGO.get(itemId);
+    if (item?.categoria !== 'acessorio' || item.tipo !== 'grampo') throw new Error(`Não é um grampo: "${itemId}"`);
+    if (!estado.projeto.cabos.some((c) => c.uid === caboUid)) return null;
+    const uid = novoUid('d', estado.projeto.dispositivos.map((d) => d.uid));
+    mudar(['dispositivos', 'cabos'], undefined, (p) => {
+      p.dispositivos = [...p.dispositivos, { uid, itemId, ...encaixe, ligado: true, uso: null }];
+      p.cabos = p.cabos.map((c) => {
+        if (c.uid !== caboUid) return c;
+        const grampos = [...(c.grampos ?? [])];
+        grampos.splice(Math.max(0, Math.min(grampos.length, Math.round(indice))), 0, uid);
+        return { ...c, grampos };
+      });
     });
     return uid;
   },

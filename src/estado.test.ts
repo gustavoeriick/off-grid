@@ -262,3 +262,43 @@ describe('tutorial', () => {
     acoes.sairDoTutorial();
   });
 });
+
+// Grampo de parede: organiza o cabo na cena (docs/especificacao/cena-e-interface.md, seção dos cabos).
+describe('grampo de parede', () => {
+  const quat: [number, number, number, number] = [0, 0, 0, 1];
+  const em = (x: number) => ({ pos: [x, 1.5, 0] as [number, number, number], quat, superficie: 'parede-quartinho-fundo', giro: 0 });
+
+  beforeEach(() => {
+    if (emTutorial()) acoes.sairDoTutorial();
+    acoes.novoProjeto();
+    recalcularAgora();
+  });
+
+  it('entra na ordem pedida, não entra no orçamento e não muda as sugestões', () => {
+    const cabo = estado.projeto.cabos[0]!.uid;
+    const total = estado.derivados.orcamento.total;
+    const sugestoes = estado.derivados.sugestoes.map((s) => s.regra);
+    const a = acoes.adicionarGrampo(cabo, 0, em(0))!;
+    const b = acoes.adicionarGrampo(cabo, 0, em(1))!;
+    const c = acoes.adicionarGrampo(cabo, 99, em(2))!;
+    expect(estado.projeto.cabos.find((x) => x.uid === cabo)!.grampos).toEqual([b, a, c]);
+    recalcularAgora();
+    expect(estado.derivados.orcamento.total).toBe(total);
+    expect(estado.derivados.sugestoes.map((s) => s.regra)).toEqual(sugestoes);
+    expect(acoes.adicionarGrampo('nao-existe', 0, em(3))).toBeNull();
+  });
+
+  it('apagar o grampo solta o cabo naquele ponto; apagar o cabo leva os grampos; desfazer devolve', () => {
+    const cabo = estado.projeto.cabos[0]!.uid;
+    const pecas = estado.projeto.dispositivos.length;
+    const a = acoes.adicionarGrampo(cabo, 0, em(0))!;
+    const b = acoes.adicionarGrampo(cabo, 1, em(1))!;
+    acoes.removerDispositivo(a);
+    expect(estado.projeto.cabos.find((x) => x.uid === cabo)!.grampos).toEqual([b]);
+    acoes.removerCabo(cabo);
+    expect(estado.projeto.dispositivos).toHaveLength(pecas);
+    acoes.desfazer();
+    expect(estado.projeto.cabos.find((x) => x.uid === cabo)!.grampos).toEqual([b]);
+    expect(estado.projeto.dispositivos.some((d) => d.uid === b)).toBe(true);
+  });
+});

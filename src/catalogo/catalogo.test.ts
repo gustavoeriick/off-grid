@@ -29,7 +29,7 @@ const centavos = (reais: number) => Math.round(reais * 100);
 
 describe('catálogo: regras gerais', () => {
   it('tem a quantidade de itens da especificação', () => {
-    expect(itens).toHaveLength(88);
+    expect(itens).toHaveLength(89);
   });
 
   it('não repete id', () => {
@@ -84,12 +84,12 @@ describe('catálogo: ligação com a pesquisa', () => {
     }
   });
 
-  it('item sem url tem preço estimado em tipico, exceto o PowMr, a tomada da rede e os aparelhos', () => {
+  it('item sem url tem preço estimado em tipico, exceto o PowMr, a tomada da rede, os aparelhos e o grampo de parede, que não tem preço', () => {
     for (const i of itens.filter((x) => !x.url)) {
       if (i.id === 'inv-powmr-ps3k-110') {
         expect(i.coletadoEm, i.id).toBe(PESQUISA.coletadoEm);
         expect(i.tipico ?? [], i.id).not.toContain('preco');
-      } else if (i.categoria === 'aparelho' || i.categoria === 'rede') {
+      } else if (i.categoria === 'aparelho' || i.categoria === 'rede' || i.id === 'acc-grampo') {
         expect(i.preco, i.id).toBe(0);
         expect(i.tipico ?? [], i.id).not.toContain('preco');
       } else {

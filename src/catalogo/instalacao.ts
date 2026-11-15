@@ -186,4 +186,10 @@ export const ACESSORIOS: Acessorio[] = [
     detalhe: 'Quadro de distribuição de sobrepor para 8 disjuntores',
     ...ref('MLB36945875'), tipo: 'quadro', dimensoes: [0.20, 0.25, 0.09], modulos: 8, tipico: ['dimensoes'],
   },
+  {
+    // Sem preço por decisão do Gustavo (15/11/2026): serve para organizar os cabos na cena. Preço e mais opções ficam para depois.
+    id: 'acc-grampo', nome: 'Grampo de parede para cabo', linha: 'plano', categoria: 'acessorio',
+    detalhe: 'Prende um cabo na parede, no piso ou no telhado, para o cabo correr organizado. Ainda sem preço: não entra no orçamento',
+    preco: 0, tipo: 'grampo', dimensoes: [0.03, 0.03, 0.02],
+  },
 ];

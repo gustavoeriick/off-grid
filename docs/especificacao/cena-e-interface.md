@@ -136,6 +136,15 @@ Proteções são arrastadas para cima de um cabo: o cabo sob o ponteiro acende e
 
 **Cores.** Vermelho se as duas pontas são `cc+`; cinza-escuro (`#37474f`) se as duas são `cc-`; laranja (`#fb8c00`) se liga `cc+` com `cc-`; cinza-claro (`#90a4ae`) em `ca`.
 
+**Grampo de parede.** `acc-grampo`, acessório de tipo `grampo`, sem preço (não entra no orçamento) por decisão do Gustavo em 15/11/2026: serve para organizar os cabos; preço e mais opções ficam para depois. É um dispositivo como os outros (pode ser movido, apagado e desfeito) e encaixa em qualquer parede, piso ou telhado.
+
+- Cada grampo prende um cabo só. `Cabo.grampos` guarda os `uid` na ordem de `de` para `para`.
+- Ao soltar um grampo do catálogo, ele prende o cabo selecionado, se houver um; senão, o cabo desenhado mais próximo do ponto. Sem cabo no projeto, o grampo é recusado com a mensagem "Puxe um cabo antes de pôr o grampo."
+- A posição do grampo novo na ordem é a que menos alonga o caminho do cabo.
+- O cabo é desenhado em trechos: do terminal ao primeiro grampo, de grampo em grampo, e do último grampo ao outro terminal. Entre grampos da mesma superfície o trecho corre reto e rente a ela; os trechos das pontas mantêm a curva do cabo solto.
+- O comprimento passa a ser a soma de `(|dx| + |dy| + |dz|) × 1,1` de cada trecho, com o mesmo mínimo e o mesmo arredondamento.
+- Apagar o cabo apaga os grampos dele; apagar um grampo solta o cabo naquele ponto. Quem cuida disso é o estado.
+
 **Proteções no cabo.** Cubos de 0,07 ao longo do cabo, a partir de 25% do comprimento: fusível amarelo, disjuntor branco, DPS verde.
 
 ## 9. Sombra para o cálculo (`cena/sombra.ts`)
