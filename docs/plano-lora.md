@@ -127,9 +127,9 @@ As seis decisões da seção 4 foram aprovadas em 15/11/2026, todas como recomen
 
 ### Fase L2: mapa e enlace (primeira versão utilizável)
 
-- [ ] **L2.1 Mapa com os pontos:** criar, arrastar, nomear, altura da antena. Fable.
-- [ ] **L2.2 Corte do terreno do enlace,** com a linha, a curva, a zona de Fresnel e os obstáculos. Fable.
-- [ ] **L2.3 Painel do enlace:** a conta, a folga, o veredito e o que mudar para fechar. `interface` (Sonnet).
+- [x] **L2.1 Mapa com os pontos:** criar, arrastar, nomear, altura da antena. Fable.
+- [x] **L2.2 Corte do terreno do enlace,** com a linha, a curva, a zona de Fresnel e os obstáculos. Fable.
+- [x] **L2.3 Painel do enlace:** a conta, a folga, o veredito e o que mudar para fechar. `interface` (Sonnet).
 - [ ] **L2.4 Conferência contra o planejador do Meshtastic** em três enlaces de exemplo (em lugares públicos, não nas casas). `revisor` (Fable).
 
 Ao fim desta fase você já responde à pergunta dos 20 km e dos 40 km.
