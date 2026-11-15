@@ -95,7 +95,8 @@ export interface Cabo {
   quadro: string | null;
 }
 
-export type Clima = 'tipico' | 'limpo' | 'nublado' | 'chuvoso';
+/** 'real' usa as medições horárias do dia simulado, quando foram baixadas; sem elas, vale o típico. */
+export type Clima = 'tipico' | 'limpo' | 'nublado' | 'chuvoso' | 'real';
 
 /** `rede`: os aparelhos usam a rede e a bateria fica de reserva. `solar`: usam placas e bateria, e a rede entra quando a bateria baixa. */
 export type Prioridade = 'rede' | 'solar';
@@ -104,8 +105,10 @@ export interface Projeto {
   versao: 2;
   nome: string;
   casa: CasaConfig;
-  /** `id` de um item de `LOCAIS`. */
+  /** `id` de um item de `LOCAIS`, ou o `id` de `localPersonalizado`. */
   localId: string;
+  /** Cidade fora da lista de `LOCAIS`, com as médias mensais baixadas. */
+  localPersonalizado?: Local;
   clima: Clima;
   tensaoRede: TensaoRede;
   prioridade: Prioridade;

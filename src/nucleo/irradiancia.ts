@@ -1,6 +1,7 @@
 // Irradiação solar. Especificação: docs/especificacao/nucleo.md, seção 2. Tarefa 1.3.
 
 import type { Catalogo } from '../catalogo/tipos';
+import { climaRealDe } from './climaReal';
 import { direcaoSol, posicaoSol } from './sol';
 import type { AmbientePlacas, Clima, CondicaoPlaca, Irradiancia, Local, Projeto, Vec3 } from './tipos';
 
@@ -23,6 +24,13 @@ export const LOCAIS: Local[] = [
 
 export function localPorId(id: string): Local | undefined {
   return LOCAIS.find((l) => l.id === id);
+}
+
+/** Local do projeto: o personalizado, se o `id` dele é o `localId`; senão o de `LOCAIS`. */
+export function localDoProjeto(projeto: Pick<Projeto, 'localId' | 'localPersonalizado'>): Local | undefined {
+  const p = projeto.localPersonalizado;
+  if (p && p.id === projeto.localId) return p;
+  return localPorId(projeto.localId);
 }
 
 // ---------------------------------------------------------------- Data local
@@ -91,6 +99,14 @@ function erbs(kt: number): number {
 /** Irradiâncias horizontal, direta e difusa, temperatura ambiente e posição do sol em um instante. */
 export function irradiancia(local: Local, msUtc: number, clima: Clima): Irradiancia {
   const { azimute, elevacao } = posicaoSol(msUtc, local.lat, local.lon);
+  if (clima === 'real') {
+    const real = climaRealDe(local.id, msUtc);
+    if (real) {
+      if (elevacao <= 0) return { ghi: 0, dni: 0, dhi: 0, tAmb: real.tAmb, azimute, elevacao };
+      return { ghi: real.ghi, dni: real.dni, dhi: real.dhi, tAmb: real.tAmb, azimute, elevacao };
+    }
+    clima = 'tipico';
+  }
   const h = relogioLocal(local, msUtc);
   const hora = h.getUTCHours() + h.getUTCMinutes() / 60;
   const tAmb = (local.tempMensal[h.getUTCMonth()] ?? 0) + 4 * Math.cos((2 * Math.PI * (hora - 15)) / 24);

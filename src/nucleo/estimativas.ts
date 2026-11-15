@@ -3,7 +3,7 @@
 
 import type { Catalogo, Inversor } from '../catalogo/tipos';
 import { FATOR_TENSAO_CARGA, infoBanco, saidaArranjo, estadoPlaca } from './eletrica';
-import { irradianciaNasPlacas, irradianciaNoPlano, irradiancia, localPorId } from './irradiancia';
+import { irradianciaNasPlacas, irradianciaNoPlano, irradiancia, localDoProjeto } from './irradiancia';
 import { direcaoSol } from './sol';
 import type { AmbientePlacas, AnaliseCircuito, EstadoPlaca, Estimativas, Projeto } from './tipos';
 import { horasDeUso, usoDe } from './uso';
@@ -26,7 +26,7 @@ export function estimar(
   ambiente: AmbientePlacas,
   msUtc: number,
 ): Estimativas {
-  const local = localPorId(projeto.localId);
+  const local = localDoProjeto(projeto);
   const sistema = analise.sistema;
   const perdaSombra = new Map<string, number>();
 
