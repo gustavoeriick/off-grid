@@ -1,6 +1,6 @@
 # Plano de desenvolvimento do simulador off-grid 3D
 
-**Estado:** plano e especificação aprovados pelo Gustavo em 14/11/2026. Fases 0 e 1 concluídas. Fase 1 aprovada pelo Gustavo em 14/11/2026, que autorizou a fase 2. A fase 2 começa pela aprovação de [especificacao/fase-2.md](especificacao/fase-2.md), que traz a ordem das tarefas (2.0, 2.7a, 2.1 a 2.4, 2.6, 2.7b, 2.5).
+**Estado em 15/11/2026:** fases 0 e 1 concluídas e aprovadas. Fases 2 a 5 construídas na noite de 14 para 15/11, com autorização do Gustavo para seguir e decidir as dúvidas, e gravadas no ramo `dev`; falta o teste dele. Não foi feita a publicação (5.4), que depende de ele pedir o envio ao GitHub, nem a nova coleta de preços (6.1). As decisões tomadas sem ele estão em [especificacao/fase-2.md](especificacao/fase-2.md), seção 8.
 
 **Como usar este documento:** ele é a memória do projeto. Cada fase começa em uma sessão nova do Claude Code, que lê este plano e a especificação e não depende de conversas anteriores. Quem coordena uma fase marca aqui as tarefas concluídas.
 
@@ -146,23 +146,25 @@ Coordenação: Opus 5.5.
 | 3.4 | Painel de orçamento, com link e data de cada preço | `interface` (Sonnet) | Total igual ao do núcleo |
 | 3.5 | Mostradores e gráfico da bateria durante a queda | `interface` (Sonnet) | O gráfico acompanha a simulação |
 
+**Fases 2 e 3 construídas em 14 e 15/11/2026:** tarefas 2.0 a 2.7 e 3.1 a 3.5 entregues e gravadas no ramo `dev`, com revisão independente do estado e do núcleo e revisão final de ponta a ponta. O README (parte da 5.4) também está escrito.
+
 **Aprovação da primeira versão:** `revisor` com Fable percorre o cenário de ponta a ponta; o Gustavo testa.
 
 ### Fase 4: aprender
 
 Coordenação: Sonnet 5.5.
 
-- [ ] **4.1 Modo passo a passo.** Dois roteiros: o primeiro sistema (12 V, simples) e o plano (24 V). `interface` (Sonnet).
-- [ ] **4.2 "Por quê?" em cada sugestão e glossário.** Texto por Opus; revisão de segurança por Fable.
-- [ ] **4.3 Avisos de segurança** para a parte CA, o trabalho no telhado e as baterias. Revisão por Fable.
+- [x] **4.1 Modo passo a passo.** Dois roteiros: o primeiro sistema (12 V, simples) e o plano (24 V). `interface` (Sonnet).
+- [x] **4.2 "Por quê?" em cada sugestão e glossário.** Texto por Opus; revisão de segurança por Fable.
+- [x] **4.3 Avisos de segurança** para a parte CA, o trabalho no telhado e as baterias. Revisão por Fable.
 
 ### Fase 5: dados reais e extras
 
 Coordenação: Sonnet 5.5.
 
-- [ ] **5.1 Clima real por data** (Open-Meteo) e outras cidades (NASA POWER). `nucleo` e `interface`.
-- [ ] **5.2 Obstáculos:** vizinho, muro, árvore. `cena3d`.
-- [ ] **5.3 Estações portáteis e placas no chão.** `cena3d` e `nucleo`.
+- [x] **5.1 Clima real por data** (Open-Meteo) e outras cidades (NASA POWER). `nucleo` e `interface`.
+- [x] **5.2 Obstáculos:** vizinho, muro, árvore. `cena3d`.
+- [x] **5.3 Estações portáteis e placas no chão.** `cena3d` e `nucleo`.
 - [ ] **5.4 Publicação no GitHub Pages e README.** `verificador` (Haiku).
 
 ### Contínuo: preços
