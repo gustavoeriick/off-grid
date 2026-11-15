@@ -19,7 +19,7 @@ import { calcularOrcamento } from './nucleo/orcamento';
 import { podeLigar, terminaisDe } from './nucleo/terminais';
 import type {
   Acao, AmbientePlacas, AnaliseCircuito, Cabo, CasaConfig, Clima, Comodo, EstadoSim, Estimativas, Orcamento,
-  Local, ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, SaidaPasso, Sugestao, Varanda, Vec3,
+  Local, Obstaculo, ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, SaidaPasso, Sugestao, Varanda, Vec3,
 } from './nucleo/tipos';
 
 export type ModoVisao = 'completa' | 'sem-telhado' | 'terreo';
@@ -30,6 +30,7 @@ export type Selecao =
   | { tipo: 'parede'; uid: string }
   | { tipo: 'varanda'; lado: Varanda['lado'] }
   | { tipo: 'quartinho' }
+  | { tipo: 'obstaculo'; uid: string }
   | null;
 
 /** Resultados recalculados depois de cada mudança do projeto. */
@@ -382,6 +383,7 @@ function limparSelecaoOrfa(): void {
     : s.tipo === 'cabo' ? p.cabos.some((c) => c.uid === s.uid)
     : s.tipo === 'parede' ? p.casa.paredesInternas.some((w) => w.uid === s.uid)
     : s.tipo === 'varanda' ? p.casa.varandas.some((v) => v.lado === s.lado)
+    : s.tipo === 'obstaculo' ? (p.obstaculos ?? []).some((o) => o.uid === s.uid)
     : true;
   if (!existe) {
     estado.selecao = null;
@@ -487,6 +489,8 @@ export interface Encaixe {
   quat: Quat;
   superficie: string;
   giro: number;
+  /** Só para placa no chão, sobre suporte. */
+  inclinacaoGraus?: number;
 }
 
 // ---------------------------------------------------------------- Ações
@@ -560,6 +564,29 @@ export const acoes = {
       else if (existe) comodos = p.casa.comodos.map((c) => (c.uid === uid ? { ...c, andar, nome: limpo, ponto } : c));
       else comodos = [...p.casa.comodos, { uid: uid ?? novoUid('cm', p.casa.comodos.map((c) => c.uid)), andar, nome: limpo, ponto }];
       p.casa = { ...p.casa, comodos };
+    });
+  },
+
+  // ---- Obstáculos (muro, vizinho, árvore): avisam 'casa', porque mudam a sombra
+
+  /** Cria um obstáculo e devolve o `uid` dele. */
+  adicionarObstaculo(obstaculo: Omit<Obstaculo, 'uid'>): string {
+    const uid = novoUid('o', (estado.projeto.obstaculos ?? []).map((o) => o.uid));
+    mudar(['casa'], undefined, (p) => {
+      p.obstaculos = [...(p.obstaculos ?? []), { ...obstaculo, uid }];
+    });
+    return uid;
+  },
+
+  alterarObstaculo(uid: string, mudanca: Partial<Omit<Obstaculo, 'uid'>>, opcoes?: OpcoesMudanca): void {
+    mudar(['casa'], opcoes, (p) => {
+      p.obstaculos = (p.obstaculos ?? []).map((o) => (o.uid === uid ? { ...o, ...mudanca } : o));
+    });
+  },
+
+  removerObstaculo(uid: string): void {
+    mudar(['casa'], undefined, (p) => {
+      p.obstaculos = (p.obstaculos ?? []).filter((o) => o.uid !== uid);
     });
   },
 

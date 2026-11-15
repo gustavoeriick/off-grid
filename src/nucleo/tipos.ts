@@ -59,6 +59,24 @@ export interface CasaConfig {
   orientacaoGraus: number;
 }
 
+/** O que faz sombra em volta da casa: muro de divisa, casa ou prédio vizinho, árvore. */
+export type TipoObstaculo = 'muro' | 'vizinho' | 'arvore';
+
+export interface Obstaculo {
+  uid: string;
+  tipo: TipoObstaculo;
+  /** Centro da base, em coordenadas da casa (gira junto com ela). */
+  x: number;
+  z: number;
+  /** Medida ao longo de X antes do giro. Na árvore, o diâmetro da copa. */
+  largura: number;
+  /** Medida ao longo de Z antes do giro. Na árvore, ignorada. */
+  profundidade: number;
+  altura: number;
+  /** Giro em torno da vertical, em graus. */
+  giro: number;
+}
+
 export interface Dispositivo {
   uid: string;
   /** `id` do item no catálogo. */
@@ -74,6 +92,8 @@ export interface Dispositivo {
   ligado: boolean;
   /** Aparelhos: horário de uso definido pelo usuário. Nulo usa o `usoPadrao` do catálogo. */
   uso: Uso | null;
+  /** Placa no chão, sobre suporte: inclinação em graus a partir da horizontal. Ausente nas demais peças. */
+  inclinacaoGraus?: number;
 }
 
 export interface PontaCabo {
@@ -109,6 +129,8 @@ export interface Projeto {
   localId: string;
   /** Cidade fora da lista de `LOCAIS`, com as médias mensais baixadas. */
   localPersonalizado?: Local;
+  /** Muros, vizinhos e árvores que fazem sombra. */
+  obstaculos?: Obstaculo[];
   clima: Clima;
   tensaoRede: TensaoRede;
   prioridade: Prioridade;
