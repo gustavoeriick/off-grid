@@ -3,6 +3,7 @@
 
 import { acoesLora, ajustesDoRepetidorSolar } from '../estado';
 import { CONSUMO_ESTIMADO_MA, dimensionarRepetidorSolar, SOL_DO_PIOR_MES, type AjustesDoRepetidorSolar } from '../nucleo';
+import { botaoPorQue } from './aprender';
 import { h, num } from './dom';
 
 /** "0,14" ou "1,1": duas casas abaixo de 1, uma acima. */
@@ -43,6 +44,8 @@ export function montarRepetidorSolar(): { elemento: HTMLElement; atualizar: () =
       'p',
       { class: 'lora-nota' },
       `O consumo de ${num(CONSUMO_ESTIMADO_MA[0])} a ${num(CONSUMO_ESTIMADO_MA[1])} mA é uma estimativa de um guia de montagem para um rádio de baixo consumo (RAK4631), sem medição publicada. Por isso o resultado é uma faixa. Com o rádio na mão, meça com um medidor USB e ponha o seu número nos dois campos.`,
+      ' ',
+      botaoPorQue('consumo-em-faixa'),
     ),
     h('p', { class: 'lora-ajuda' }, `O sol do pior mês vem do simulador solar: ${num(SOL_DO_PIOR_MES.kwhM2Dia, 2)} kWh/m²/dia em ${SOL_DO_PIOR_MES.mes} (${SOL_DO_PIOR_MES.local}).`),
     h(

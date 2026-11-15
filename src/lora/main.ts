@@ -1,6 +1,7 @@
 // Entrada do ambiente de rádio LoRa (lora.html). Especificação: docs/especificacao/lora.md.
 // Fase L2: o mapa com os pontos e os enlaces no centro, o corte do terreno embaixo dele e os painéis à direita.
 // Fase L3: as rotas entre as casas e a busca de lugar para repetidor.
+// Fase L4: glossário, "por quê?", regras da Anatel e o tutorial.
 
 import { definirRelevo, rotaEntre, rotasEntreCasas, situacaoDoEnlace } from './calculo';
 import { acoesLora, estadoLora } from './estado';
@@ -8,7 +9,9 @@ import { montarCorteLora } from './mapa/corte';
 import { montarMapaLora } from './mapa/mapa';
 import { buscaAtual, rotaEmDestaque } from './ui/busca';
 import { el } from './ui/dom';
+import { montarAprenderLora } from './ui/aprender';
 import { montarPaineisLora } from './ui/paineis';
+import { montarTutorialLora } from './ui/tutorial-lora';
 import { montarTopoLora } from './ui/topo';
 
 montarTopoLora();
@@ -16,6 +19,8 @@ montarTopoLora();
 const mapa = montarMapaLora(el<HTMLElement>('#lora-mapa-area'));
 montarCorteLora(el<HTMLElement>('#lora-corte'), mapa);
 montarPaineisLora(el<HTMLElement>('#lora-direita'));
+montarAprenderLora();
+montarTutorialLora(el<HTMLElement>('#lora-mapa-area'));
 
 // Para a verificação e para depuração no navegador.
 (window as unknown as { __lora: unknown }).__lora = {

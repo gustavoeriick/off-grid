@@ -145,8 +145,8 @@ Ao fim desta fase você já responde à pergunta dos 20 km e dos 40 km.
 
 ### Fase L4: aprender (aprovada pelo Gustavo em 15/11/2026)
 
-- [ ] **L4.1 Glossário, "por quê?" e regras da Anatel.** Texto por Opus; revisão do Fable.
-- [ ] **L4.2 Tutorial "meu primeiro enlace".** `interface` (Sonnet).
+- [x] **L4.1 Glossário, "por quê?" e regras da Anatel.** Texto por Opus; revisão do Fable.
+- [x] **L4.2 Tutorial "meu primeiro enlace".** `interface` (Sonnet).
 
 ### Fase L5: opcionais
 

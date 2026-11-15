@@ -6,8 +6,10 @@
 import { montarRepetidorSolar } from './painel-solar';
 import { acoesLora, assinarLora, estadoLora } from '../estado';
 import { altitudeDoPonto, assinarCalculo, modoDoProjeto, rotasEntreCasas, situacaoDaAltitude, situacaoDoEnlace, type SituacaoDoEnlace } from '../calculo';
-import { avisosDaRegra, MODOS, REGIOES, SALTOS_MAXIMO } from '../nucleo';
-import type { PontoLora, Regiao } from '../nucleo/tipos';
+import type { SituacaoLora } from '../conteudo';
+import { avisosDaRegra, FOLGA_COM_SOBRA_DB, MODOS, REGIOES, SALTOS_MAXIMO } from '../nucleo';
+import type { Melhoria, PontoLora, Regiao, ResultadoDoEnlace } from '../nucleo/tipos';
+import { abrirTermoLora, avisoDeRegra, botaoPorQue, temTermoLora } from './aprender';
 import { assinarBusca, destacarRota, procurarRepetidor, rotaEmDestaque } from './busca';
 import { h, num, type Filho } from './dom';
 import { montarPainelDaBusca } from './painel-da-busca';
@@ -35,8 +37,40 @@ import {
   vereditoEmDestaque,
 } from './textos';
 
-/** Termo de rádio com a explicação ao passar o ponteiro. */
-const termo = (texto: string, explicacao: string): HTMLElement => h('span', { class: 'lora-termo', title: explicacao, tabindex: '0' }, texto);
+/**
+ * Termo de rádio com a explicação ao passar o ponteiro. Com o `id` de um termo do glossário, o clique (ou Enter)
+ * abre o glossário nele.
+ */
+const termo = (texto: string, explicacao: string, id?: string): HTMLElement => {
+  if (!id || !temTermoLora(id)) return h('span', { class: 'lora-termo', title: explicacao, tabindex: '0' }, texto);
+  const e = h('span', { class: 'lora-termo lora-termo-glossario', title: `${explicacao} (Clique para abrir no glossário.)`, tabindex: '0', role: 'button', 'data-termo': id }, texto);
+  e.addEventListener('click', (ev) => {
+    // Dentro de um rótulo, o clique não deve também focar o campo ao lado.
+    ev.preventDefault();
+    abrirTermoLora(id);
+  });
+  e.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      abrirTermoLora(id);
+    }
+  });
+  return e;
+};
+
+/** Qual "Por quê?" vale para o veredito de um enlace: o do próprio veredito, ou o do caminho que raspa no terreno. */
+function situacaoDoVeredito(r: ResultadoDoEnlace): SituacaoLora {
+  if (r.veredito === 'folga') return 'veredito-folga';
+  if (r.veredito === 'nao-fecha') return 'veredito-nao-fecha';
+  return r.conta.folgaDb >= FOLGA_COM_SOBRA_DB && !r.geometria.zonaLivre ? 'limite-com-caminho-raspando' : 'veredito-limite';
+}
+
+/** Qual "Por quê?" vale para uma mudança da lista "o que mudar para fechar", pelo texto do rótulo que o núcleo escreve. */
+function situacaoDaMelhoria(m: Melhoria): SituacaoLora {
+  if (m.rotulo.startsWith('Subir a antena')) return 'mudar-subir-antena';
+  if (m.rotulo.startsWith('Trocar o modo')) return 'mudar-modo-mais-lento';
+  return 'mudar-antena-de-mais-ganho';
+}
 
 const nomeDoPonto = (id: string): string => estadoLora.projeto.pontos.find((p) => p.id === id)?.nome ?? '?';
 
@@ -69,7 +103,7 @@ function montarResumo(): HTMLElement {
 
   caixa.append(h('h3', null, `Enlaces (${projeto.enlaces.length})`));
   if (projeto.enlaces.length === 0) {
-    caixa.append(h('p', { class: 'lora-ajuda' }, 'Use "Ligar dois pontos" na barra do mapa para ver se o rádio fecha a ligação entre eles. ', termo('Enlace', GLOSSARIO.enlace), ' é a ligação de rádio entre dois pontos.'));
+    caixa.append(h('p', { class: 'lora-ajuda' }, 'Use "Ligar dois pontos" na barra do mapa para ver se o rádio fecha a ligação entre eles. ', termo('Enlace', GLOSSARIO.enlace, 'enlace'), ' é a ligação de rádio entre dois pontos.'));
     const rotas = montarRotas();
     if (rotas) caixa.append(rotas);
     return caixa;
@@ -117,14 +151,19 @@ function montarRotas(): HTMLElement | null {
   // Enlace sem resultado (o relevo não baixou) não entra na busca de rota: sem ele, "não há ligação" seria uma resposta enganosa.
   const haEnlaceSemResultado = estadoLora.projeto.enlaces.some((e) => situacaoDoEnlace(e.de, e.para)?.estado === 'erro');
   for (const r of rotas) {
+    const semResultado = r.resultado !== null && r.resultado.rota === null && haEnlaceSemResultado;
     const resumo = r.resultado !== null && r.resultado.rota === null && haEnlaceSemResultado ? ROTA_SEM_RESULTADO : resumoDaRota(r.resultado, nomeDoPonto, limite);
     const temRota = Boolean(r.resultado?.rota);
+    // "Por quê?" só onde não há rota: sem ligação, ou passando do limite de saltos.
+    const porQue: SituacaoLora | null =
+      r.resultado !== null && r.resultado.rota === null && !semResultado ? (r.resultado.motivo === 'limite' ? 'rota-passa-do-limite' : 'rota-sem-ligacao') : null;
     const marcada = temRota && destacada !== null && destacada.de === r.de && destacada.para === r.para;
     const conteudo: Filho[] = [
       h('strong', null, `${nomeDoPonto(r.de)} ↔ ${nomeDoPonto(r.para)}`),
       h('span', null, distintivo(resumo.veredito, resumo.classe)),
       resumo.caminho ? h('span', { class: 'lora-rota-caminho' }, resumo.caminho) : null,
       h('span', { class: 'detalhe' }, resumo.detalhe),
+      porQue ? h('span', { class: 'lora-porque-linha' }, botaoPorQue(porQue)) : null,
     ];
     if (!temRota) {
       // Sem rota não há o que destacar no mapa: o item é só texto.
@@ -156,7 +195,7 @@ function linhaDasRotas(oQue: 'este ponto' | 'este enlace', usa: (rota: { pontos:
       : caminhos.length === 1
         ? `A rota ${caminhos[0]} passa por ${oQue}.`
         : `${caminhos.length} rotas entre casas passam por ${oQue}: ${caminhos.join('; ')}.`;
-  return h('p', { class: 'detalhe lora-nas-rotas' }, termo('Rotas', TEXTO_DE_ROTA), ': ', texto);
+  return h('p', { class: 'detalhe lora-nas-rotas' }, termo('Rotas', TEXTO_DE_ROTA, 'rota'), ': ', texto);
 }
 
 // ---------------------------------------------------------------- Ponto selecionado
@@ -168,11 +207,11 @@ interface PainelDoPonto {
 
 type CampoNumerico = 'alturaDaAntenaM' | 'potenciaDbm' | 'ganhoDbi' | 'perdaNoCaboDb';
 
-const CAMPOS: { campo: CampoNumerico; rotulo: string; unidade: string; min: number; max: number; passo: number; glossario: string }[] = [
+const CAMPOS: { campo: CampoNumerico; rotulo: string; unidade: string; min: number; max: number; passo: number; glossario: string; id?: string }[] = [
   { campo: 'alturaDaAntenaM', rotulo: 'Altura da antena', unidade: 'm', min: 1, max: 100, passo: 0.5, glossario: GLOSSARIO.altura },
-  { campo: 'potenciaDbm', rotulo: 'Potência do rádio', unidade: 'dBm', min: 0, max: 30, passo: 1, glossario: GLOSSARIO.potencia },
-  { campo: 'ganhoDbi', rotulo: 'Ganho da antena', unidade: 'dBi', min: 0, max: 20, passo: 0.5, glossario: GLOSSARIO.ganho },
-  { campo: 'perdaNoCaboDb', rotulo: 'Perda no cabo', unidade: 'dB', min: 0, max: 20, passo: 0.5, glossario: GLOSSARIO.cabo },
+  { campo: 'potenciaDbm', rotulo: 'Potência do rádio', unidade: 'dBm', min: 0, max: 30, passo: 1, glossario: GLOSSARIO.potencia, id: 'potencia' },
+  { campo: 'ganhoDbi', rotulo: 'Ganho da antena', unidade: 'dBi', min: 0, max: 20, passo: 0.5, glossario: GLOSSARIO.ganho, id: 'ganho' },
+  { campo: 'perdaNoCaboDb', rotulo: 'Perda no cabo', unidade: 'dB', min: 0, max: 20, passo: 0.5, glossario: GLOSSARIO.cabo, id: 'cabo-coaxial' },
 ];
 
 function montarPainelDoPonto(id: string): PainelDoPonto {
@@ -210,7 +249,7 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
     });
     entradas.set(c.campo, { entrada, nota });
     linhas.push(
-      h('div', { class: 'lora-campo' }, h('label', null, termo(c.rotulo, c.glossario), ' ', h('span', { class: 'detalhe' }, `(${c.unidade})`), entrada), nota),
+      h('div', { class: 'lora-campo' }, h('label', null, termo(c.rotulo, c.glossario, c.id), ' ', h('span', { class: 'detalhe' }, `(${c.unidade})`), entrada), nota),
     );
   }
 
@@ -233,7 +272,7 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
     { class: 'lora-painel', 'aria-label': 'Ponto selecionado' },
     titulo,
     h('div', { class: 'lora-campo' }, h('label', null, 'Nome', nome)),
-    h('div', { class: 'lora-campo' }, h('label', null, termo('Tipo', `Casa: um rádio em uma casa. ${GLOSSARIO.repetidor}`), tipo)),
+    h('div', { class: 'lora-campo' }, h('label', null, termo('Tipo', `Casa: um rádio em uma casa. ${GLOSSARIO.repetidor}`, 'repetidor'), tipo)),
     ...linhas,
     oQueERepetidor,
     solar.elemento,
@@ -259,7 +298,7 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
     const textoDaAltitude = situacaoDaAltitude(id) === 'erro' ? 'o relevo não pôde ser baixado; confira a internet' : alt === null ? 'baixando o relevo…' : `${num(alt, 0)} m`;
     altitude.replaceChildren(termo('Altitude do terreno', GLOSSARIO.altitude), `: ${textoDaAltitude}`);
     const lista = avisosDaRegra(ponto, modoDoProjeto(estadoLora.projeto));
-    avisos.replaceChildren(...lista.map((a) => h('p', { class: 'lora-aviso', role: 'note' }, a)));
+    avisos.replaceChildren(...lista.map(avisoDeRegra));
     oQueERepetidor.hidden = ponto.tipo !== 'repetidor';
     solar.elemento.hidden = ponto.tipo !== 'repetidor';
     solar.atualizar();
@@ -288,7 +327,9 @@ function montarListaDeMelhorias(s: Extract<SituacaoDoEnlace, { estado: 'pronto' 
         h('span', null, m.rotulo),
         h('span', { class: 'detalhe' }, ` → folga ${dbComSinal(m.folgaDb)}, `),
         distintivo(textoDoVeredito(m.veredito), m.veredito),
-        m.aviso ? h('p', { class: 'lora-aviso', role: 'note' }, m.aviso) : null,
+        ' ',
+        botaoPorQue(situacaoDaMelhoria(m)),
+        m.aviso ? avisoDeRegra(m.aviso) : null,
       ),
     );
   }
@@ -314,11 +355,25 @@ function montarPainelDoEnlace(de: string, para: string): HTMLElement {
 
   const { resultado: r } = situacao;
   caixa.append(
-    h('div', { class: `lora-veredito ${r.veredito}` }, h('strong', null, vereditoEmDestaque(r.veredito)), h('span', null, ` (folga ${dbComSinal(r.conta.folgaDb)})`)),
+    h(
+      'div',
+      { class: `lora-veredito ${r.veredito}` },
+      h('strong', null, vereditoEmDestaque(r.veredito)),
+      h('span', null, ` (folga ${dbComSinal(r.conta.folgaDb)}) `),
+      botaoPorQue(situacaoDoVeredito(r)),
+    ),
     h('p', null, r.texto),
     h('p', { class: 'detalhe' }, EXPLICACAO_DO_VEREDITO[r.veredito]),
     h('p', null, `Distância: ${distanciaTexto(r.conta.distanciaKm)}. Frequência de cálculo: ${num(r.conta.frequenciaMHz, 2)} MHz.`),
-    h('p', null, termo('Zona de Fresnel', GLOSSARIO.fresnel), ': ', textoDaZona(r.geometria).replace(/^A zona de Fresnel /, '')),
+    h(
+      'p',
+      null,
+      termo('Zona de Fresnel', GLOSSARIO.fresnel, 'zona-de-fresnel'),
+      ': ',
+      textoDaZona(r.geometria).replace(/^A zona de Fresnel /, ''),
+      r.geometria.zonaLivre || !r.geometria.piorPonto ? null : ' ',
+      r.geometria.zonaLivre || !r.geometria.piorPonto ? null : botaoPorQue(r.geometria.piorPonto.folgaM < 0 ? 'obstaculo-corta-a-linha' : 'zona-nao-livre'),
+    ),
     h('h3', null, 'A conta, linha a linha'),
     h('p', { class: 'detalhe' }, 'Feita no sentido em que a folga é menor, que é o que vale. As parcelas que ajudam somam; as que atrapalham subtraem. Os valores são arredondados na tela.'),
   );
@@ -353,8 +408,8 @@ function montarPainelDoEnlace(de: string, para: string): HTMLElement {
       ),
     );
   }
-  for (const a of situacao.avisos) caixa.append(h('p', { class: 'lora-aviso', role: 'note' }, a));
-  caixa.append(h('p', { class: 'lora-aviso fixo', role: 'note' }, AVISO_FIXO), h('div', { class: 'lora-acoes' }, desligar));
+  for (const a of situacao.avisos) caixa.append(avisoDeRegra(a));
+  caixa.append(h('p', { class: 'lora-aviso fixo', role: 'note' }, AVISO_FIXO, ' ', botaoPorQue('predios-e-arvores')), h('div', { class: 'lora-acoes' }, desligar));
   return caixa;
 }
 
@@ -402,21 +457,21 @@ function montarConfiguracao(): PainelDaConfiguracao {
     h(
       'div',
       { class: 'lora-campo lora-larga' },
-      h('label', null, termo('Modo do rádio', TEXTO_DO_MODO), modo),
+      h('label', null, termo('Modo do rádio', TEXTO_DO_MODO, 'modo'), modo),
       modoDetalhe,
       h('p', { class: 'detalhe' }, TEXTO_DO_MODO),
     ),
     h(
       'div',
       { class: 'lora-campo' },
-      h('label', null, termo('Margem do ambiente', TEXTO_MARGEM_DO_AMBIENTE), ' ', h('span', { class: 'detalhe' }, '(dB, de 0 a 40)'), margem),
+      h('label', null, termo('Margem do ambiente', TEXTO_MARGEM_DO_AMBIENTE, 'margem-do-ambiente'), ' ', h('span', { class: 'detalhe' }, '(dB, de 0 a 40)'), margem),
       margemNota,
       h('p', { class: 'detalhe' }, TEXTO_MARGEM_DO_AMBIENTE),
     ),
     h(
       'div',
       { class: 'lora-campo' },
-      h('label', null, termo('Limite de saltos', TEXTO_DE_SALTOS), ' ', h('span', { class: 'detalhe' }, `(de 1 a ${SALTOS_MAXIMO})`), saltos),
+      h('label', null, termo('Limite de saltos', TEXTO_DE_SALTOS, 'salto'), ' ', h('span', { class: 'detalhe' }, `(de 1 a ${SALTOS_MAXIMO})`), saltos),
       saltosNota,
       h('p', { class: 'detalhe' }, TEXTO_DE_SALTOS),
     ),
@@ -433,7 +488,7 @@ function montarConfiguracao(): PainelDaConfiguracao {
     const m = modoDoProjeto(p);
     modoDetalhe.replaceChildren(
       `Neste modo: taxa de ${num(m.taxaKbps, 2)} kbps (velocidade dos dados) e `,
-      termo('sensibilidade', GLOSSARIO.sensibilidade),
+      termo('sensibilidade', GLOSSARIO.sensibilidade, 'sensibilidade'),
       ` de ${dbmTexto(m.sensibilidadeDbm)}. Quanto mais negativo, mais fraco é o sinal que o rádio entende.`,
     );
   };

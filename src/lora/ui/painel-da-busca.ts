@@ -3,6 +3,7 @@
 
 import { assinarLora, estadoLora, PONTO_PADRAO } from '../estado';
 import { assinarBusca, buscaAtual, destacarSugestao, fecharBusca, porRepetidorNaSugestao, procurarRepetidor, sugestaoEmDestaque, type Busca } from './busca';
+import { botaoPorQue } from './aprender';
 import { h, num } from './dom';
 import { AVISO_DA_SUGESTAO, TEXTO_DA_BUSCA, textoDoVeredito, textoSemSugestaoQueFecha, trechoDaSugestaoTexto, vereditoEmDestaque } from './textos';
 
@@ -65,7 +66,7 @@ export function montarPainelDaBusca(): HTMLElement {
       );
       const nenhumaFecha = sugestoes.every((s) => s.veredito === 'nao-fecha');
       const semSaida = nenhumaFecha ? textoSemSugestaoQueFecha(sugestoes[0], a, b) : null;
-      if (semSaida) caixa.append(h('p', { class: 'lora-aviso', id: 'lora-busca-sem-saida', role: 'note' }, semSaida));
+      if (semSaida) caixa.append(h('p', { class: 'lora-aviso', id: 'lora-busca-sem-saida', role: 'note' }, semSaida, ' ', botaoPorQue('sugestao-nao-fecha')));
 
       const lista = h('ol', { class: 'lora-sugestoes' });
       sugestoes.forEach((s, i) => {
@@ -82,6 +83,7 @@ export function montarPainelDaBusca(): HTMLElement {
             h('span', { class: 'lora-sugestao-numero', 'aria-hidden': 'true' }, String(i + 1)),
             h('strong', null, `Lugar ${i + 1}: `, h('span', { class: `lora-sugestao-veredito ${s.veredito}` }, vereditoEmDestaque(s.veredito))),
             h('span', { class: 'detalhe' }, `terreno a ${num(s.altM, 0)} m de altitude`),
+            s.veredito === 'nao-fecha' ? botaoPorQue('sugestao-nao-fecha') : null,
           ),
           h('ul', { class: 'lora-sugestao-trechos' }, trecho(a, s.trechoA), trecho(b, s.trechoB)),
           por,

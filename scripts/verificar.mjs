@@ -2993,6 +2993,381 @@ async function principal() {
     conferir(pedidos.outros.length === 0, `nenhum pedido deveria sair para outro endereço: ${pedidos.outros.join(', ')}`);
   }
 
+  // Aprender (tarefas L4.1 e L4.2): o cartão da primeira abertura, o tutorial "Meu primeiro enlace" cumprido de verdade com o
+  // mouse (no cenário falso em que o enlace direto não fecha), o glossário, o "Por quê?" e as regras da Anatel.
+  // Roda logo depois da página inicial, com o projeto vazio e nada lembrado. Em 1280 × 720, que é a janela mais apertada.
+  // Termina com os projetos como estavam: o do tutorial é apagado e "Minha rede" continua aberta.
+  async function verificarLoraAprender(pedidos) {
+    const lora = () => pagina.evaluate(() => JSON.parse(JSON.stringify(window.__lora.estado())));
+    const PALAVRAS = { folga: 'fecha com folga', limite: 'fecha no limite', 'nao-fecha': 'não fecha' };
+    const visivel = (seletor) => pagina.locator(seletor).first().isVisible();
+    const texto = async (seletor) => (await pagina.locator(seletor).first().textContent()) ?? '';
+    const telaDoPonto = (id) => pagina.evaluate((i) => window.__lora.telaDoPonto(i), id);
+    const telaDe = (c) => pagina.evaluate(([lat, lon]) => window.__lora.mapa.telaDe(lat, lon), [c.lat, c.lon]);
+    const cliqueNoPonto = async (id) => {
+      const t = await telaDoPonto(id);
+      await pagina.mouse.click(t.x, t.y);
+    };
+    const enlacesProntos = () =>
+      pagina.waitForFunction(() => window.__lora.estado().projeto.enlaces.every((e) => window.__lora.situacaoDoEnlace(e.de, e.para)?.estado === 'pronto'), null, { timeout: 60000 });
+    const passo = () =>
+      pagina.evaluate(() => {
+        const p = document.querySelector('#lora-tutorial');
+        return p && !p.hidden
+          ? { id: p.dataset.passo ?? null, modo: p.dataset.modo ?? null, contagem: p.querySelector('.passo-contagem')?.textContent ?? '', titulo: p.querySelector('.passo-titulo')?.textContent ?? '', texto: p.querySelector('.lora-passo-texto')?.textContent ?? '' }
+          : null;
+      });
+    const esperarPasso = async (id) => {
+      try {
+        await pagina.waitForFunction((alvo) => document.querySelector('#lora-tutorial')?.dataset.passo === alvo, id, { timeout: 15000 });
+      } catch {
+        throw new Error(`Conferência falhou: o passo da vez deveria ser "${id}" e é ${JSON.stringify(await passo())}`);
+      }
+    };
+    const realcados = () => pagina.evaluate(() => [...document.querySelectorAll('.lora-realce')].map((b) => b.id));
+    const continuar = () => pagina.locator('#lora-tutorial [data-acao="continuar"]').click();
+    const projetos = () => pagina.evaluate(() => window.__lora.acoes.listarProjetos().map((p) => ({ id: p.id, nome: p.nome, atual: p.atual })));
+    const sobreposto = (id) => pagina.locator(id).isVisible();
+    const verTermoAberto = (id) => pagina.locator(`#lora-termo-${id}`).getAttribute('aria-expanded').catch(() => null);
+    const termoAberto = async () => pagina.evaluate(() => [...document.querySelectorAll('#lora-painel-glossario .termo')].filter((a) => a.querySelector('.termo-titulo')?.getAttribute('aria-expanded') === 'true').map((a) => a.dataset.termo));
+    const recarregar = async () => {
+      await esperar(700); // o projeto é gravado com um pequeno atraso
+      await pagina.reload();
+      await pagina.waitForFunction(() => window.__lora && window.__lora.pronto === true, null, { timeout: 30000 });
+      await esperar(500);
+    };
+
+    // ---------------------------------------------------------------- Barra do alto e primeira abertura (1280 × 720)
+    await pagina.setViewportSize({ width: 1280, height: 720 });
+    await esperar(400);
+    const topo = await pagina.locator('#topo').boundingBox();
+    conferir(topo.height <= 49, `a barra do alto do LoRa deveria ter uma linha só em 1280 px: ${topo.height} px`);
+    conferir(await pagina.evaluate(() => document.querySelector('#topo').scrollWidth <= document.querySelector('#topo').clientWidth), 'a barra do alto não deveria passar da largura da janela');
+    const botoesAprender = await pagina.locator('.lora-aprender button').allTextContents();
+    conferir(botoesAprender.join('|') === 'Tutorial|Glossário|Regras da Anatel', `o grupo Aprender deveria ter os três botões: ${botoesAprender.join('|')}`);
+    conferir((await lora()).projeto.pontos.length === 0, 'a primeira abertura é com o projeto vazio');
+
+    const cartao = pagina.locator('#lora-primeira');
+    const avisoMapa = pagina.locator('#lora-aviso-mapa');
+    conferir((await cartao.isVisible()) && (await avisoMapa.isVisible()), 'o cartão da primeira abertura e o aviso de privacidade deveriam aparecer juntos');
+    const bc = await cartao.boundingBox();
+    const ba = await avisoMapa.boundingBox();
+    const area = await pagina.locator('#lora-mapa-area').boundingBox();
+    const semCruzar = bc.x >= ba.x + ba.width || ba.x >= bc.x + bc.width || bc.y >= ba.y + ba.height || ba.y >= bc.y + bc.height;
+    conferir(semCruzar, `o cartão e o aviso de privacidade não podem se cobrir: ${JSON.stringify([bc, ba])}`);
+    const dentro = (b) => b.x >= area.x && b.y >= area.y && b.x + b.width <= area.x + area.width && b.y + b.height <= area.y + area.height;
+    conferir(dentro(bc) && dentro(ba), 'o cartão e o aviso deveriam caber na área do mapa');
+    const textoDoCartao = await cartao.textContent();
+    conferir(textoDoCartao.includes('Fazer o tutorial') && textoDoCartao.includes('Entendi') && textoDoCartao.includes('relevo'), `o cartão deveria explicar o ambiente e ter os dois botões: ${textoDoCartao}`);
+    await captura('121-lora-primeira-abertura');
+
+    // ---------------------------------------------------------------- Tutorial: começar
+    const antes = await projetos();
+    conferir(antes.length === 1 && antes[0].nome === 'Minha rede', `antes do tutorial só existe "Minha rede": ${JSON.stringify(antes)}`);
+    await pagina.locator('#lora-primeira-tutorial').click();
+    let e = await lora();
+    conferir(e.projeto.nome === 'Tutorial: meu primeiro enlace' && e.projeto.pontos.length === 0, `começar o tutorial deveria abrir um projeto novo e vazio: ${e.projeto.nome}`);
+    const lista = await projetos();
+    conferir(lista.length === 2 && lista.some((p) => p.nome === 'Minha rede' && !p.atual), `o projeto de antes deveria continuar na lista: ${JSON.stringify(lista)}`);
+    conferir(await cartao.isHidden(), 'com o tutorial em andamento, o cartão da primeira abertura some');
+    await esperarPasso('o-que-e');
+    let p = await passo();
+    conferir(p.contagem.startsWith('Passo 1 de 13'), `o painel deveria dizer "Passo 1 de 13": ${p.contagem}`);
+    conferir(p.titulo.includes('O que é LoRa'), `título do passo 1: ${p.titulo}`);
+    conferir((await pagina.evaluate(() => getComputedStyle(document.querySelector('#lora-tutorial')).pointerEvents)) === 'none', 'o painel do tutorial não deveria capturar o ponteiro');
+    conferir((await realcados()).length === 0, 'no passo de leitura nenhum botão da barra do mapa fica realçado');
+    // Fica ao lado do aviso de privacidade, sem cobri-lo.
+    const bt = await pagina.locator('#lora-tutorial').boundingBox();
+    conferir(bt.x >= ba.x + ba.width || bt.y >= ba.y + ba.height, 'o painel do tutorial não pode cobrir o aviso de privacidade');
+    await captura('122-lora-tutorial-passo-1');
+
+    // ---------------------------------------------------------------- Os 13 passos, de verdade
+    const a = LUGARES.morroA;
+    const b = LUGARES.atrasDaSerra;
+    await pagina.evaluate(([lat, lon]) => window.__lora.mapa.irPara(lat, lon, 9.5), [(a.lat + b.lat) / 2 - 0.05, (a.lon + b.lon) / 2]);
+    await esperar(500);
+
+    await continuar();
+    await esperarPasso('primeiro-ponto');
+    conferir((await realcados()).join() === 'lora-novo-ponto', `"Novo ponto" deveria estar realçado no passo 2: ${(await realcados()).join()}`);
+    conferir((await pagina.evaluate(() => getComputedStyle(document.querySelector('#lora-novo-ponto')).animationName)) === 'lora-pulso', 'o realce deveria pulsar');
+    await captura('123-lora-tutorial-realce');
+    await pagina.locator('#lora-novo-ponto').click();
+    let t = await telaDe(a);
+    await pagina.mouse.click(t.x, t.y);
+    await esperarPasso('segundo-ponto');
+    conferir((await lora()).projeto.pontos.length === 1, 'o primeiro clique deveria criar o primeiro ponto');
+    await pagina.locator('#lora-novo-ponto').click();
+    t = await telaDe(b);
+    await pagina.mouse.click(t.x, t.y);
+    await esperarPasso('ligar');
+    e = await lora();
+    conferir(e.projeto.pontos.length === 2, 'o segundo clique deveria criar o segundo ponto');
+    conferir((await realcados()).join() === 'lora-ligar', `"Ligar dois pontos" deveria estar realçado no passo 4: ${(await realcados()).join()}`);
+    const [idA, idB] = e.projeto.pontos.map((x) => x.id);
+    await pagina.locator('#lora-ligar').click();
+    await cliqueNoPonto(idA);
+    await cliqueNoPonto(idB);
+    // Ligar já deixa o enlace selecionado: o passo 5 (abrir o enlace) fica feito assim que o cálculo termina.
+    await pagina.waitForFunction(() => ['selecionar-enlace', 'ler-veredito'].includes(document.querySelector('#lora-tutorial')?.dataset.passo), null, { timeout: 15000 });
+    conferir((await realcados()).length === 0, 'depois de ligar, nenhum botão fica realçado');
+    conferir((await lora()).projeto.enlaces.length === 1, 'deveria haver um enlace');
+    await enlacesProntos();
+    await esperarPasso('ler-veredito');
+    const veredito = await pagina.evaluate(([x, y]) => window.__lora.situacaoDoEnlace(x, y).resultado.veredito, [idA, idB]);
+    conferir(veredito === 'nao-fecha', `no cenário falso o enlace direto deveria não fechar: ${veredito}`);
+    p = await passo();
+    conferir(p.texto.includes('"não fecha"') && p.texto.includes('Quase nunca falta potência'), `o texto do passo 6 deveria ser o de "não fecha": ${p.texto}`);
+    conferir(p.contagem.startsWith('Passo 6 de 13'), p.contagem);
+    await captura('124-lora-tutorial-veredito');
+    // Recolher o painel deixa só a linha do passo, para cobrir menos do mapa.
+    await pagina.locator('#lora-tutorial [data-acao="recolher"]').click();
+    conferir((await pagina.locator('#lora-tutorial .lora-passo-texto').count()) === 0 && (await visivel('#lora-tutorial .passo-titulo')), 'recolhido, o painel deveria mostrar só o passo e o título');
+    const recolhidoAlt = (await pagina.locator('#lora-tutorial').boundingBox()).height;
+    await captura('139-lora-tutorial-recolhido');
+    await pagina.locator('#lora-tutorial [data-acao="recolher"]').click();
+    conferir((await pagina.locator('#lora-tutorial .lora-passo-texto').count()) === 1 && (await pagina.locator('#lora-tutorial').boundingBox()).height > recolhidoAlt + 40, 'aberto de novo, o painel deveria mostrar o texto do passo');
+
+    // "Por quê?" do veredito, com termos clicáveis.
+    await pagina.locator('#lora-direita .lora-veredito .lora-porque-botao').click();
+    conferir(await sobreposto('#lora-painel-porque'), 'o "Por quê?" do veredito deveria abrir o painel');
+    let porque = await texto('#lora-painel-porque .lora-porque-texto');
+    conferir(porque.includes('abaixo da sensibilidade') && porque.includes('153 dB'), `texto do "Por quê?" do veredito: ${porque}`);
+    conferir((await pagina.locator('#lora-painel-porque .etiqueta-termo').count()) === 4, 'o "Por quê?" deveria ter as etiquetas dos termos relacionados');
+    await captura('125-lora-porque-do-veredito');
+    await pagina.locator('#lora-painel-porque .etiqueta-termo[data-termo="sensibilidade"]').click();
+    conferir((await sobreposto('#lora-painel-glossario')) && !(await sobreposto('#lora-painel-porque')), 'a etiqueta deveria abrir o glossário no lugar do "Por quê?"');
+    conferir((await termoAberto()).join() === 'sensibilidade', `o glossário deveria abrir em "sensibilidade": ${(await termoAberto()).join()}`);
+    await pagina.keyboard.press('Escape');
+    conferir(!(await sobreposto('#lora-painel-glossario')), 'Esc deveria fechar o glossário');
+    conferir((await passo()).id === 'ler-veredito', 'abrir o glossário não deveria mexer no passo da vez');
+
+    await continuar();
+    await esperarPasso('ler-corte');
+    conferir(await pagina.locator('#lora-corte').isVisible(), 'o corte do terreno deveria estar à vista no passo 7');
+
+    // "Por quê?" de uma melhoria de "O que mudar para fechar".
+    const melhoria = pagina.locator('#lora-direita .lora-melhorias li').first();
+    const rotuloDaMelhoria = await melhoria.locator('span').first().textContent();
+    conferir(rotuloDaMelhoria.startsWith('Subir a antena'), `a primeira melhoria deveria ser subir a antena: ${rotuloDaMelhoria}`);
+    await melhoria.locator('.lora-porque-botao').click();
+    porque = await texto('#lora-painel-porque .lora-porque-texto');
+    conferir(porque.includes('Antena mais alta levanta a linha'), `texto do "Por quê?" de subir a antena: ${porque}`);
+    await captura('126-lora-porque-de-melhoria');
+    await pagina.keyboard.press('Escape');
+
+    await continuar();
+    await esperarPasso('mudar-altura');
+    await cliqueNoPonto(idA);
+    conferir((await lora()).selecao?.tipo === 'ponto', 'o clique no ponto deveria selecioná-lo');
+    conferir((await passo()).id === 'mudar-altura', 'selecionar o ponto não adianta o passo; o enlace do passo 5 continua feito');
+    const campoAltura = pagina.locator('#lora-direita input[aria-label="Altura da antena (m)"]');
+    await campoAltura.fill('15');
+    await campoAltura.press('Tab');
+    await esperarPasso('o-que-mudar');
+    conferir((await lora()).projeto.pontos.find((x) => x.id === idA).alturaDaAntenaM === 15, 'a altura da antena deveria ter mudado para 15 m');
+    p = await passo();
+    conferir(p.texto.startsWith('A lista "o que mudar para fechar" mostra'), `o passo 9 deveria falar da lista (o enlace ainda não fecha com folga): ${p.texto}`);
+
+    await continuar();
+    await esperarPasso('repetidor');
+    conferir((await realcados()).join() === 'lora-sugerir', `"Sugerir ponto de repetidor" deveria estar realçado no passo 10: ${(await realcados()).join()}`);
+    p = await passo();
+    conferir(p.texto.startsWith('Quando o caminho direto não fecha com folga'), `texto do passo 10: ${p.texto}`);
+    await enlacesProntos();
+    await pagina.locator('#lora-sugerir').click();
+    await pagina.waitForFunction(() => window.__lora.busca().estado === 'pronta', null, { timeout: 60000 });
+    await esperar(800);
+    await captura('127-lora-tutorial-sugestoes');
+    await pagina.locator('#lora-busca .lora-sugestao-por').first().click();
+    await esperarPasso('ler-rota');
+    e = await lora();
+    const rep = e.projeto.pontos.find((x) => x.tipo === 'repetidor');
+    conferir(Boolean(rep) && e.projeto.enlaces.length === 3, `a sugestão deveria pôr um repetidor ligado às duas pontas: ${JSON.stringify(e.projeto.enlaces)}`);
+    conferir((await realcados()).length === 0, 'depois do repetidor, nenhum botão fica realçado');
+    await enlacesProntos();
+    await esperar(300);
+    const rota = await pagina.evaluate(([x, y]) => JSON.parse(JSON.stringify(window.__lora.rotaEntre(x, y))), [idA, idB]);
+    conferir(rota?.rota, 'deveria haver rota entre as duas casas');
+    const frase = { folga: 'fecha com folga', limite: 'fecha no limite', 'nao-fecha': 'não fecha' }[rota.rota.veredito];
+    p = await passo();
+    conferir(p.texto.includes(`A sua rota ${frase}`), `o texto do passo 11 deveria ser o da rota que ${frase}: ${p.texto}`);
+    conferir(p.contagem.startsWith('Passo 11 de 13'), p.contagem);
+
+    // Recarregar a página no meio do tutorial: continua de onde parou.
+    await recarregar();
+    await esperarPasso('ler-rota');
+    p = await passo();
+    conferir(p.contagem.startsWith('Passo 11 de 13') && p.texto.includes(`A sua rota ${frase}`), `depois de recarregar, o tutorial deveria continuar no passo 11: ${JSON.stringify(p)}`);
+    conferir((await lora()).projeto.nome === 'Tutorial: meu primeiro enlace', 'recarregar deveria manter o projeto do tutorial aberto');
+    await pagina.setViewportSize({ width: 1280, height: 720 });
+    await captura('128-lora-tutorial-depois-de-recarregar');
+
+    // "Ver os passos": feito, atual e adiante.
+    await pagina.locator('#lora-tutorial [data-acao="lista"]').click();
+    const marcas = await pagina.evaluate(() => [...document.querySelectorAll('#lora-tutorial .passo-item')].map((li) => (li.classList.contains('feito') ? 'f' : li.classList.contains('atual') ? 'a' : 'x')).join(''));
+    conferir(/^f{10}a(x{2})$/.test(marcas), `a lista de passos deveria ter 10 feitos, 1 atual e 2 adiante: ${marcas}`);
+    await captura('129-lora-tutorial-lista-de-passos');
+    await pagina.locator('#lora-tutorial [data-acao="lista"]').click();
+
+    await continuar();
+    await esperarPasso('repetidor-solar');
+    await cliqueNoPonto(rep.id);
+    conferir(await pagina.locator('#lora-solar').isVisible(), 'o painel do repetidor deveria mostrar a seção solar');
+    await pagina.locator('#lora-solar .lora-porque-botao').click();
+    porque = await texto('#lora-painel-porque .lora-porque-texto');
+    conferir(porque.includes('Não há medição publicada'), `texto do "Por quê?" do consumo: ${porque}`);
+    await pagina.keyboard.press('Escape');
+    conferir((await passo()).id === 'repetidor-solar', 'clicar no repetidor não pula a leitura do passo 12');
+    await continuar();
+    await esperarPasso('proximos-passos');
+    await continuar();
+    await pagina.waitForFunction(() => document.querySelector('#lora-tutorial')?.dataset.modo === 'resumo', null, { timeout: 10000 });
+    conferir((await texto('#lora-tutorial')).includes('13 passos feitos'), 'o fim do tutorial deveria dizer que os 13 passos estão feitos');
+    conferir((await pagina.locator('#lora-tutorial [data-acao]').allTextContents()).join('|') === 'Glossário|Regras da Anatel|Fechar', 'o resumo deveria ter os próximos passos como botões');
+    await captura('130-lora-tutorial-resumo');
+
+    // ---------------------------------------------------------------- Glossário
+    await pagina.locator('#lora-tutorial [data-acao="glossario"]').click();
+    conferir(await sobreposto('#lora-painel-glossario'), 'o botão do resumo deveria abrir o glossário');
+    await pagina.keyboard.press('Escape');
+    await pagina.locator('#lora-aprender-glossario').click();
+    const busca = pagina.locator('#lora-busca-glossario');
+    conferir(await busca.evaluate((x) => document.activeElement === x), 'o campo de busca do glossário deveria ficar em foco');
+    const visiveis = () => pagina.evaluate(() => [...document.querySelectorAll('#lora-painel-glossario .termo')].filter((x) => !x.hidden).map((x) => x.dataset.termo));
+    const todos = (await visiveis()).length;
+    conferir(todos > 30, `o glossário deveria listar todos os termos: ${todos}`);
+    await busca.fill('fresnel');
+    const achados = await visiveis();
+    conferir(achados.includes('zona-de-fresnel') && achados.length < todos, `a busca "fresnel" deveria achar a zona de Fresnel: ${achados.join()}`);
+    await busca.fill('RADIACAO RESTRITA');
+    conferir((await visiveis()).includes('radiacao-restrita'), 'a busca não deveria diferenciar acento nem maiúscula');
+    await busca.fill('zzzqqq');
+    conferir((await visiveis()).length === 0 && (await visivel('#lora-glossario-vazio')), 'sem resultado, o glossário deveria dizer "Nenhum termo encontrado"');
+    conferir((await texto('#lora-glossario-vazio')) === 'Nenhum termo encontrado.', 'texto de nenhum termo encontrado');
+    await captura('131-lora-glossario-sem-resultado');
+    await busca.fill('fresnel');
+    await pagina.locator('#lora-termo-zona-de-fresnel .termo-titulo').click();
+    conferir((await termoAberto()).join() === 'zona-de-fresnel', 'clicar no termo deveria abri-lo');
+    const veja = pagina.locator('#lora-termo-zona-de-fresnel .etiqueta-termo').first();
+    const destino = await veja.getAttribute('data-termo');
+    await veja.click();
+    conferir((await termoAberto()).join() === destino && (await visiveis()).length === todos, `"veja também" deveria navegar para "${destino}": ${(await termoAberto()).join()}`);
+    await captura('132-lora-glossario-veja-tambem');
+    await pagina.keyboard.press('Escape');
+
+    // Termo sublinhado do painel abre o glossário nele; a dica (title) continua a mesma.
+    await pagina.evaluate(([x, y]) => window.__lora.acoes.selecionar({ tipo: 'enlace', de: x, para: y }), [idA, idB]);
+    const sublinhado = pagina.locator('#lora-direita .lora-termo-glossario[data-termo="zona-de-fresnel"]');
+    conferir((await sublinhado.getAttribute('title')).startsWith('Zona de Fresnel: um espaço em forma de charuto'), 'a dica do termo deveria continuar a mesma');
+    await sublinhado.click();
+    conferir((await sobreposto('#lora-painel-glossario')) && (await termoAberto()).join() === 'zona-de-fresnel', 'o termo sublinhado deveria abrir o glossário nele');
+    await captura('133-lora-glossario-do-termo-da-tela');
+    await pagina.setViewportSize({ width: 1440, height: 900 });
+    await captura('140-lora-glossario-do-termo-da-tela-1440');
+    await pagina.setViewportSize({ width: 1280, height: 720 });
+    await pagina.keyboard.press('Escape');
+
+    // "Por quê?" do aviso fixo de prédios e árvores, e das rotas.
+    await pagina.locator('#lora-direita .lora-aviso.fixo .lora-porque-botao').click();
+    conferir((await texto('#lora-painel-porque .lora-porque-texto')).includes('mapa de relevo público'), 'o "Por quê?" do aviso fixo deveria falar do mapa de relevo');
+    await pagina.keyboard.press('Escape');
+
+    // ---------------------------------------------------------------- Regras da Anatel e avisos de regra
+    await pagina.locator('#lora-aprender-regras').click();
+    conferir(await sobreposto('#lora-painel-regras'), 'o botão "Regras da Anatel" deveria abrir o painel');
+    const regras = await pagina.locator('#lora-painel-regras .lora-regra h4').allTextContents();
+    conferir(regras.length === 6 && regras[0] === 'Em uma frase' && regras.includes('O que não foi conferido'), `o painel deveria ter os 6 blocos das regras: ${regras.join('|')}`);
+    await captura('134-lora-regras-da-anatel');
+    await pagina.keyboard.press('Escape');
+    conferir(!(await sobreposto('#lora-painel-regras')), 'Esc deveria fechar as regras');
+
+    await pagina.evaluate((id) => window.__lora.acoes.alterarPonto(id, { ganhoDbi: 9, potenciaDbm: 30 }), idA);
+    await cliqueNoPonto(idA);
+    const aviso = pagina.locator('#lora-direita .lora-aviso').filter({ hasText: 'passa do limite' }).first();
+    conferir(await aviso.isVisible(), 'com 30 dBm e 9 dBi, o painel do ponto deveria avisar da regra');
+    await aviso.locator('.lora-link-regras').click();
+    conferir(await sobreposto('#lora-painel-regras'), '"ver as regras" deveria abrir o painel das regras');
+    await pagina.keyboard.press('Escape');
+    await aviso.locator('.lora-porque-botao').click();
+    conferir((await texto('#lora-painel-porque .lora-porque-texto')).includes('Ato nº 14.448/2017'), 'o "Por quê?" do aviso de regra deveria citar o ato');
+    await captura('135-lora-porque-do-aviso-de-regra');
+    await pagina.keyboard.press('Escape');
+    await pagina.evaluate((id) => window.__lora.acoes.alterarPonto(id, { ganhoDbi: 0, potenciaDbm: 22 }), idA);
+
+    // ---------------------------------------------------------------- "Por quê?" da rota sem ligação e da sugestão que não fecha
+    await pagina.evaluate(([x, y, r]) => {
+      const ac = window.__lora.acoes;
+      ac.desligar(x, y);
+      ac.desligar(y, r);
+    }, [idA, idB, rep.id]);
+    await enlacesProntos();
+    await pagina.evaluate(() => window.__lora.acoes.selecionar(null));
+    await pagina.locator('#lora-rotas .lora-rota .lora-porque-botao').click();
+    conferir((await texto('#lora-painel-porque .lora-porque-texto')).includes('só conta as ligações que você desenhou'), 'o "Por quê?" da rota sem ligação deveria dizer que só contam as ligações desenhadas');
+    await captura('136-lora-porque-da-rota-sem-ligacao');
+    await pagina.keyboard.press('Escape');
+    await pagina.evaluate(() => {
+      window.__lora.acoes.desfazer();
+      window.__lora.acoes.desfazer();
+    });
+    await enlacesProntos();
+    await pagina.evaluate(() => window.__lora.acoes.configurar({ margemDoAmbienteDb: 40 }));
+    await enlacesProntos();
+    await pagina.evaluate(([x, y]) => window.__lora.acoes.selecionar({ tipo: 'enlace', de: x, para: y }), [idA, idB]);
+    await pagina.locator('#lora-enlace-sugerir').click();
+    await pagina.waitForFunction(() => window.__lora.busca().estado === 'pronta', null, { timeout: 60000 });
+    await esperar(800);
+    conferir(await pagina.locator('#lora-busca-sem-saida').isVisible(), 'com margem de 40 dB nenhum lugar fecha, e o painel deveria dizer isso');
+    await pagina.locator('#lora-busca-sem-saida .lora-porque-botao').click();
+    conferir((await texto('#lora-painel-porque .lora-porque-texto')).includes('O repetidor não amplifica'), 'o "Por quê?" da sugestão que não fecha');
+    await captura('137-lora-porque-da-sugestao');
+    await pagina.keyboard.press('Escape');
+    await pagina.locator('#lora-busca-fechar').click();
+    await pagina.evaluate(() => window.__lora.acoes.configurar({ margemDoAmbienteDb: 0 }));
+
+    // ---------------------------------------------------------------- Começar de novo, sair e trocar de projeto
+    await pagina.locator('#lora-tutorial [data-acao="fechar"]').click();
+    conferir(await pagina.locator('#lora-tutorial').isHidden(), '"Fechar o tutorial" deveria esconder o painel');
+    await pagina.locator('#lora-aprender-tutorial').click();
+    conferir((await passo())?.modo === 'pergunta', `com o projeto do tutorial já existente, deveria perguntar: ${JSON.stringify(await passo())}`);
+    conferir((await lora()).projeto.pontos.length === 3, 'a pergunta não deveria mexer no projeto aberto');
+    await captura('138-lora-tutorial-pergunta');
+    await pagina.locator('#lora-tutorial [data-acao="comecar-outro"]').click();
+    e = await lora();
+    conferir(e.projeto.nome === 'Tutorial: meu primeiro enlace (2)' && e.projeto.pontos.length === 0, `"Começar outro" deveria criar outro projeto vazio: ${e.projeto.nome}`);
+    await esperarPasso('o-que-e');
+    await pagina.locator('#lora-tutorial [data-acao="sair"]').click();
+    conferir(await pagina.locator('#lora-tutorial').isHidden() && (await realcados()).length === 0, '"Sair do tutorial" deveria esconder o painel');
+    conferir((await pagina.evaluate(() => sessionStorage.getItem('offgrid.lora.tutorial'))) === null, 'sair deveria limpar o andamento da sessão');
+    conferir((await projetos()).length === 3, 'sair não apaga projeto nenhum');
+
+    await pagina.locator('#lora-aprender-tutorial').click();
+    await pagina.locator('#lora-tutorial [data-acao="continuar-no-existente"]').click();
+    conferir((await lora()).projeto.nome === 'Tutorial: meu primeiro enlace' && (await lora()).projeto.pontos.length === 3, '"Continuar nele" deveria abrir o projeto do tutorial que já existe');
+    await esperarPasso('o-que-e');
+    // Trocar para outro projeto fecha o tutorial.
+    await pagina.locator('#lora-botao-projeto').click();
+    await pagina.locator('#lora-meus-projetos').click();
+    await pagina.locator('#lora-lista-de-projetos .projeto-item[data-nome="Minha rede"] [data-acao="abrir"]').click();
+    conferir((await lora()).projeto.nome === 'Minha rede' && (await pagina.locator('#lora-tutorial').isHidden()), 'trocar de projeto deveria fechar o tutorial');
+    conferir((await lora()).projeto.pontos.length === 0, 'o projeto "Minha rede" continua como estava, vazio');
+    conferir((await pagina.locator('#lora-realce, .lora-realce').count()) === 0, 'sem tutorial, nenhum botão fica realçado');
+
+    // Limpeza: os dois projetos do tutorial saem; "Minha rede" fica.
+    await pagina.evaluate(() => {
+      for (const x of window.__lora.acoes.listarProjetos()) if (x.nome.startsWith('Tutorial:')) window.__lora.acoes.apagarProjeto(x.id);
+    });
+    const fim = await projetos();
+    conferir(fim.length === 1 && fim[0].nome === 'Minha rede' && fim[0].atual, `no fim só "Minha rede" deveria ficar, aberta: ${JSON.stringify(fim)}`);
+    conferir(await cartao.isHidden(), 'o cartão da primeira abertura não volta depois de visto');
+
+    // Voltar ao tamanho das outras verificações. O cartão lembrado em localStorage não aparece de novo.
+    await pagina.setViewportSize({ width: 1440, height: 900 });
+    await esperar(300);
+    conferir(pedidos.outros.length === 0, `nenhum pedido deveria sair para outro endereço: ${pedidos.outros.join(', ')}`);
+  }
+
   // Ambiente de rádio LoRa (especificacao/lora.md, seção 1): página própria, seletor de ambiente e projetos separados.
   // Os pontos de teste ficam em lugares neutros, sem relação com casa nenhuma.
   async function verificarLora() {
@@ -3012,6 +3387,7 @@ async function principal() {
     let e = await lora();
     conferir(e.projeto.pontos.length === 0 && e.projeto.regiao === 'ANZ' && e.projeto.modo === 'long-fast', `o projeto de rádio começa vazio: ${JSON.stringify(e.projeto)}`);
     await captura('101-lora-pagina-inicial');
+    await verificarLoraAprender(pedidos);
 
     // Projetos de LoRa: criar pelo painel, com o mouse; não se misturam com os do solar.
     await pagina.locator('#lora-botao-projeto').click();

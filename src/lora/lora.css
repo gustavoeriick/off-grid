@@ -1024,3 +1024,212 @@ button.lora-rota[aria-pressed='true'] {
 .lora-solar-resultado strong {
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------------------------------------------------------------- Aprender (L4): glossário, "por quê?", regras e tutorial */
+
+/* Grupo "Aprender" da barra do alto: continua em uma linha só em 1280 px. */
+.lora-aprender {
+  align-items: center;
+  flex: none;
+}
+
+.lora-aprender-rotulo {
+  margin-right: 6px;
+  font-size: 12px;
+  color: var(--suave);
+}
+
+@media (max-width: 1320px) {
+  .lora-aprender-rotulo {
+    display: none;
+  }
+}
+
+.lora-sobreposto {
+  z-index: 25;
+}
+
+.lora-sobreposto .sobreposto-corpo {
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.lora-regra h4 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+
+.lora-regra:first-child h4 {
+  margin-top: 2px;
+}
+
+.lora-regra p {
+  margin: 0 0 6px;
+}
+
+/* O "Por quê?" é um painel pequeno, do lado da coluna da direita, para deixar o mapa à vista. */
+.lora-porque-painel {
+  top: 132px;
+  right: 376px;
+  left: auto;
+  transform: none;
+  width: min(25rem, calc(100vw - 420px));
+}
+
+.lora-porque-texto {
+  margin: 0 0 8px;
+}
+
+.lora-porque-botao,
+.lora-link-regras {
+  margin: 0 2px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  border-radius: 10px;
+  color: var(--destaque);
+  border-color: var(--destaque);
+  background: #fff;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.lora-link-regras {
+  border: 0;
+  padding: 0 2px;
+  background: none;
+  text-decoration: underline;
+}
+
+.lora-porque-linha {
+  display: block;
+  margin-top: 4px;
+}
+
+/* Termo da tela que também abre o glossário. */
+.lora-termo-glossario {
+  cursor: pointer;
+  border-bottom-style: dashed;
+  border-bottom-color: var(--destaque);
+}
+
+.lora-termo-glossario:hover,
+.lora-termo-glossario:focus-visible {
+  color: var(--destaque);
+}
+
+/* Tutorial: o painel do passo a passo do solar, com um pouco mais de largura. */
+.lora-tutorial {
+  width: 340px;
+  font-size: 12px;
+}
+
+.lora-passo-cabeca {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lora-recolher {
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 1.5;
+  text-transform: none;
+  font-weight: 400;
+  color: var(--suave);
+}
+
+.lora-tutorial .passo-titulo {
+  font-size: 14px;
+}
+
+.lora-tutorial .passo-lista {
+  font-size: 12px;
+}
+
+.lora-tutorial .lora-proximos {
+  margin: 0 0 6px;
+  padding-left: 16px;
+}
+
+.lora-tutorial .passo-botao-principal {
+  pointer-events: auto;
+}
+
+/* O aviso de privacidade fica no canto de baixo à esquerda; o tutorial e o cartão da primeira abertura ficam ao lado dele. */
+.lora-aviso-mapa ~ .lora-tutorial,
+.lora-aviso-mapa ~ .lora-primeira {
+  left: 352px;
+}
+
+/* Sobra uma faixa embaixo para os créditos do mapa, que precisam continuar legíveis. */
+.lora-tutorial,
+.lora-primeira {
+  bottom: 30px;
+}
+
+.lora-primeira {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 3;
+  width: 340px;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  padding: 8px 12px 10px;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--destaque);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.lora-primeira[hidden] {
+  display: none;
+}
+
+.lora-primeira h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.lora-primeira p {
+  margin: 0 0 8px;
+}
+
+.lora-primeira-botoes {
+  display: flex;
+  gap: 6px;
+}
+
+.lora-principal {
+  background: var(--destaque);
+  border-color: var(--destaque);
+  color: #fff;
+}
+
+/* Botão da barra do mapa que o passo da vez pede: pulso suave, que para quando a ferramenta é ligada. */
+@keyframes lora-pulso {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(21, 101, 192, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(21, 101, 192, 0);
+  }
+}
+
+.lora-ferramentas button.lora-realce:not([aria-pressed='true']) {
+  border-color: var(--destaque);
+  outline: 2px solid var(--destaque);
+  animation: lora-pulso 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lora-ferramentas button.lora-realce:not([aria-pressed='true']) {
+    animation: none;
+  }
+}
