@@ -12,6 +12,7 @@ import { estado } from '../estado';
 import type { Dispositivo, TipoTerminal } from '../nucleo/tipos';
 import { COR_TERMINAL } from './conectores';
 import { criarRotulo, liso } from './estampas';
+import { ehGrampo } from './encaixe';
 import { esconder } from './malha';
 import { type Modelo, modeloDe, type TerminalDoModelo, TRILHO } from './modelos';
 import { Molde } from './molde';
@@ -75,6 +76,11 @@ export interface CamadaDeDispositivos {
   realcarTerminais(realce: ((disp: string, terminal: string, tipo: TipoTerminal) => RealceDeTerminal) | null): void;
   /** Aumenta o anel do terminal sob o ponteiro. Nulo desfaz. */
   destacarTerminal(alvo: { disp: string; terminal: string } | null): void;
+  /**
+   * Grampo de parede: vira o desenho dele em torno da normal, para o arco ficar atravessado sobre o cabo, e o amplia
+   * quando o cabo é mais grosso que o arco. Quem chama é a camada de cabos, que sabe por onde o cabo passa.
+   */
+  ajustarGrampo(uid: string, angulo: number, escala: number): void;
   /** Mostra ou esconde o rótulo de um terminal (PV+, BAT−, Tomada). */
   mostrarRotulo(uid: string, terminal: string, visivel: boolean): void;
   /** Mostra o nome curto de uma peça acima dela. Nulo esconde. */
@@ -224,7 +230,9 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     grupo.add(corpo);
     const caixa = new THREE.Mesh(geoCaixa, invisivel);
     caixa.name = 'caixa-de-clique';
-    caixa.scale.set(modelo.dimensoes[0], modelo.dimensoes[1], modelo.dimensoes[2]);
+    // O grampo é miúdo e fica dentro do tubo de clique do cabo: a caixa dele tem uma folga, para o ponteiro o acertar.
+    const folga = ehGrampo(item) ? FOLGA_DE_CLIQUE_DO_GRAMPO : 0;
+    caixa.scale.set(modelo.dimensoes[0] + folga, modelo.dimensoes[1] + folga, modelo.dimensoes[2] + folga);
     caixa.userData.dispositivo = d.uid;
     caixa.userData.caixaDeClique = true;
     grupo.add(caixa);
@@ -491,6 +499,15 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       const rotulo = pecas.get(uid)?.rotulos.get(id);
       if (rotulo) rotulo.visible = visivel;
     },
+    ajustarGrampo(uid, angulo, escala) {
+      const p = pecas.get(uid);
+      const corpo = p?.grupo.getObjectByName('modelo');
+      if (!p || !corpo || !ehGrampo(p.item)) return;
+      corpo.rotation.set(0, 0, angulo);
+      corpo.scale.setScalar(escala);
+      // A base continua encostada na superfície.
+      corpo.position.set(0, 0, (p.modelo.dimensoes[2] / 2) * (escala - 1));
+    },
     mostrarNome,
     definirAtivo(uid, ativo) {
       const p = pecas.get(uid);
@@ -526,6 +543,9 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     },
   };
 }
+
+/** Quanto a caixa de clique do grampo de parede é maior que ele, em cada medida. */
+const FOLGA_DE_CLIQUE_DO_GRAMPO = 0.03;
 
 /** Profundidade, em coordenadas do quadro, em que os cabos atravessam a face de baixo da caixa: a dos bornes das proteções. */
 const PASSAGEM_Z = 0.008;

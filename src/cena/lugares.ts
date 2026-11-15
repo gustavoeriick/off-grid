@@ -9,7 +9,7 @@ import { CATALOGO } from '../catalogo';
 import type { Item } from '../catalogo/tipos';
 import { type Encaixe, estado } from '../estado';
 import type { Dispositivo } from '../nucleo/tipos';
-import { encaixar, superficieAceita } from './encaixe';
+import { ehGrampo, encaixar, superficieAceita } from './encaixe';
 import type { Marca, TipoSuperficie } from './malha';
 import { modeloDe } from './modelos';
 import { type Pegada, terrenoLivre } from './regrasDosObstaculos';
@@ -334,6 +334,8 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
       const outroItem = CATALOGO.get(d.itemId);
       const caixa = outroItem ? caixaDe(outroItem) : null;
       if (!outroItem || !caixa) continue;
+      // O grampo de parede é miúdo e não atrapalha: só outro grampo conta como vizinho dele.
+      if (ehGrampo(outroItem) && !ehGrampo(item)) continue;
       const q = quatDe(d);
       const p = posDe(d);
       outra.makeEmpty();
@@ -412,7 +414,8 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
 
   function assentar(item: Item, giro: number, q: Quadro, pu: number, pv: number, opcoes: OpcoesDeAssento = {}): Candidato {
     const terreno = q.marca.id === ID_TERRENO;
-    const aceita = terreno ? aceitaNoTerreno(item) : superficieAceita(item) === q.marca.tipo;
+    // O grampo de parede prende o cabo em qualquer parede, piso ou telhado, e também no chão do terreno.
+    const aceita = ehGrampo(item) || (terreno ? aceitaNoTerreno(item) : superficieAceita(item) === q.marca.tipo);
     let e = encaixarNo(item, q, noPlano(q, pu, pv), giro, opcoes);
     if (!aceita) {
       if (terreno) return { encaixe: e, valido: false, motivo: 'No terreno só ficam placas (sobre suporte) e estação portátil. Leve esta peça para dentro da casa ou do quartinho.' };

@@ -16,7 +16,7 @@ import { acoes, assinar, type Encaixe, estado, motivoParaNaoLigar } from '../est
 import type { Acao, PontaCabo, TipoTerminal } from '../nucleo/tipos';
 import { type CamadaDeCabos, corDoCabo } from './cabos';
 import { type CamadaDeDispositivos, RAIO_DE_CLIQUE } from './dispositivos';
-import { superficieAceita } from './encaixe';
+import { ehGrampo, superficieAceita } from './encaixe';
 import type { Candidato, Lugares, Toque } from './lugares';
 import { acrescentarBateria, acrescentarPlaca } from './maisPecas';
 import type { TipoSuperficie } from './malha';
@@ -42,7 +42,7 @@ export interface PartesDaCena {
 
 export interface Interacao {
   /** Para o roteiro de verificação: o que o ponteiro está fazendo e se soltar agora daria certo. */
-  situacao(): { modo: string; valido: boolean | null; motivo: string | null };
+  situacao(): { modo: string; valido: boolean | null; motivo: string | null; cabo?: string };
   /** `id` das superfícies sobre as quais uma peça está sendo arrastada (do catálogo ou movida): a apontada e a do encaixe. Vazio fora de um arraste. */
   superficiesDoArraste(): string[];
   destruir(): void;
@@ -65,7 +65,8 @@ type Modo =
   | { tipo: 'apertado'; x: number; y: number; alvo: Alvo | null }
   /** Arraste que não é da interação: a órbita da câmera, ou um cabo apertado e arrastado. */
   | { tipo: 'alheio' }
-  | { tipo: 'catalogo'; item: Item; giro: number; chao: NoChao; candidato: Candidato | null }
+  /** `cabo`: só no grampo de parede, o cabo que ele vai prender ao ser solto. */
+  | { tipo: 'catalogo'; item: Item; giro: number; chao: NoChao; candidato: Candidato | null; cabo: string | null }
   | { tipo: 'protecao'; item: Protecao; cabo: string | null }
   | { tipo: 'mover'; uid: string; item: Item; giro: number; chao: NoChao; desvio: [number, number]; marcado: boolean; candidato: Candidato | null }
   /**
@@ -83,6 +84,9 @@ const ALCANCE_DO_TERMINAL_PX = 12;
 const COR_VALIDO = '#2fbf71';
 const COR_INVALIDO = '#e5484d';
 const COR_SELECAO = '#ffc21a';
+
+/** Recusa do grampo de parede quando não há cabo para ele prender (cena-e-interface.md, seção 8). */
+const SEM_CABO_PARA_O_GRAMPO = 'Puxe um cabo antes de pôr o grampo.';
 
 const NOME_DA_SUPERFICIE: Record<TipoSuperficie, string> = { telhado: 'um telhado', parede: 'uma parede', piso: 'um piso' };
 
@@ -189,6 +193,11 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     return { uid: t.object.userData.cabo as string, distancia: t.distance };
   }
 
+  function itemDaPeca(uid: string): Item | undefined {
+    const d = estado.projeto.dispositivos.find((k) => k.uid === uid);
+    return d ? CATALOGO.get(d.itemId) : undefined;
+  }
+
   /** O que está sob o ponteiro: terminal, depois a peça ou o cabo que estiver mais perto da câmera. */
   function alvoSob(): Alvo | null {
     const terminal = terminalSob(false);
@@ -196,7 +205,9 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     const peca = raio.intersectObjects(c.dispositivos.caixasDeClique(), false)[0];
     const pecaAVista = peca && distanciaDaSuperficie() >= peca.distance - 0.02 ? peca : null;
     const cabo = caboSob();
-    if (cabo && (!pecaAVista || cabo.distancia < pecaAVista.distance)) return { tipo: 'cabo', uid: cabo.uid };
+    // O grampo fica dentro do tubo de clique do cabo que ele prende: apontado, vale o grampo.
+    const grampo = pecaAVista !== null && ehGrampo(itemDaPeca(pecaAVista.object.userData.dispositivo as string));
+    if (cabo && !grampo && (!pecaAVista || cabo.distancia < pecaAVista.distance)) return { tipo: 'cabo', uid: cabo.uid };
     return pecaAVista ? { tipo: 'dispositivo', uid: pecaAVista.object.userData.dispositivo as string } : null;
   }
 
@@ -367,7 +378,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     if (estado.edicaoCasa.ativa) return;
     if (!sobreACena(x, y) || !mirar(x, y)) {
       limparPairar();
-      mostrarDica(null);
+      if (!esperaDaDica) mostrarDica(null);
       return;
     }
     const alvo = alvoSob();
@@ -379,7 +390,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       const cabo = estado.projeto.cabos.find((k) => k.uid === alvo.uid);
       const tipo = cabo ? CATALOGO.get(cabo.caboId) : undefined;
       mostrarDica(cabo && tipo ? `${tipo.nome} · ${cabo.comprimento.toLocaleString('pt-BR')} m` : null, x, y);
-    } else mostrarDica(null);
+    } else if (!esperaDaDica) mostrarDica(null); // um aviso recém-dado fica até o tempo dele acabar
   }
 
   // ---------------------------------------------------------------- Arrastar do catálogo e mover
@@ -419,12 +430,42 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   const noChao = (item: Item, candidato: Candidato | null): boolean => item.categoria === 'placa' && candidato?.encaixe.superficie === ID_TERRENO;
 
   function ondeLevar(item: Item): string {
+    if (ehGrampo(item)) return `${nomeCurto(item)}: leve até uma parede, um piso ou um telhado, perto do cabo`;
     if (item.categoria === 'placa') return `${nomeCurto(item)}: leve até um telhado ou até o terreno`;
     const tipo = superficieAceita(item);
     return tipo ? `${nomeCurto(item)}: leve até ${NOME_DA_SUPERFICIE[tipo]}` : nomeCurto(item);
   }
 
+  /** Cabo que o grampo de parede posto neste encaixe prende: o selecionado, se houver; senão, o desenhado mais próximo. */
+  function caboParaOGrampo(encaixe: Encaixe): string | null {
+    const s = estado.selecao;
+    if (s?.tipo === 'cabo' && c.cabos.grupoDe(s.uid)) return s.uid;
+    return c.cabos.maisProximo(new THREE.Vector3(...encaixe.pos));
+  }
+
+  /** Grampo de parede vindo do catálogo: além do lugar, precisa de um cabo para prender. O cabo escolhido acende. */
+  function atualizarGrampo(m: Modo & { tipo: 'catalogo' }, x: number, y: number): void {
+    m.candidato = candidatoSob(m.item, m.giro, m.chao, x, y);
+    m.cabo = m.candidato ? caboParaOGrampo(m.candidato.encaixe) : null;
+    if (m.candidato && !m.cabo) m.candidato = { ...m.candidato, valido: false, motivo: SEM_CABO_PARA_O_GRAMPO };
+    const aceso = m.candidato?.valido ? m.cabo : null;
+    if (aceso !== caboNoAlvo) {
+      caboNoAlvo = aceso;
+      refazerRealce();
+    }
+    if (!m.candidato) {
+      esconderFantasma();
+      if (estado.projeto.cabos.length === 0) mostrarDica(SEM_CABO_PARA_O_GRAMPO, x, y, 'ruim');
+      else mostrarDica(ondeLevar(m.item), x, y);
+      return;
+    }
+    mostrarFantasma(m.item, m.candidato.encaixe, m.candidato.valido);
+    if (m.candidato.valido && m.cabo) mostrarDica(`Solte para prender o cabo aqui. ${descricaoDoCabo(m.cabo)}`, x, y, 'bom');
+    else mostrarDica(m.candidato.motivo, x, y, 'ruim');
+  }
+
   function atualizarCatalogo(m: Modo & { tipo: 'catalogo' }, x: number, y: number): void {
+    if (ehGrampo(m.item)) return atualizarGrampo(m, x, y);
     m.candidato = candidatoSob(m.item, m.giro, m.chao, x, y);
     if (!m.candidato) {
       esconderFantasma();
@@ -638,13 +679,21 @@ export function criarInteracao(c: PartesDaCena): Interacao {
 
   function soltar(x: number, y: number): void {
     const m = modo;
+    /** Recusa a dizer depois de o arraste acabar (o fim do arraste apaga a dica). */
+    let recusa: string | null = null;
     if (m.tipo === 'apertado') {
       if (m.alvo?.tipo === 'dispositivo') acoes.selecionar({ tipo: 'dispositivo', uid: m.alvo.uid });
       else if (m.alvo?.tipo === 'cabo') acoes.selecionar({ tipo: 'cabo', uid: m.alvo.uid });
       else if (estado.selecao && !estado.edicaoCasa.ativa) acoes.selecionar(null);
     } else if (m.tipo === 'catalogo') {
       atualizarCatalogo(m, x, y);
-      if (m.candidato?.valido) {
+      if (ehGrampo(m.item)) {
+        if (m.candidato?.valido && m.cabo) {
+          // O grampo entra na ordem que menos alonga o cabo. O cabo fica selecionado: o próximo grampo vai para ele também.
+          const ponto = new THREE.Vector3(...m.candidato.encaixe.pos);
+          if (acoes.adicionarGrampo(m.cabo, c.cabos.indiceDoGrampo(m.cabo, ponto), m.candidato.encaixe, m.item.id)) acoes.selecionar({ tipo: 'cabo', uid: m.cabo });
+        } else if (!m.cabo && (m.candidato || estado.projeto.cabos.length === 0)) recusa = SEM_CABO_PARA_O_GRAMPO;
+      } else if (m.candidato?.valido) {
         const uid = acoes.adicionarDispositivo(m.item.id, m.candidato.encaixe);
         acoes.selecionar({ tipo: 'dispositivo', uid });
       }
@@ -688,6 +737,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     }
     encerrar();
     if (sobreACena(x, y)) pairar(x, y);
+    if (recusa) avisar(recusa, x, y);
   }
 
   // ---------------------------------------------------------------- Eventos do ponteiro
@@ -800,7 +850,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       return;
     }
     if (item.categoria === 'protecao') modo = { tipo: 'protecao', item, cabo: null };
-    else if (superficieAceita(item) && modeloDe(item)) modo = { tipo: 'catalogo', item, giro: 0, chao: { giro: null, inclinacao: null }, candidato: null };
+    else if (superficieAceita(item) && modeloDe(item)) modo = { tipo: 'catalogo', item, giro: 0, chao: { giro: null, inclinacao: null }, candidato: null, cabo: null };
     else return;
     limparPairar();
     c.controles.enabled = false;
@@ -821,7 +871,8 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     const d = estado.projeto.dispositivos.find((k) => k.uid === s.uid);
     const item = d ? CATALOGO.get(d.itemId) : undefined;
     const q = d ? c.lugares.quadroDaPeca(d) : null;
-    if (!d || !item || !q) return;
+    // O desenho do grampo de parede acompanha o cabo: não há o que girar.
+    if (!d || !item || !q || ehGrampo(item)) return;
     const centro = new THREE.Vector3(...d.pos);
     // Placa no terreno: a face anda 15° no sentido dos ponteiros do relógio, com a mesma inclinação.
     const girado = placaNoChao(d, item)
@@ -942,7 +993,9 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   return {
     situacao() {
       const m = modo;
-      if (m.tipo === 'catalogo' || m.tipo === 'mover') return { modo: m.tipo, valido: m.candidato ? m.candidato.valido : null, motivo: m.candidato?.motivo ?? null };
+      if (m.tipo === 'catalogo' || m.tipo === 'mover') {
+        return { modo: m.tipo, valido: m.candidato ? m.candidato.valido : null, motivo: m.candidato?.motivo ?? null, ...(m.tipo === 'catalogo' && m.cabo ? { cabo: m.cabo } : {}) };
+      }
       if (m.tipo === 'protecao') return { modo: m.tipo, valido: m.cabo !== null, motivo: null };
       if (m.tipo === 'cabo') return { modo: m.tipo, valido: m.para !== null, motivo: m.motivo };
       return { modo: m.tipo, valido: null, motivo: null };

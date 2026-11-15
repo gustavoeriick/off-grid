@@ -572,6 +572,54 @@ function quadroDeEnergia(item: Acessorio, dim: Dimensoes, m: Molde): void {
   m.bloco('vidro', '#3a4047', 0, H / 2 + 0.001 + (Math.cos(abertura) * ht) / 2, zf + 0.004 + (Math.sin(abertura) * ht) / 2, W - 0.004, ht, 0.003, 0, ['x', abertura]);
 }
 
+// ---------------------------------------------------------------- Grampo de parede
+
+/**
+ * Medidas do grampo, em coordenadas da peça (Z é a normal da superfície; a base fica em z = −profundidade / 2).
+ * O cabo passa por baixo do arco, ao longo de X, encostado na superfície. O arco serve a cabo de até `raioDoCabo`
+ * de raio no desenho; para cabo mais grosso, a camada de cabos amplia o grampo.
+ */
+export const GRAMPO = {
+  /** Raio de dentro do arco. */
+  raioDoArco: 0.008,
+  /** Maior raio de cabo que passa pelo arco sem ampliar. */
+  raioDoCabo: 0.0075,
+  /** Espessura da fita de plástico. */
+  espessura: 0.002,
+  /** Largura da fita, ao longo do cabo. */
+  largura: 0.012,
+};
+
+/** Abraçadeira de plástico claro em U, com uma aba e um parafuso de cada lado. */
+function grampoDeParede(dim: Dimensoes, m: Molde): void {
+  const [, H, D] = dim;
+  const { raioDoArco: r, espessura: e, largura: w } = GRAMPO;
+  const z0 = -D / 2;
+  const claro = '#e9ecee';
+  // Perfil em U, de pé sobre a superfície: duas pernas da altura do raio e um meio arco por cima.
+  const perfil = new THREE.Shape();
+  perfil.moveTo(-(r + e), 0);
+  perfil.lineTo(-(r + e), r);
+  perfil.absarc(0, r, r + e, Math.PI, 0, true);
+  perfil.lineTo(r + e, 0);
+  perfil.lineTo(r, 0);
+  perfil.lineTo(r, r);
+  perfil.absarc(0, r, r, 0, Math.PI, false);
+  perfil.lineTo(-r, 0);
+  perfil.closePath();
+  // O perfil é desenhado no plano YZ da peça e ganha a largura da fita ao longo de X.
+  const paraAPeca = new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0)).setPosition(-w / 2, 0, z0);
+  m.geo('plastico', claro, new THREE.ExtrudeGeometry(perfil, { depth: w, bevelEnabled: false, curveSegments: 8 }), paraAPeca);
+  // Abas rentes à superfície, uma de cada lado, cada uma com o seu parafuso.
+  const aba = Math.max(0.003, H / 2 - (r + e));
+  for (const lado of [-1, 1]) {
+    const y = lado * (r + e + aba / 2 - 0.0005);
+    m.bloco('plastico', claro, 0, y, z0 + e / 2, w, aba + 0.001, e);
+    m.cilindro('metal', '#8d9296', 0, y, z0 + e + 0.0006, 0.0021, 0.0012, 'z', 8);
+    m.caixa('plastico', '#4a5158', -0.0014, y - 0.0003, z0 + e + 0.0012, 0.0014, y + 0.0003, z0 + e + 0.0014);
+  }
+}
+
 // ---------------------------------------------------------------- Catálogo de modelos
 
 function construir(item: Item, dim: Dimensoes, m: Molde, T: Marcar): void {
@@ -590,7 +638,7 @@ function construir(item: Item, dim: Dimensoes, m: Molde, T: Marcar): void {
     case 'aparelho':
       return construirAparelho(item, m, T);
     case 'acessorio':
-      return quadroDeEnergia(item, dim, m);
+      return item.tipo === 'grampo' ? grampoDeParede(dim, m) : quadroDeEnergia(item, dim, m);
     case 'protecao':
     case 'cabo':
       return;

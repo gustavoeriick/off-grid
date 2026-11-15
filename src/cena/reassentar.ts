@@ -9,7 +9,8 @@ import { CATALOGO } from '../catalogo';
 import { type Encaixe, estado } from '../estado';
 import type { Dispositivo } from '../nucleo/tipos';
 import { colocarIniciais } from './colocacao';
-import type { Lugares } from './lugares';
+import { ehGrampo } from './encaixe';
+import type { Lugares, Quadro } from './lugares';
 import { ID_TERRENO } from './terreno';
 
 /** Lugar de uma peça dentro da superfície dela, em metros. */
@@ -69,7 +70,14 @@ export function reassentar(lugares: Lugares, memoria: Memoria): Map<string, Enca
     if (!item || !m || m.superficie !== d.superficie) continue;
     const q = lugares.quadro(m.superficie, m.lado);
     if (!q) {
-      orfas.push(d);
+      // O grampo de parede não tem lugar de tabela: fica na superfície mais próxima de onde estava, com o cabo dele.
+      if (ehGrampo(item)) {
+        const perto = superficieMaisProxima(lugares, new THREE.Vector3(...d.pos));
+        if (perto) {
+          const c = lugares.assentar(item, d.giro, perto.q, perto.u, perto.v, { ignorar: 'todas' });
+          fixar(d, c.valido ? c.encaixe : (lugares.lugarLivre(item, d.giro, perto.q, perto.u, perto.v, { ignorar: 'todas' }) ?? c.encaixe));
+        }
+      } else orfas.push(d);
       continue;
     }
     const u = (q.u0 + q.u1) / 2 + m.du;
@@ -134,6 +142,28 @@ export function reassentar(lugares: Lugares, memoria: Memoria): Map<string, Enca
     vistas.add(d.uid);
   }
   return novos;
+}
+
+/** Superfície (parede dos dois lados, piso ou telhado) cujo retângulo fica mais perto do ponto, e o lugar mais perto nele. */
+function superficieMaisProxima(lugares: Lugares, ponto: THREE.Vector3): { q: Quadro; u: number; v: number } | null {
+  let melhor: { q: Quadro; u: number; v: number } | null = null;
+  let menor = Infinity;
+  for (const tipo of ['parede', 'piso', 'telhado'] as const) {
+    for (const id of lugares.idsDoTipo(tipo)) {
+      for (const lado of tipo === 'parede' ? ([1, -1] as const) : ([1] as const)) {
+        const q = lugares.quadro(id, lado);
+        if (!q) continue;
+        const u = Math.min(q.u1, Math.max(q.u0, ponto.dot(q.u)));
+        const v = Math.min(q.v1, Math.max(q.v0, ponto.dot(q.v)));
+        const distancia = new THREE.Vector3().addScaledVector(q.u, u).addScaledVector(q.v, v).addScaledVector(q.n, q.w).distanceTo(ponto);
+        if (distancia < menor) {
+          menor = distancia;
+          melhor = { q, u, v };
+        }
+      }
+    }
+  }
+  return melhor;
 }
 
 function dot(p: readonly number[], e: { x: number; y: number; z: number }): number {

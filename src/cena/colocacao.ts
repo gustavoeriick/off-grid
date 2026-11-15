@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import type { Catalogo, Item } from '../catalogo/tipos';
 import type { Encaixe } from '../estado';
 import type { CasaConfig, Dispositivo, Projeto } from '../nucleo/tipos';
-import { dimensoesDe, encaixar, superficieAceita } from './encaixe';
+import { dimensoesDe, ehGrampo, encaixar, superficieAceita } from './encaixe';
 import { GIRO_DA_FACHADA, medirVarandas } from './varanda';
 
 const PISO = 0.05;
@@ -85,7 +85,8 @@ export function colocarIniciais(projeto: Projeto, catalogo: Catalogo): Map<strin
   const pendentes: [Dispositivo, Item][] = [];
   for (const d of projeto.dispositivos) {
     const item = catalogo.get(d.itemId);
-    if (d.superficie === null && item && dimensoesDe(item) && superficieAceita(item)) pendentes.push([d, item]);
+    // O grampo de parede nasce já encaixado, junto do cabo dele: não tem lugar de tabela.
+    if (d.superficie === null && item && !ehGrampo(item) && dimensoesDe(item) && superficieAceita(item)) pendentes.push([d, item]);
   }
   if (pendentes.length === 0) return mapa;
 

@@ -7,8 +7,10 @@ import type { Protecao } from '../catalogo/tipos';
 import { acoes, estado } from '../estado';
 import type { Cabo, PontaCabo, Projeto, TipoTerminal } from '../nucleo/tipos';
 import type { CamadaDeDispositivos } from './dispositivos';
+import { ehGrampo } from './encaixe';
 import { liso } from './estampas';
 import { esconder } from './malha';
+import { GRAMPO } from './modelos';
 import { modeloDaProtecao } from './protecoes';
 
 /** Quanto o cabo segue a direção de saída do terminal antes de fazer a curva. */
@@ -26,10 +28,19 @@ function escalaNoCabo(larguraDaPeca: number, raio: number): number {
   return Math.max(1.25, (2 * raio + 0.016) / larguraDaPeca);
 }
 
+/** `(|dx| + |dy| + |dz|) × 1,1` entre dois pontos, em coordenadas da casa, sem mínimo nem arredondamento. */
+function brutoDoTrecho(a: THREE.Vector3, b: THREE.Vector3): number {
+  return (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z)) * 1.1;
+}
+
+/** Mínimo de 0,3 m e arredondamento a 0,1 m. */
+function comprimentoFinal(bruto: number): number {
+  return Math.round(Math.max(0.3, bruto) * 10) / 10;
+}
+
 /** Comprimento de um trecho entre dois pontos, em coordenadas da casa: `(|dx| + |dy| + |dz|) × 1,1`, mínimo de 0,3 m, arredondado a 0,1 m. */
 export function comprimentoDoTrecho(a: THREE.Vector3, b: THREE.Vector3): number {
-  const bruto = (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z)) * 1.1;
-  return Math.round(Math.max(0.3, bruto) * 10) / 10;
+  return comprimentoFinal(brutoDoTrecho(a, b));
 }
 
 /** Cor do cabo pelas duas pontas (seção 8). */
@@ -45,13 +56,33 @@ interface Ponta {
   saida: THREE.Vector3;
 }
 
+/** Plano de uma superfície em que há um grampo: o cabo solto que chega a ele não entra na superfície. */
+interface Plano {
+  ponto: THREE.Vector3;
+  normal: THREE.Vector3;
+}
+
+interface OpcoesDaCurva {
+  /** Quanto o cabo segue a saída de cada ponta. O padrão é o do cabo solto. */
+  saida?: number;
+  /** Falso tira a barriga do meio (entre dois grampos de superfícies diferentes o cabo vai esticado). */
+  barriga?: boolean;
+  /** O meio da curva fica do lado de fora destes planos, a pelo menos `folga` deles. */
+  planos?: readonly Plano[];
+  folga?: number;
+}
+
 /** Curva suave de um trecho: ponta A; A mais a saída; meio rebaixado; B mais a saída; ponta B. */
-export function curvaDoTrecho(a: Ponta, b: Ponta): THREE.CatmullRomCurve3 {
+export function curvaDoTrecho(a: Ponta, b: Ponta, opcoes: OpcoesDaCurva = {}): THREE.CatmullRomCurve3 {
   const dist = a.pos.distanceTo(b.pos);
   // Em trecho curto a saída encolhe, para a curva não dar laço.
-  const s = Math.min(SAIDA, dist * 0.3);
+  const s = Math.min(opcoes.saida ?? SAIDA, dist * 0.3);
   const meio = a.pos.clone().add(b.pos).multiplyScalar(0.5);
-  meio.y -= Math.min(0.6, dist * 0.12);
+  if (opcoes.barriga !== false) meio.y -= Math.min(0.6, dist * 0.12);
+  for (const plano of opcoes.planos ?? []) {
+    const falta = (opcoes.folga ?? 0) - meio.clone().sub(plano.ponto).dot(plano.normal);
+    if (falta > 0) meio.addScaledVector(plano.normal, falta);
+  }
   return new THREE.CatmullRomCurve3(
     [a.pos.clone(), a.pos.clone().addScaledVector(a.saida, s), meio, b.pos.clone().addScaledVector(b.saida, s), b.pos.clone()],
     false,
@@ -124,6 +155,13 @@ export interface CamadaDeCabos {
   malhas(): THREE.Object3D[];
   /** Ponto do cabo, em coordenadas da casa, a uma fração do primeiro trecho. Nulo se o cabo não está desenhado. */
   ponto(uid: string, fracao?: number): THREE.Vector3 | null;
+  /**
+   * Para o grampo de parede que vai ser posto em `ponto` (coordenadas da casa): o cabo desenhado mais próximo.
+   * Valem primeiro os cabos à vista. Nulo se não há cabo desenhado.
+   */
+  maisProximo(ponto: THREE.Vector3): string | null;
+  /** Posição, na lista de grampos do cabo, em que um grampo novo em `ponto` menos alonga o caminho. */
+  indiceDoGrampo(uid: string, ponto: THREE.Vector3): number;
   destruir(): void;
 }
 
@@ -131,10 +169,71 @@ interface Desenho {
   grupo: THREE.Group;
   assinatura: string;
   escondido: boolean;
-  curvas: THREE.CatmullRomCurve3[];
+  curvas: THREE.Curve<THREE.Vector3>[];
+}
+
+/** Grampo de parede por onde o cabo passa. */
+interface GrampoNoCabo {
+  uid: string;
+  /** Onde o cabo passa: sob o arco, encostado na superfície. */
+  pos: THREE.Vector3;
+  /** Normal da superfície e os dois eixos da peça no plano dela. */
+  normal: THREE.Vector3;
+  ex: THREE.Vector3;
+  ey: THREE.Vector3;
+}
+
+/** Trecho do desenho, de uma ponta a outra. */
+interface Trecho {
+  a: Ponta;
+  b: Ponta;
+  /** Entre dois grampos da mesma superfície: reto e rente a ela. */
+  reto: boolean;
+  /** Entre dois grampos de superfícies diferentes: esticado, sem barriga. */
+  esticado: boolean;
+  /** Superfícies dos grampos das pontas. */
+  planos: Plano[];
+}
+
+interface Percurso {
+  trechos: Trecho[];
+  grampos: GrampoNoCabo[];
+  /** Por grampo, o ângulo do cabo no plano da peça (em torno da normal). */
+  angulos: number[];
+  raio: number;
+  tipoA: TipoTerminal;
+  tipoB: TipoTerminal;
 }
 
 const CIMA = new THREE.Vector3(0, 1, 0);
+/** Folga entre o cabo e a superfície, no grampo. */
+const FOLGA_DO_GRAMPO = 0.0005;
+/** Entre dois grampos de superfícies diferentes, quanto o cabo se afasta de cada superfície antes de virar. */
+const SAIDA_DO_GRAMPO = 0.04;
+
+/** Menor distância de um ponto a um segmento. */
+function distanciaAoSegmento(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
+  const ab = b.clone().sub(a);
+  const t = ab.lengthSq() < 1e-12 ? 0 : THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1);
+  return a.clone().addScaledVector(ab, t).distanceTo(p);
+}
+
+/**
+ * Entre quais pontos do caminho o cabo entra no quadro: a posição que menos o alonga.
+ * Devolve `i`: a passagem fica entre `pontos[i]` e `pontos[i + 1]`.
+ */
+function corteDoQuadro(pontos: readonly THREE.Vector3[], entrada: THREE.Vector3, saida: THREE.Vector3): number {
+  let melhor = 0;
+  let menor = Infinity;
+  for (let i = 0; i + 1 < pontos.length; i++) {
+    const custo = pontos[i]!.distanceTo(entrada) + saida.distanceTo(pontos[i + 1]!) - pontos[i]!.distanceTo(pontos[i + 1]!);
+    if (custo < menor - 1e-9) {
+      menor = custo;
+      melhor = i;
+    }
+  }
+  return melhor;
+}
 
 export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivos): CamadaDeCabos {
   const desenhos = new Map<string, Desenho>();
@@ -143,6 +242,107 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
   let projetoVisto: Projeto | null = null;
   let adiado = false;
   const invisivel = new THREE.MeshBasicMaterial({ visible: false });
+  /** Bolinha que fecha a dobra do cabo em cada grampo. É a mesma para todos os cabos. */
+  const geoJunta = new THREE.SphereGeometry(1, 10, 8);
+
+  /** Grampos do cabo que estão na cena, na ordem da lista dele, com o ponto por onde o cabo passa. */
+  function gramposDe(c: Cabo, raio: number): GrampoNoCabo[] {
+    const lista: GrampoNoCabo[] = [];
+    for (const uid of c.grampos ?? []) {
+      const d = estado.projeto.dispositivos.find((x) => x.uid === uid);
+      const item = d ? CATALOGO.get(d.itemId) : undefined;
+      if (!d || d.superficie === null || item?.categoria !== 'acessorio' || !ehGrampo(item) || !item.dimensoes) continue;
+      const q = new THREE.Quaternion(...d.quat);
+      const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+      lista.push({
+        uid,
+        pos: new THREE.Vector3(...d.pos).addScaledVector(normal, -item.dimensoes[2] / 2 + raio + FOLGA_DO_GRAMPO),
+        normal,
+        ex: new THREE.Vector3(1, 0, 0).applyQuaternion(q),
+        ey: new THREE.Vector3(0, 1, 0).applyQuaternion(q),
+      });
+    }
+    return lista;
+  }
+
+  /** Raio do desenho do cabo, pelo tipo dele. */
+  function raioDe(c: Cabo): number {
+    const tipo = CATALOGO.get(c.caboId);
+    return RAIO[tipo?.categoria === 'cabo' ? tipo.uso : 'ca']!;
+  }
+
+  /**
+   * Caminho do cabo: do terminal ao primeiro grampo, de grampo em grampo e do último grampo ao outro terminal.
+   * O cabo que passa por um quadro entra e sai dele no ponto do caminho que menos o alonga. Nulo se falta uma ponta na cena.
+   */
+  function percursoDe(c: Cabo): Percurso | null {
+    const a = pecas.terminal(c.de.disp, c.de.terminal);
+    const b = pecas.terminal(c.para.disp, c.para.terminal);
+    if (!a || !b) return null;
+    const raio = raioDe(c);
+    const grampos = gramposDe(c, raio);
+    type No = { pos: THREE.Vector3; saida: THREE.Vector3 | null; grampo: GrampoNoCabo | null; entraNoQuadro?: boolean };
+    const nos: No[] = [{ pos: a.pos, saida: a.saida, grampo: null }, ...grampos.map((g) => ({ pos: g.pos, saida: null, grampo: g })), { pos: b.pos, saida: b.saida, grampo: null }];
+    const passagem = c.quadro ? pecas.passagem(c.quadro, c.uid) : null;
+    if (passagem) {
+      const i = corteDoQuadro(nos.map((n) => n.pos), passagem.entrada, passagem.saida);
+      nos.splice(i + 1, 0, { pos: passagem.entrada, saida: passagem.direcao, grampo: null, entraNoQuadro: true }, { pos: passagem.saida, saida: passagem.direcao, grampo: null });
+    }
+    const trechos: Trecho[] = [];
+    for (let i = 0; i + 1 < nos.length; i++) {
+      const p = nos[i]!;
+      const q = nos[i + 1]!;
+      // Dentro do quadro o cabo é o fio que sobe até as proteções: não há trecho entre a entrada e a saída.
+      if (p.entraNoQuadro) continue;
+      const planos = [p, q].filter((n) => n.grampo).map((n) => ({ ponto: n.pos, normal: n.grampo!.normal }));
+      const gp = p.grampo;
+      const gq = q.grampo;
+      const mesmoPlano = gp !== null && gq !== null && gp.normal.dot(gq.normal) > 0.999 && Math.abs(q.pos.clone().sub(p.pos).dot(gp.normal)) < 0.005;
+      // No grampo o cabo solto chega rente à superfície, vindo do lado da outra ponta; entre grampos de superfícies
+      // diferentes, sai de cada um pela normal.
+      const saidaDo = (n: No, outro: No): THREE.Vector3 => {
+        if (n.saida) return n.saida;
+        const normal = n.grampo!.normal;
+        if (outro.grampo) return normal;
+        const rumo = outro.pos.clone().sub(n.pos);
+        rumo.addScaledVector(normal, -rumo.dot(normal));
+        return rumo.lengthSq() < 1e-8 ? normal : rumo.normalize();
+      };
+      trechos.push({
+        a: { pos: p.pos, saida: saidaDo(p, q) },
+        b: { pos: q.pos, saida: saidaDo(q, p) },
+        reto: mesmoPlano,
+        esticado: gp !== null && gq !== null && !mesmoPlano,
+        planos,
+      });
+    }
+    // O arco de cada grampo fica atravessado sobre o cabo: o cabo passa por ele na direção média de quem chega e de quem sai.
+    const angulos = nos.flatMap((n, i) => {
+      if (!n.grampo) return [];
+      const chega = n.pos.clone().sub(nos[i - 1]!.pos).normalize();
+      const sai = nos[i + 1]!.pos.clone().sub(n.pos).normalize();
+      const rumo = chega.clone().add(sai);
+      if (rumo.lengthSq() < 1e-6) rumo.copy(sai);
+      return [Math.atan2(rumo.dot(n.grampo.ey), rumo.dot(n.grampo.ex))];
+    });
+    return { trechos, grampos, angulos, raio, tipoA: a.tipo, tipoB: b.tipo };
+  }
+
+  /**
+   * Comprimento do cabo pelo caminho dele. Sem grampo, como sempre foi: a soma dos trechos (um, ou dois com quadro),
+   * cada um com o mínimo e o arredondamento. Com grampo: a soma de `(|dx| + |dy| + |dz|) × 1,1` de todos os trechos,
+   * com o mínimo e o arredondamento aplicados à soma (grampos próximos não contam 0,3 m cada um).
+   */
+  function comprimentoDe(p: Percurso): number {
+    if (p.grampos.length === 0) return Math.round(p.trechos.reduce((soma, t) => soma + comprimentoDoTrecho(t.a.pos, t.b.pos), 0) * 10) / 10;
+    return comprimentoFinal(p.trechos.reduce((soma, t) => soma + brutoDoTrecho(t.a.pos, t.b.pos), 0));
+  }
+
+  function curvaDe(t: Trecho, raio: number): THREE.Curve<THREE.Vector3> {
+    if (t.reto) return new THREE.LineCurve3(t.a.pos.clone(), t.b.pos.clone());
+    if (t.esticado) return curvaDoTrecho(t.a, t.b, { saida: SAIDA_DO_GRAMPO, barriga: false, planos: t.planos, folga: raio + 0.01 });
+    return t.planos.length > 0 ? curvaDoTrecho(t.a, t.b, { planos: t.planos, folga: 0 }) : curvaDoTrecho(t.a, t.b);
+  }
 
   function remover(uid: string): void {
     const d = desenhos.get(uid);
@@ -166,25 +366,39 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
     peca.scale.setScalar(escala);
   }
 
-  function desenhar(c: Cabo, trechos: [Ponta, Ponta][], raio: number, cor: string, soltas: { indice: number; item: Protecao }[]): [THREE.Group, THREE.CatmullRomCurve3[]] {
+  function desenhar(c: Cabo, percurso: Percurso, cor: string, soltas: { indice: number; item: Protecao }[]): [THREE.Group, THREE.Curve<THREE.Vector3>[]] {
+    const raio = percurso.raio;
     const grupo = new THREE.Group();
     grupo.name = `cabo-${c.uid}`;
     grupo.userData.cabo = c.uid;
     const material = liso(`cabo-${cor}`, () => new THREE.MeshStandardMaterial({ color: cor, roughness: 0.62, metalness: 0 }));
-    const curvas = trechos.map(([a, b]) => curvaDoTrecho(a, b));
+    // Trecho sem tamanho (grampo em cima do terminal) não tem o que desenhar.
+    const curvas = percurso.trechos.filter((t) => t.a.pos.distanceToSquared(t.b.pos) > 1e-8).map((t) => curvaDe(t, raio));
     for (const curva of curvas) {
-      const tubo = new THREE.Mesh(new THREE.TubeGeometry(new PercursoDoTubo(curva), DIVISOES_DO_TUBO, raio, 6, false), material);
+      // O trecho reto, entre dois grampos, é um cilindro só.
+      const reto = curva instanceof THREE.LineCurve3;
+      const tubo = new THREE.Mesh(reto ? new THREE.TubeGeometry(curva, 1, raio, 6, false) : new THREE.TubeGeometry(new PercursoDoTubo(curva as THREE.CatmullRomCurve3), DIVISOES_DO_TUBO, raio, 6, false), material);
       tubo.name = 'tubo';
       tubo.castShadow = true;
       tubo.receiveShadow = true;
       tubo.userData.cabo = c.uid;
       tubo.userData.proprio = true;
       grupo.add(tubo);
-      const clique = new THREE.Mesh(new THREE.TubeGeometry(curva, DIVISOES_DO_CLIQUE, RAIO_DE_CLIQUE_DO_CABO, 5, false), invisivel);
+      const clique = new THREE.Mesh(new THREE.TubeGeometry(curva, reto ? 1 : DIVISOES_DO_CLIQUE, RAIO_DE_CLIQUE_DO_CABO, 5, false), invisivel);
       clique.name = 'tubo-de-clique';
       clique.userData.cabo = c.uid;
       clique.userData.proprio = true;
       grupo.add(clique);
+    }
+    // Em cada grampo, uma bolinha do raio do cabo fecha a dobra entre os dois trechos.
+    for (const g of percurso.grampos) {
+      const junta = new THREE.Mesh(geoJunta, material);
+      junta.name = 'junta';
+      junta.position.copy(g.pos);
+      junta.scale.setScalar(raio);
+      junta.castShadow = true;
+      junta.userData.cabo = c.uid;
+      grupo.add(junta);
     }
     // Proteções fora de quadro, desenhadas no próprio cabo.
     const itemDe = (uid: string) => CATALOGO.get(estado.projeto.dispositivos.find((d) => d.uid === uid)?.itemId ?? '');
@@ -226,31 +440,22 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
       percursos.clear();
     }
     for (const c of estado.projeto.cabos) {
-      const a = pecas.terminal(c.de.disp, c.de.terminal);
-      const b = pecas.terminal(c.para.disp, c.para.terminal);
-      if (!a || !b) continue;
+      const caminho = percursoDe(c);
+      if (!caminho) continue;
       vivos.add(c.uid);
-      const passagem = c.quadro ? pecas.passagem(c.quadro, c.uid) : null;
-      const trechos: [Ponta, Ponta][] = passagem
-        ? [
-            [a, { pos: passagem.entrada, saida: passagem.direcao }],
-            [{ pos: passagem.saida, saida: passagem.direcao }, b],
-          ]
-        : [[a, b]];
-      // Com quadro, o comprimento é a soma dos dois trechos, cada um pela fórmula.
+      const trechos = caminho.trechos;
+      // Com quadro ou com grampo, o comprimento é a soma dos trechos, pela fórmula.
       const numero = (v: THREE.Vector3): string => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
-      const percurso = trechos.map(([p, q]) => `${numero(p.pos)};${numero(q.pos)}`).join('/');
+      const percurso = trechos.map((t) => `${numero(t.a.pos)};${numero(t.b.pos)}`).join('/');
       const anterior = percursos.get(c.uid);
       // Durante um arraste fica guardado o percurso de antes dele: o comprimento sai ao soltar.
       if (!adiado || anterior === undefined) percursos.set(c.uid, percurso);
-      if (!adiado && anterior !== undefined && anterior !== percurso) {
-        const comprimento = trechos.reduce((soma, [p, q]) => soma + comprimentoDoTrecho(p.pos, q.pos), 0);
-        comprimentos.set(c.uid, Math.round(comprimento * 10) / 10);
-      }
+      if (!adiado && anterior !== undefined && anterior !== percurso) comprimentos.set(c.uid, comprimentoDe(caminho));
+      // O desenho de cada grampo acompanha o cabo: atravessado sobre ele e do tamanho dele.
+      caminho.grampos.forEach((g, i) => pecas.ajustarGrampo(g.uid, caminho.angulos[i]!, Math.max(1, caminho.raio / GRAMPO.raioDoCabo)));
 
-      const tipo = CATALOGO.get(c.caboId);
-      const raio = RAIO[tipo?.categoria === 'cabo' ? tipo.uso : 'ca']!;
-      const cor = corDoCabo(a.tipo, b.tipo);
+      const raio = caminho.raio;
+      const cor = corDoCabo(caminho.tipoA, caminho.tipoB);
       const soltas: { indice: number; item: Protecao }[] = [];
       c.protecoes.forEach((id, indice) => {
         const item = CATALOGO.get(id);
@@ -258,13 +463,13 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
       });
       const assinatura = [
         raio, cor,
-        trechos.map(([p, q]) => `${numero(p.pos)};${numero(p.saida)};${numero(q.pos)};${numero(q.saida)}`).join('/'),
+        trechos.map((t) => `${t.reto ? 'r' : t.esticado ? 'e' : 's'}${numero(t.a.pos)};${numero(t.a.saida)};${numero(t.b.pos)};${numero(t.b.saida)}`).join('/'),
         soltas.map((s) => `${s.indice}:${s.item.id}`).join(','),
       ].join('|');
       let d = desenhos.get(c.uid);
       if (!d || d.assinatura !== assinatura) {
         remover(c.uid);
-        const [grupo, curvas] = desenhar(c, trechos, raio, cor, soltas);
+        const [grupo, curvas] = desenhar(c, caminho, cor, soltas);
         d = { grupo, assinatura, escondido: false, curvas };
         desenhos.set(c.uid, d);
         casa.add(d.grupo);
@@ -291,14 +496,8 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
     const comprimentos = new Map<string, number>();
     for (const c of estado.projeto.cabos) {
       if (uids && !uids.includes(c.uid)) continue;
-      const a = pecas.terminal(c.de.disp, c.de.terminal);
-      const b = pecas.terminal(c.para.disp, c.para.terminal);
-      if (!a || !b) continue;
-      const passagem = c.quadro ? pecas.passagem(c.quadro, c.uid) : null;
-      const soma = passagem
-        ? comprimentoDoTrecho(a.pos, passagem.entrada) + comprimentoDoTrecho(passagem.saida, b.pos)
-        : comprimentoDoTrecho(a.pos, b.pos);
-      comprimentos.set(c.uid, Math.round(soma * 10) / 10);
+      const caminho = percursoDe(c);
+      if (caminho) comprimentos.set(c.uid, comprimentoDe(caminho));
     }
     if (comprimentos.size > 0) acoes.definirComprimentos(comprimentos);
   }
@@ -325,9 +524,59 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
       const curva = desenhos.get(uid)?.curvas[0];
       return curva ? curva.getPointAt(fracao) : null;
     },
+    maisProximo(ponto) {
+      let melhor: string | null = null;
+      let menor = Infinity;
+      // Os cabos à vista valem antes dos que o modo de visão escondeu.
+      for (const escondidos of [false, true]) {
+        for (const [uid, d] of desenhos) {
+          if (d.escondido !== escondidos) continue;
+          for (const curva of d.curvas) {
+            const pontos = curva instanceof THREE.LineCurve3 ? [curva.v1, curva.v2] : curva.getPoints(24);
+            for (let i = 0; i + 1 < pontos.length; i++) {
+              const distancia = distanciaAoSegmento(ponto, pontos[i]!, pontos[i + 1]!);
+              if (distancia < menor) {
+                menor = distancia;
+                melhor = uid;
+              }
+            }
+          }
+        }
+        if (melhor) break;
+      }
+      return melhor;
+    },
+    indiceDoGrampo(uid, ponto) {
+      const c = estado.projeto.cabos.find((x) => x.uid === uid);
+      const a = c ? pecas.terminal(c.de.disp, c.de.terminal) : null;
+      const b = c ? pecas.terminal(c.para.disp, c.para.terminal) : null;
+      if (!c || !a || !b) return 0;
+      const grampos = gramposDe(c, raioDe(c)).map((g) => g.pos);
+      const passagem = c.quadro ? pecas.passagem(c.quadro, c.uid) : null;
+      /** Comprimento do caminho pelos pontos dados, em linha reta de um a outro, com a ida ao quadro. */
+      const caminho = (pontos: THREE.Vector3[]): number => {
+        const corte = passagem ? corteDoQuadro(pontos, passagem.entrada, passagem.saida) : -1;
+        let soma = 0;
+        for (let i = 0; i + 1 < pontos.length; i++) {
+          soma += i === corte ? pontos[i]!.distanceTo(passagem!.entrada) + passagem!.saida.distanceTo(pontos[i + 1]!) : pontos[i]!.distanceTo(pontos[i + 1]!);
+        }
+        return soma;
+      };
+      let melhor = 0;
+      let menor = Infinity;
+      for (let i = 0; i <= grampos.length; i++) {
+        const comprimento = caminho([a.pos, ...grampos.slice(0, i), ponto, ...grampos.slice(i), b.pos]);
+        if (comprimento < menor - 1e-9) {
+          menor = comprimento;
+          melhor = i;
+        }
+      }
+      return melhor;
+    },
     destruir() {
       for (const uid of [...desenhos.keys()]) remover(uid);
       invisivel.dispose();
+      geoJunta.dispose();
     },
   };
 }

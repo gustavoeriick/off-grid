@@ -32,7 +32,15 @@ export function dimensoesDe(item: Item): Dimensoes | null {
   }
 }
 
-/** Tipo de superfície em que a peça encaixa. Nulo para o que não é arrastado para a cena. */
+/** O item é um grampo de parede, que prende um cabo. Encaixa em qualquer superfície (cena-e-interface.md, seção 8). */
+export function ehGrampo(item: Item | undefined): boolean {
+  return item?.categoria === 'acessorio' && item.tipo === 'grampo';
+}
+
+/**
+ * Tipo de superfície em que a peça encaixa. Nulo para o que não é arrastado para a cena.
+ * O grampo de parede encaixa em qualquer uma (`ehGrampo`); aqui ele responde `parede`, que é onde mais se usa.
+ */
 export function superficieAceita(item: Item): TipoSuperficie | null {
   switch (item.categoria) {
     case 'placa':
@@ -47,7 +55,7 @@ export function superficieAceita(item: Item): TipoSuperficie | null {
     case 'aparelho':
       return item.forma === 'lampada' || item.forma === 'chuveiro' ? 'parede' : 'piso';
     case 'acessorio':
-      return item.tipo === 'quadro' && item.dimensoes ? 'parede' : null;
+      return (item.tipo === 'quadro' || item.tipo === 'grampo') && item.dimensoes ? 'parede' : null;
     case 'protecao':
     case 'cabo':
       return null;
@@ -100,6 +108,7 @@ const CIMA = new THREE.Vector3(0, 1, 0);
  * - Telhado: o eixo Z da peça é a normal; o Y é a subida do telhado; o X é Y × Z.
  * - Parede: Z é a normal, Y é a vertical.
  * - Piso: Y é a vertical e a frente fica em +Z da casa.
+ * - Grampo de parede: em qualquer superfície, Z é a normal (a base dele encosta nela), como no telhado.
  * - `giro` (0, 90, 180 ou 270) gira a peça em torno da normal.
  * - A posição é o centro da caixa de `dimensoes`: o ponto tocado mais a normal vezes metade da espessura;
  *   no piso, mais metade da altura e a altura do móvel de apoio, quando há um.
@@ -120,7 +129,7 @@ export function encaixar(item: Item, superficie: Marca | THREE.Object3D, ponto: 
   const z = new THREE.Vector3();
   let eixoDoGiro: THREE.Vector3;
 
-  if (marca.tipo === 'piso') {
+  if (marca.tipo === 'piso' && !ehGrampo(item)) {
     x.set(1, 0, 0);
     y.set(0, 1, 0);
     z.set(0, 0, 1);

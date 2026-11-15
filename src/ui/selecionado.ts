@@ -71,8 +71,14 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
     linhaDaSombra(d, item),
   ].filter((n) => n !== null);
 
+  // Grampo de parede: não gira (o desenho acompanha o cabo) e, apagado, só solta o cabo naquele ponto.
+  const grampo = item.categoria === 'acessorio' && item.tipo === 'grampo';
+  if (grampo) {
+    const cabo = estado.projeto.cabos.find((c) => c.grampos?.includes(d.uid));
+    if (cabo) nos.push(h('p', { class: 'detalhe' }, `Prende o cabo que liga ${nomeDoDispositivo(cabo.de.disp)} a ${nomeDoDispositivo(cabo.para.disp)}. Arraste o grampo na cena para mudar o caminho do cabo.`));
+  }
   const linha = h('div', { class: 'acoes-item' });
-  linha.append(botao('Girar', () => window.dispatchEvent(new CustomEvent('offgrid:girar-selecionado')), { title: d.superficie === 'terreno' && item.categoria === 'placa' ? 'Vira a face da placa 15° no sentido dos ponteiros do relógio' : 'Gira a peça em 90° sobre a superfície' }));
+  if (!grampo) linha.append(botao('Girar', () => window.dispatchEvent(new CustomEvent('offgrid:girar-selecionado')), { title: d.superficie === 'terreno' && item.categoria === 'placa' ? 'Vira a face da placa 15° no sentido dos ponteiros do relógio' : 'Gira a peça em 90° sobre a superfície' }));
   linha.append(
     botao(
       'Apagar',
@@ -82,7 +88,7 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
         acoes.removerDispositivo(d.uid);
         if (cabos > 0) mostrarMensagem(`Apagou a peça e ${cabos === 1 ? 'o cabo ligado' : `os ${cabos} cabos ligados`} a ela. Ctrl+Z desfaz.`);
       },
-      { class: 'perigo', title: 'Apaga a peça e os cabos ligados a ela (tecla Delete)' },
+      { class: 'perigo', title: grampo ? 'Tira o grampo: o cabo fica solto neste ponto (tecla Delete)' : 'Apaga a peça e os cabos ligados a ela (tecla Delete)' },
     ),
   );
   nos.push(linha);
