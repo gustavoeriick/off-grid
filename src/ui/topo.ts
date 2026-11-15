@@ -25,8 +25,9 @@ function exportar(): void {
 async function importar(arquivo: File): Promise<void> {
   try {
     const dados: unknown = JSON.parse(await arquivo.text());
-    acoes.carregarProjeto(dados);
-    mostrarMensagem(`Projeto "${arquivo.name}" aberto.`);
+    // O arquivo entra como um projeto novo de "Meus projetos": o que estava na tela continua gravado na lista.
+    acoes.importarProjeto(dados);
+    mostrarMensagem(`Arquivo "${arquivo.name}" aberto como o projeto "${estado.projeto.nome}".`);
   } catch (erro) {
     const motivo = erro instanceof SyntaxError ? 'O arquivo não é um projeto válido (não é JSON).' : erro instanceof Error ? erro.message : 'Erro desconhecido.';
     mostrarMensagem(`Não foi possível abrir o arquivo. ${motivo}`, true);
@@ -53,12 +54,48 @@ function montarMenuDoProjeto(): void {
   });
 }
 
+/** Menu "Cabos": "Arrumar os cabos" põe os grampos sozinho e "Soltar os cabos" tira todos (cena-e-interface.md, seção 8). */
+function montarMenuDosCabos(): void {
+  const botao = el<HTMLButtonElement>('#botao-cabos');
+  const lista = el<HTMLElement>('#lista-cabos');
+  const alternar = (aberto: boolean): void => {
+    lista.hidden = !aberto;
+    botao.setAttribute('aria-expanded', String(aberto));
+  };
+  botao.addEventListener('click', () => alternar(lista.hidden === true));
+  window.addEventListener('pointerdown', (e) => {
+    if (!lista.hidden && !(e.target as Element).closest?.('#menu-cabos')) alternar(false);
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !lista.hidden) alternar(false);
+  });
+  el('#botao-arrumar-cabos').addEventListener('click', () => {
+    alternar(false);
+    if (estado.projeto.cabos.length === 0) return mostrarMensagem('Não há cabos para arrumar. Puxe um cabo de um terminal a outro primeiro.');
+    mostrarMensagem('Arrumando os cabos…');
+    // A conta leva um instante: a mensagem aparece antes de ela começar.
+    setTimeout(() => {
+      const r = window.__offgrid?.arrumarCabos?.();
+      if (!r) return mostrarMensagem('Não foi possível arrumar os cabos: a cena 3D não está pronta.', true);
+      const cabos = r.arrumados === 1 ? '1 cabo arrumado' : `${r.arrumados} cabos arrumados`;
+      const semCaminho = r.semCaminho.length === 0 ? '' : r.semCaminho.length === 1 ? ' Um cabo ficou sem caminho pelas paredes e cruza o vão em linha reta.' : ` ${r.semCaminho.length} cabos ficaram sem caminho pelas paredes e cruzam o vão em linha reta.`;
+      mostrarMensagem(`${cabos}, com ${r.grampos} grampos.${semCaminho} O comprimento de cada cabo foi medido de novo pelo caminho.`);
+    }, 30);
+  });
+  el('#botao-soltar-cabos').addEventListener('click', () => {
+    alternar(false);
+    const soltos = window.__offgrid?.soltarCabos?.() ?? 0;
+    mostrarMensagem(soltos === 0 ? 'Nenhum cabo está preso por grampos.' : soltos === 1 ? '1 cabo solto: os grampos dele foram tirados.' : `${soltos} cabos soltos: os grampos foram tirados.`);
+  });
+}
+
 export function montarTopo(): void {
   montarMenuDoProjeto();
+  montarMenuDosCabos();
   el('#botao-desfazer').addEventListener('click', () => acoes.desfazer());
   el('#botao-refazer').addEventListener('click', () => acoes.refazer());
   el('#botao-novo').addEventListener('click', () => {
-    if (window.confirm('Começar um projeto novo? O projeto atual será substituído (dá para desfazer).')) acoes.novoProjeto();
+    if (window.confirm('Voltar este projeto ao plano inicial? A montagem atual será substituída (dá para desfazer).')) acoes.novoProjeto();
   });
   el('#botao-exportar').addEventListener('click', exportar);
 
@@ -123,7 +160,7 @@ export function montarTopo(): void {
 
   // No tutorial só existe o quartinho: medidas da casa, edição da casa, "Novo" e "Importar" saem do topo, e aparece o rótulo "Tutorial".
   // O projeto do tutorial não é um cenário para trocar: "Novo" recomeçaria o tutorial e "Importar" o apagaria.
-  const escondidosNoTutorial = ['#abrir-casa', '#botao-editar-casa', '#botao-novo', '#botao-importar'].map((s) => el<HTMLElement>(s));
+  const escondidosNoTutorial = ['#abrir-casa', '#botao-editar-casa', '#botao-novo', '#botao-importar', '#botao-meus-projetos'].map((s) => el<HTMLElement>(s));
   const rotuloTutorial = el('#rotulo-tutorial');
   const desenharTutorial = (): void => {
     const tutorial = emTutorial();

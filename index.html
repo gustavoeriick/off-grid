@@ -17,18 +17,28 @@
           <button type="button" id="botao-refazer" title="Refazer o que foi desfeito (Ctrl+Y)">Refazer</button>
         </div>
         <div class="menu-topo" id="menu-projeto">
-          <button type="button" id="botao-projeto" aria-haspopup="true" aria-expanded="false" title="Começar de novo, guardar o projeto em um arquivo ou abrir um arquivo">Projeto ▾</button>
+          <button type="button" id="botao-projeto" aria-haspopup="true" aria-expanded="false" title="Trocar de projeto, começar de novo, guardar o projeto em um arquivo ou abrir um arquivo">Projeto ▾</button>
           <div class="menu-lista" id="lista-projeto" role="group" aria-label="Projeto" hidden>
-            <button type="button" id="botao-novo" title="Volta ao plano inicial. Dá para desfazer.">Novo: voltar ao plano inicial</button>
+            <p class="menu-nota" id="projeto-aberto"></p>
+            <button type="button" id="botao-meus-projetos" title="Lista dos projetos gravados neste navegador: abrir, criar, renomear, duplicar e apagar">Meus projetos: abrir, criar e trocar</button>
+            <button type="button" id="botao-novo" title="Troca a montagem deste projeto pelo plano inicial. Dá para desfazer.">Recomeçar: voltar este projeto ao plano inicial</button>
             <button type="button" id="botao-exportar" title="Baixa o projeto em um arquivo .json">Exportar: guardar em um arquivo</button>
-            <button type="button" id="botao-importar" title="Abre um arquivo .json exportado antes">Importar: abrir um arquivo</button>
-            <p class="menu-nota">O projeto também fica gravado neste navegador a cada mudança.</p>
+            <button type="button" id="botao-importar" title="Abre um arquivo .json exportado antes, como um projeto novo da lista">Importar: abrir um arquivo como projeto novo</button>
+            <p class="menu-nota">Os projetos ficam gravados neste navegador a cada mudança.</p>
           </div>
           <input type="file" id="arquivo-importar" accept=".json,application/json" hidden />
         </div>
         <div class="botoes" id="botoes-casa" role="group" aria-label="Casa">
           <button type="button" id="abrir-casa" aria-expanded="false" title="Largura, andares, telhado, varandas e quartinho, em números">Medidas da casa</button>
           <button type="button" id="botao-editar-casa" aria-pressed="false" title="Mexer com o mouse no quartinho, nas varandas, nas paredes, nos cômodos e nos vizinhos">Editar casa</button>
+        </div>
+        <div class="menu-topo" id="menu-cabos">
+          <button type="button" id="botao-cabos" aria-haspopup="true" aria-expanded="false" title="Prender os cabos nas paredes, com grampos, ou soltar todos">Cabos ▾</button>
+          <div class="menu-lista" id="lista-cabos" role="group" aria-label="Cabos" hidden>
+            <button type="button" id="botao-arrumar-cabos" title="Põe os grampos sozinho: cada cabo passa a correr rente às paredes e ao piso. Dá para desfazer.">Arrumar os cabos</button>
+            <button type="button" id="botao-soltar-cabos" title="Tira os grampos de todos os cabos. Dá para desfazer.">Soltar os cabos</button>
+            <p class="menu-nota">Grampo é a peça que prende o cabo na parede. Arrumar de novo depois de mover uma peça refaz o caminho.</p>
+          </div>
         </div>
         <div class="botoes" id="botoes-aprender" role="group" aria-label="Aprender">
           <button type="button" id="botao-passo-a-passo" title="Monta um sistema com um roteiro, um passo de cada vez">Passo a passo</button>

@@ -305,8 +305,20 @@ async function principal() {
     await download.saveAs(caminho);
     const antes = JSON.stringify((await estado()).projeto);
     await pagina.evaluate(() => window.__offgrid.acoes.definirClima('nublado'));
+    // Importar abre o arquivo como um projeto novo de "Meus projetos": o da tela (agora nublado) continua na lista.
+    const projetosAntes = await pagina.evaluate(() => window.__offgrid.acoes.listarProjetos().length);
     await pagina.locator('#arquivo-importar').setInputFiles(caminho);
-    await pagina.waitForFunction((x) => JSON.stringify(window.__offgrid.estado().projeto) === x, antes, { timeout: 5000 });
+    await pagina.waitForFunction((n) => window.__offgrid.acoes.listarProjetos().length === n + 1, projetosAntes, { timeout: 5000 });
+    const importado = (await estado()).projeto;
+    conferir(JSON.stringify({ ...importado, nome: '' }) === JSON.stringify({ ...JSON.parse(antes), nome: '' }), 'o projeto importado deveria ser igual ao exportado, fora o nome');
+    conferir(importado.nome !== JSON.parse(antes).nome, `o projeto importado deveria ganhar um nome próprio: "${importado.nome}"`);
+    // Apaga o importado: volta o projeto de antes, que tinha ficado nublado; o clima volta ao que era.
+    await pagina.evaluate(() => {
+      const a = window.__offgrid.acoes;
+      a.apagarProjeto(a.listarProjetos().find((p) => p.atual).id);
+      a.definirClima('tipico');
+    });
+    conferir(JSON.stringify((await estado()).projeto) === antes && (await pagina.evaluate(() => window.__offgrid.acoes.listarProjetos().length)) === projetosAntes, 'apagar o importado deveria devolver o projeto de antes');
     await pagina.locator('#arquivo-importar').setInputFiles({ name: 'ruim.json', mimeType: 'application/json', buffer: Buffer.from('{"versao":99}') });
     await pagina.waitForSelector('#mensagem.erro:not([hidden])', { timeout: 5000 });
     conferir(JSON.stringify((await estado()).projeto) === antes, 'um arquivo recusado não muda o projeto');
@@ -1818,13 +1830,16 @@ async function principal() {
     conferir(!casaAntes.casa.soQuartinho && casaAntes.dispositivos.length > 0, 'antes do tutorial deveria haver a casa com peças');
 
     let confirmou = false;
-    pagina.once('dialog', (dlg) => {
+    const aoConfirmar = (dlg) => {
       confirmou = true;
       dlg.dismiss();
-    });
+    };
+    pagina.once('dialog', aoConfirmar);
     await pagina.locator('#boas-vindas button[data-acao="tutorial"]').click();
     await pagina.locator('#passo-a-passo').waitFor({ state: 'visible' });
     await esperar(400);
+    // Sem diálogo, o ouvinte sai: armado, ele responderia à próxima confirmação do roteiro.
+    pagina.off('dialog', aoConfirmar);
     conferir(!confirmou, 'entrar no tutorial não deveria pedir confirmação');
     let e = await estado();
     conferir(e.projeto.casa.soQuartinho === true && e.projeto.dispositivos.length === 0 && e.projeto.cabos.length === 0, 'o tutorial deveria abrir só com o quartinho, vazio');
@@ -2251,6 +2266,174 @@ async function principal() {
     await captura('94-grampo-recusado-sem-cabo');
   }
   await verificarGrampo();
+
+  // "Meus projetos" (fase-2.md, seção 9): criar, trocar, renomear, duplicar e apagar pelo painel, com o mouse.
+  async function verificarProjetos() {
+    const lista = () => pagina.evaluate(() => window.__offgrid.acoes.listarProjetos());
+    const abrirPainel = async () => {
+      await pagina.locator('#botao-projeto').click();
+      await pagina.locator('#botao-meus-projetos').click();
+      conferir(await pagina.locator('#painel-projetos').isVisible(), 'o painel "Meus projetos" deveria abrir');
+    };
+    const item = (nome) => pagina.locator(`#lista-de-projetos .projeto-item[data-nome="${nome}"]`);
+    await pagina.evaluate(() => {
+      const a = window.__offgrid.acoes;
+      if (window.__offgrid.estado().projeto.casa.soQuartinho) a.sairDoTutorial();
+      a.definirTempo(Date.UTC(2026, 5, 21, 15));
+    });
+    const inicio = await lista();
+    conferir(inicio.filter((p) => p.atual).length === 1, `o projeto da tela deveria estar na lista: ${JSON.stringify(inicio)}`);
+    const primeiro = inicio.find((p) => p.atual);
+    // Uma marca no primeiro projeto, para reconhecê-lo na volta: a casa virada para o leste.
+    await pagina.evaluate(() => window.__offgrid.acoes.alterarCasa({ orientacaoGraus: 90 }));
+    const daPrimeira = JSON.stringify((await estado()).projeto);
+
+    await abrirPainel();
+    conferir((await item(primeiro.nome).locator('.projeto-aberto').count()) === 1 && (await item(primeiro.nome).locator('[data-acao="abrir"]').isDisabled()), 'o projeto aberto vem marcado e sem "Abrir"');
+    await captura('95-meus-projetos');
+    // Novo projeto, de casa vazia.
+    await pagina.locator('#novo-projeto-nome').fill('Casa dos pais');
+    await pagina.locator('#novo-projeto [data-acao="criar"]').click();
+    let e = await estado();
+    conferir(e.projeto.nome === 'Casa dos pais' && e.projeto.cabos.length === 0 && e.projeto.casa.orientacaoGraus !== 90, `o projeto novo deveria abrir vazio: ${e.projeto.nome}, ${e.projeto.cabos.length} cabos`);
+    conferir(await pagina.locator('#painel-projetos').isHidden(), 'criar deveria fechar o painel');
+    conferir((await pagina.title()).startsWith('Casa dos pais'), `o título da aba deveria trazer o nome do projeto: "${await pagina.title()}"`);
+    await esperar(300);
+    await captura('96-projeto-novo-casa-vazia');
+    await pagina.evaluate(() => window.__offgrid.acoes.alterarCasa({ orientacaoGraus: 270, andares: 1 }));
+
+    // De volta ao primeiro: a casa, a orientação e a montagem dele estão como ficaram.
+    await abrirPainel();
+    conferir((await pagina.locator('#lista-de-projetos .projeto-item').count()) === inicio.length + 1, 'a lista deveria ter um projeto a mais');
+    await item(primeiro.nome).locator('[data-acao="abrir"]').click();
+    conferir(JSON.stringify((await estado()).projeto) === daPrimeira, 'abrir o primeiro projeto deveria devolvê-lo igual');
+    await pagina.evaluate(() => window.__offgrid.acoes.desfazer());
+    conferir(JSON.stringify((await estado()).projeto) === daPrimeira, 'desfazer não deveria atravessar a troca de projeto');
+
+    // Renomear e duplicar o outro, sem abri-lo.
+    await abrirPainel();
+    await item('Casa dos pais').locator('[data-acao="renomear"]').click();
+    await pagina.locator('#lista-de-projetos .projeto-nome-campo').fill('Sítio');
+    await pagina.locator('#lista-de-projetos [data-acao="salvar-nome"]').click();
+    conferir((await item('Sítio').count()) === 1 && (await item('Casa dos pais').count()) === 0, 'o projeto deveria aparecer com o nome novo');
+    await item('Sítio').locator('[data-acao="duplicar"]').click();
+    conferir((await item('Sítio (cópia)').count()) === 1, 'duplicar deveria criar "Sítio (cópia)"');
+    await captura('97-meus-projetos-tres');
+    // Apagar pede confirmação: recusar mantém, aceitar apaga.
+    pagina.once('dialog', (dlg) => dlg.dismiss());
+    await item('Sítio (cópia)').locator('[data-acao="apagar"]').click();
+    conferir((await item('Sítio (cópia)').count()) === 1, 'recusar a confirmação não deveria apagar');
+    pagina.once('dialog', (dlg) => dlg.accept());
+    await item('Sítio (cópia)').locator('[data-acao="apagar"]').click();
+    conferir((await item('Sítio (cópia)').count()) === 0, 'aceitar a confirmação deveria apagar');
+    // O projeto "Sítio" guardou a casa térrea virada para o oeste.
+    await item('Sítio').locator('[data-acao="abrir"]').click();
+    e = await estado();
+    conferir(e.projeto.casa.orientacaoGraus === 270 && e.projeto.casa.andares === 1, 'o segundo projeto deveria guardar a casa e a orientação dele');
+
+    // Recarregar a página abre o projeto que estava aberto, e a lista continua lá.
+    await esperar(700);
+    await pagina.reload();
+    await pagina.waitForFunction(() => window.__offgrid?.pronto === true, null, { timeout: 30000 });
+    e = await estado();
+    conferir(e.projeto.nome === 'Sítio' && (await lista()).length === inicio.length + 1, `depois de recarregar deveria abrir "Sítio" com a lista inteira: ${e.projeto.nome}`);
+
+    // No tutorial, "Meus projetos" some do menu e o tutorial não entra na lista.
+    await pagina.evaluate(() => window.__offgrid.acoes.entrarNoTutorial());
+    await pagina.locator('#botao-projeto').click();
+    conferir(!(await pagina.locator('#botao-meus-projetos').isVisible()), 'no tutorial o menu Projeto não deveria mostrar "Meus projetos"');
+    await pagina.keyboard.press('Escape');
+    conferir((await lista()).length === inicio.length + 1, 'o tutorial não deveria entrar na lista');
+    await pagina.evaluate(() => window.__offgrid.acoes.sairDoTutorial());
+
+    // Arruma a casa: apaga o segundo projeto e devolve a orientação do primeiro.
+    await pagina.evaluate((id) => {
+      const a = window.__offgrid.acoes;
+      a.apagarProjeto(a.listarProjetos().find((p) => p.atual).id);
+      a.abrirProjeto(id);
+      a.alterarCasa({ orientacaoGraus: 0 });
+    }, primeiro.id);
+    conferir((await lista()).length === inicio.length, 'no fim a lista deveria voltar ao tamanho do começo');
+  }
+  await verificarProjetos();
+
+  // "Arrumar os cabos" (cena-e-interface.md, seção 8): o botão põe os grampos em todos os cabos, o comprimento é
+  // remedido, desfazer volta tudo em um passo, "Soltar os cabos" tira os grampos e, sem cabos, o botão avisa.
+  async function verificarArrumarCabos() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const projeto = async () => (await estado()).projeto;
+    const noMundo = (p) => [-p[0], p[1], -p[2]];
+    const escolher = async (id) => {
+      await pagina.locator('#botao-cabos').click();
+      await pagina.locator(id).click();
+    };
+    const mensagem = async () => (await pagina.locator('#mensagem').textContent()) ?? '';
+    const grampos = (p) => p.dispositivos.filter((d) => d.itemId === 'acc-grampo');
+
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await og(() => window.__offgrid.acoes.definirTempo(Date.UTC(2026, 5, 21, 15)));
+    await pagina.getByRole('button', { name: 'Sem telhado', exact: true }).click();
+    await esperar(600);
+    const antes = await projeto();
+    conferir(antes.cabos.length > 0 && grampos(antes).length === 0, 'o plano inicial deveria ter cabos e nenhum grampo');
+    const q = antes.casa.quartinho;
+    // De frente para a porta do quartinho, e de cima, para o vão entre ele e a casa.
+    const daPorta = [noMundo([q.x, 1.5, q.z + q.profundidade / 2 + 1.6]), noMundo([q.x, 1.0, q.z - q.profundidade / 2])];
+    const doVao = [noMundo([q.x - q.largura / 2 - 0.9, 3.4, q.z + q.profundidade / 2 + 1.6]), noMundo([q.x + 0.2, 0.9, q.z - q.profundidade / 4])];
+    await mudarCamera(...daPorta);
+    await captura('98-cabos-soltos-no-quartinho');
+
+    await escolher('#botao-arrumar-cabos');
+    await pagina.waitForFunction(() => window.__offgrid.estado().projeto.cabos.every((c) => (c.grampos ?? []).length > 0), null, { timeout: 60000 });
+    await esperar(400);
+    const depois = await projeto();
+    conferir(depois.cabos.every((c) => (c.grampos ?? []).length > 0), 'depois de "Arrumar os cabos" todos os cabos deveriam ter grampos');
+    const presos = depois.cabos.flatMap((c) => c.grampos);
+    conferir(new Set(presos).size === presos.length && presos.length === grampos(depois).length, 'cada grampo deveria prender um cabo só, e não deveria sobrar grampo sem cabo');
+    conferir(depois.cabos.every((c) => c.comprimento >= 0.3 && Math.abs(c.comprimento * 10 - Math.round(c.comprimento * 10)) < 1e-9), 'os comprimentos remedidos deveriam ter no mínimo 0,3 m e passo de 0,1 m');
+    conferir(depois.cabos.some((c, i) => c.comprimento !== antes.cabos[i].comprimento), 'o comprimento dos cabos deveria ser remedido pelo trajeto');
+    conferir(/cabos arrumados, com \d+ grampos/.test(await mensagem()), `a mensagem deveria dizer quantos cabos e grampos: "${await mensagem()}"`);
+    await captura('99-cabos-arrumados-no-quartinho');
+    await mudarCamera(...doVao);
+    await captura('100-cabos-arrumados-saida-do-quartinho');
+
+    // Desfazer volta tudo em um passo; refazer traz de volta.
+    await og(() => window.__offgrid.acoes.desfazer());
+    await esperar(400);
+    conferir(JSON.stringify(await projeto()) === JSON.stringify(antes), 'um desfazer deveria voltar o projeto ao que era antes de arrumar (grampos e comprimentos)');
+    await og(() => window.__offgrid.acoes.refazer());
+    await esperar(400);
+    conferir(JSON.stringify(await projeto()) === JSON.stringify(depois), 'refazer deveria devolver os cabos arrumados');
+
+    // Arrumar de novo refaz o trajeto com o mesmo resultado (nada mudou de lugar).
+    await escolher('#botao-arrumar-cabos');
+    await pagina.waitForFunction(() => /cabos arrumados/.test(document.querySelector('#mensagem')?.textContent ?? ''), null, { timeout: 60000 });
+    await esperar(400);
+    const deNovo = await projeto();
+    conferir(grampos(deNovo).length === grampos(depois).length && deNovo.cabos.every((c, i) => c.comprimento === depois.cabos[i].comprimento), 'arrumar de novo sem mover nada deveria dar o mesmo trajeto');
+
+    // Soltar tira todos os grampos, em um passo de desfazer.
+    await escolher('#botao-soltar-cabos');
+    await esperar(400);
+    const solto = await projeto();
+    conferir(grampos(solto).length === 0 && solto.cabos.every((c) => (c.grampos ?? []).length === 0), '"Soltar os cabos" deveria tirar todos os grampos');
+    await og(() => window.__offgrid.acoes.desfazer());
+    await esperar(300);
+    conferir(grampos(await projeto()).length === grampos(deNovo).length, 'desfazer depois de soltar deveria devolver os grampos');
+
+    // Sem cabos, o botão avisa e não cria nada.
+    await og(() => {
+      for (const c of [...window.__offgrid.estado().projeto.cabos]) window.__offgrid.acoes.removerCabo(c.uid);
+    });
+    await esperar(300);
+    await escolher('#botao-arrumar-cabos');
+    await esperar(300);
+    conferir((await mensagem()).startsWith('Não há cabos para arrumar'), `sem cabos, o botão deveria avisar: "${await mensagem()}"`);
+    conferir(grampos(await projeto()).length === 0, 'sem cabos, arrumar não deveria criar grampos');
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+  }
+  await verificarArrumarCabos();
 
   if (erros.length) throw new Error(`Erros na página:\n${erros.join('\n')}`);
   console.log('Verificação concluída sem erros.');

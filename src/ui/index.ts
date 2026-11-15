@@ -17,6 +17,7 @@ import { montarBarraDeObstaculos } from './obstaculos';
 import { iniciarTutorial, montarPassoAPasso } from './passoAPasso';
 import { montarPaineis } from './paineis';
 import { montarSelecionado } from './selecionado';
+import { montarProjetos } from './projetos';
 import { montarTopo } from './topo';
 import { LADOS, LIMITES_VARANDA, avisoDoQuartinho, deslocamentoMaximo, inclinacaoMaxima, limitarVaranda, limitarVarandas, medidaDaFachada, novaVaranda, profundidadeMaxima } from '../cena/regrasDaCasa';
 
@@ -76,6 +77,7 @@ export function montarInterface(): void {
   montarSelecionado();
   montarPaineis();
   montarTopo();
+  montarProjetos();
   montarCampoDoComodo();
   montarAvancoDoTempo();
   montarMostradores();

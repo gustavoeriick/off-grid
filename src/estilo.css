@@ -1976,3 +1976,90 @@ body {
 .cartao {
   margin-bottom: 6px;
 }
+
+/* ---------------------------------------------------------------- Meus projetos */
+.projeto-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.projeto-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.projeto-item.atual {
+  border-left: 4px solid var(--destaque);
+  background: #f4f8fd;
+}
+
+.projeto-titulo {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.projeto-titulo strong {
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+
+.projeto-aberto {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--destaque);
+  color: #fff;
+  font-size: 11.5px;
+}
+
+.projeto-botoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.projeto-nome-campo {
+  width: 16rem;
+  max-width: 100%;
+  padding: 3px 6px;
+}
+
+.passo-botao.perigo {
+  color: #a4262c;
+}
+
+.projeto-novo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--borda);
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.projeto-novo h4 {
+  margin: 0;
+}
+
+.projeto-novo-nome input {
+  width: 18rem;
+  max-width: 100%;
+  padding: 3px 6px;
+}
+
+/* Menu "Cabos" da barra do alto: arrumar e soltar os cabos. */
+#botao-cabos[aria-expanded='true'] {
+  background: #eef2f6;
+}
