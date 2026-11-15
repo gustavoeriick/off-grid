@@ -110,7 +110,10 @@ export function montarMostradores(): void {
     else if (s.avisos.includes('placas-tensao-baixa')) notaDoSol = 'tensão das placas baixa';
     else if (s.avisos.includes('placas-tensao-alta')) notaDoSol = 'tensão das placas alta demais';
     else if (!solNoCeu) notaDoSol = 'sem sol agora';
-    else if (sim.estadoSim.soc >= 0.995 && !sim.estadoSim.cortado) notaDoSol = 'bateria cheia: placas em espera';
+    else if (sim.estadoSim.soc >= 0.995 && !sim.estadoSim.cortado) {
+      // As placas poderiam entregar, mas não há para onde mandar: mostra quanto está disponível.
+      notaDoSol = s.pvDisponivelW > 0 ? `bateria cheia: ${watts(s.pvDisponivelW)} disponíveis, em espera` : 'bateria cheia: placas em espera';
+    }
     else notaDoSol = 'sem geração agora';
     trocarTexto(sol.nota, notaDoSol);
 

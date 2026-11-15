@@ -346,6 +346,8 @@ export function criarCasa(): CasaCena {
   grupo.add(estrutura);
   let telhado = new THREE.Group();
   let superior = new THREE.Group();
+  /** Água do quartinho (telhas, madeiramento, encaixe e laje de sombra): some nos modos sem telhado. */
+  let telhadoQuartinho: THREE.Object3D | null = null;
   let modo: ModoVisao = 'completa';
   let medidas = '';
   let encaixes: THREE.Mesh[] | null = null;
@@ -357,6 +359,8 @@ export function criarCasa(): CasaCena {
     // Primeiro o andar de cima, que contém o telhado; depois o telhado, que vale por último.
     esconder(superior, modo === 'terreo');
     esconder(telhado, modo !== 'completa');
+    // O telhado do quartinho some junto: é lá dentro que ficam o inversor, a bateria e os quadros. As paredes ficam.
+    if (telhadoQuartinho) esconder(telhadoQuartinho, modo !== 'completa');
     // Os nomes dos cômodos só aparecem com a casa aberta; os do andar de cima somem com ele.
     for (const n of nomes) n.visible = modo !== 'completa';
     encaixes = null;
@@ -567,7 +571,9 @@ export function criarCasa(): CasaCena {
     estrutura.add(superior);
 
     for (const v of varandas) estrutura.add(construirVaranda(casa, v));
-    estrutura.add(construirQuartinho(casa));
+    const quartinho = construirQuartinho(casa);
+    telhadoQuartinho = quartinho.getObjectByName('telhado-quartinho') ?? null;
+    estrutura.add(quartinho);
     estrutura.add(construirCalcada(casa, varandas));
     estrutura.add(criarTerreno());
   }

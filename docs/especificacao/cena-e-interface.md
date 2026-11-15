@@ -59,10 +59,10 @@ Modos de visão:
 | Modo | Esconde |
 |---|---|
 | `completa` | Nada |
-| `sem-telhado` | As duas águas, os oitões e os equipamentos encaixados nelas |
+| `sem-telhado` | As duas águas, os oitões, o telhado do quartinho (`telhado-quartinho`) e os equipamentos encaixados nesses telhados |
 | `terreo` | O mesmo, mais as paredes e o piso do andar superior e os equipamentos encaixados nele |
 
-O telhado da varanda e o quartinho ficam sempre visíveis. O que está escondido não recebe clique.
+O telhado da varanda e as paredes do quartinho ficam sempre visíveis. O telhado do quartinho some com o da casa para dar vista e clique no inversor, na bateria e nos quadros lá dentro; escondido, continua projetando sombra na tela e tapando o sol no cálculo. O que está escondido não recebe clique.
 
 ## 4. Sol na cena
 

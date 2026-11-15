@@ -374,7 +374,10 @@ async function principal() {
 
   await pagina.locator('#hora').fill('720');
 
-  // 3. Modos de visão.
+  // 3. Modos de visão. O telhado do quartinho some com o da casa (deixa de ser superfície de encaixe e de receber clique),
+  // mas continua no cálculo de sombra: o número de malhas e de triângulos que tapam o sol não muda.
+  const sombraNaVisaoCompleta = JSON.stringify(await pagina.evaluate(() => window.__offgrid.resumoDaSombra()));
+  conferir((await pagina.evaluate(() => window.__offgrid.superficies())).includes('telhado-quartinho'), 'na visão completa o telhado do quartinho deveria ser superfície de encaixe');
   for (const [rotulo, visao, nome] of [
     ['Sem telhado', 'sem-telhado', '05-visao-sem-telhado'],
     ['Só térreo', 'terreo', '06-visao-terreo'],
@@ -383,6 +386,11 @@ async function principal() {
     await pagina.getByRole('button', { name: rotulo, exact: true }).click();
     e = await estado();
     conferir(e.visao === visao, `visão deveria ser ${visao}`);
+    const aVista = await pagina.evaluate(() => window.__offgrid.superficies());
+    conferir(aVista.includes('telhado-quartinho') === (visao === 'completa'), `na visão ${visao}, o telhado do quartinho ${visao === 'completa' ? 'deveria estar' : 'não deveria estar'} entre as superfícies à vista`);
+    conferir(aVista.includes('telhado-frente') === (visao === 'completa') && aVista.includes('parede-quartinho-fundo') && aVista.includes('piso-quartinho'), `na visão ${visao}, as paredes e o piso do quartinho deveriam continuar à vista`);
+    conferir(aVista.some((id) => id.startsWith('telhado-varanda')), `na visão ${visao}, o telhado da varanda deveria continuar à vista`);
+    conferir(JSON.stringify(await pagina.evaluate(() => window.__offgrid.resumoDaSombra())) === sombraNaVisaoCompleta, `a visão ${visao} não deveria mudar o que tapa o sol no cálculo`);
     await captura(nome);
   }
 
