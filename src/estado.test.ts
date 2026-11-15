@@ -2,7 +2,9 @@
 // Esperados: docs/especificacao/casos-de-teste.md (autonomia do cenário do plano) e a seção 11 da especificação da cena.
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { acoes, estado, horaLocalDe, recalcularAgora } from './estado';
+import { CATALOGO } from './catalogo';
+import { ROTEIRO_TUTORIAL } from './conteudo/roteiros';
+import { acoes, assinar, emTutorial, estado, horaLocalDe, recalcularAgora } from './estado';
 
 /** 21/06/2026 às 20:00 no Rio (UTC − 3). */
 const VINTE_HORAS = Date.UTC(2026, 5, 21, 23, 0, 0);
@@ -176,5 +178,87 @@ describe('projeto: quadros, histórico e data', () => {
     await new Promise((r) => setTimeout(r, 250));
     const dezembro = estado.derivados.estimativas.geracaoDiaKwh;
     expect(dezembro).not.toBe(junho);
+  });
+});
+
+// Fase 7: o tutorial é um projeto à parte (docs/especificacao/tutorial.md).
+describe('tutorial', () => {
+  beforeEach(() => {
+    if (emTutorial()) acoes.sairDoTutorial();
+    acoes.novoProjeto();
+    recalcularAgora();
+  });
+
+  it('entrar guarda a casa e abre só o quartinho; sair devolve a casa igual', () => {
+    acoes.adicionarDispositivo('acc-quadro-8', { pos: [0, 1.3, 0], quat: [0, 0, 0, 1], superficie: 'parede-quartinho-fundo', giro: 0 });
+    const casa = JSON.stringify(estado.projeto);
+    acoes.entrarNoTutorial();
+    expect(emTutorial()).toBe(true);
+    expect(estado.projeto.dispositivos).toHaveLength(0);
+    expect(estado.projeto.casa.varandas).toHaveLength(0);
+    // Desfazer não atravessa a entrada no tutorial.
+    acoes.desfazer();
+    expect(emTutorial()).toBe(true);
+    acoes.sairDoTutorial();
+    expect(emTutorial()).toBe(false);
+    expect(JSON.stringify(estado.projeto)).toBe(casa);
+  });
+
+  it('"Novo" dentro do tutorial recomeça o tutorial, e a casa continua guardada', () => {
+    const casa = JSON.stringify(estado.projeto);
+    acoes.entrarNoTutorial();
+    acoes.adicionarDispositivo('bat-moura-12mn105', { pos: [0, 0.1, 0], quat: [0, 0, 0, 1], superficie: 'piso-quartinho', giro: 0 });
+    acoes.novoProjeto();
+    expect(emTutorial()).toBe(true);
+    expect(estado.projeto.dispositivos).toHaveLength(0);
+    acoes.entrarNoTutorial();
+    acoes.sairDoTutorial();
+    expect(JSON.stringify(estado.projeto)).toBe(casa);
+  });
+
+  it('os destaques só avisam quando mudam e somem ao sair', () => {
+    let avisos = 0;
+    const cancelar = assinar('destaques', () => (avisos += 1));
+    acoes.entrarNoTutorial();
+    acoes.definirDestaques([{ tipo: 'superficie', id: 'telhado-quartinho' }]);
+    acoes.definirDestaques([{ tipo: 'superficie', id: 'telhado-quartinho' }]);
+    expect(avisos).toBe(1);
+    acoes.sairDoTutorial();
+    expect(estado.destaques).toHaveLength(0);
+    cancelar();
+  });
+
+  it('o sistema do tutorial montado passa em todos os passos e a lâmpada atravessa a noite', () => {
+    acoes.entrarNoTutorial();
+    const em = (superficie: string, x = 0) => ({ pos: [x, 0.5, 0] as [number, number, number], quat: [0, 0, 0, 1] as [number, number, number, number], superficie, giro: 0 });
+    const placa = acoes.adicionarDispositivo('placa-resun-100', em('telhado-quartinho'));
+    const bat = acoes.adicionarDispositivo('bat-moura-12mn105', em('piso-quartinho', -0.5));
+    const inv = acoes.adicionarDispositivo('inv-aiker-500-12v-110', em('piso-quartinho', 0.5));
+    const ctl = acoes.adicionarDispositivo('ctl-pwm-30a', em('parede-quartinho-fundo'));
+    const lamp = acoes.adicionarDispositivo('ap-lampada', em('piso-quartinho', 1));
+    const liga = (a: string, ta: string, b: string, tb: string): string => acoes.adicionarCabo({ disp: a, terminal: ta }, { disp: b, terminal: tb }, 1)!;
+    const positivo = liga(bat, 'pos', inv, 'batPos');
+    liga(bat, 'neg', inv, 'batNeg');
+    acoes.instalarProtecao(positivo, 'prot-fusivel-anl-100');
+    liga(bat, 'pos', ctl, 'batPos');
+    liga(bat, 'neg', ctl, 'batNeg');
+    liga(placa, 'pos', ctl, 'pvPos');
+    liga(placa, 'neg', ctl, 'pvNeg');
+    liga(lamp, 'plug', inv, 'caSaida');
+    acoes.definirLigado(lamp, true);
+    recalcularAgora();
+    const pendentes = ROTEIRO_TUTORIAL.passos.filter((p) => !p.feito(estado.projeto, estado.derivados, CATALOGO)).map((p) => p.id);
+    expect(pendentes).toEqual([]);
+    // Com tudo feito, nenhum passo pede realce de ligação.
+    for (const p of ROTEIRO_TUTORIAL.passos.filter((x) => x.id.startsWith('cabos'))) expect(p.onde!(estado.projeto, CATALOGO)).toEqual([]);
+    // Teste de autonomia: das 18:00, sem rede, a lâmpada de 9 W não esvazia a bateria em 24 horas.
+    acoes.definirTempo(Date.UTC(2026, 5, 21, 21, 0, 0));
+    acoes.recarregarBateria();
+    acoes.alternarQuedaDeLuz();
+    for (let i = 0; i < 24 * 12; i += 1) acoes.avancarTempo(5);
+    expect(estado.simulacao.quedaDeLuz.apagouMsUtc).toBeNull();
+    expect(estado.simulacao.estadoSim.soc).toBeGreaterThan(0.5);
+    acoes.alternarQuedaDeLuz();
+    acoes.sairDoTutorial();
   });
 });

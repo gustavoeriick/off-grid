@@ -57,7 +57,15 @@ export interface CasaConfig {
   quartinho: { x: number; z: number; largura: number; profundidade: number; altura: number; giro: number };
   /** Azimute para onde a frente da casa aponta: 0 norte, 90 leste. */
   orientacaoGraus: number;
+  /** Só o quartinho existe: sem corpo da casa, varandas, paredes internas nem cômodos. Usado pelo tutorial. */
+  soQuartinho?: boolean;
 }
+
+/** O que a cena deve realçar para guiar o passo da vez (docs/especificacao/tutorial.md). */
+export type Destaque =
+  | { tipo: 'superficie'; id: string }
+  | { tipo: 'terminal'; disp: string; terminal: string }
+  | { tipo: 'cabo'; uid: string };
 
 /** O que faz sombra em volta da casa: muro de divisa, casa ou prédio vizinho, árvore. */
 export type TipoObstaculo = 'muro' | 'vizinho' | 'arvore';

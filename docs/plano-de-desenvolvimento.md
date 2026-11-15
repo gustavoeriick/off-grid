@@ -171,6 +171,19 @@ Coordenação: Sonnet 5.5.
 
 - [ ] **6.1 Nova coleta** com `pesquisa/prompt-coleta.md` no Claude in Chrome, importador da tarefa 1.1 e um relatório do que mudou de preço. `catalogo` (Sonnet).
 
+### Fase 7: modo tutorial (proposta de 15/11/2026, aguardando a aprovação do Gustavo)
+
+Pedido do Gustavo: um modo em que só existe o quartinho de ferramentas. Ele põe a placa no telhado do quartinho, depois as peças lá dentro, com a explicação de cada coisa, até ligar o sistema; no fim liga um aparelho e vê quanto tempo a bateria segura.
+
+Coordenação: Fable 5.2 (a maior parte é cena).
+
+- [ ] **7.1 Especificação do tutorial.** Passos, textos, critério de "feito" de cada passo, o teste de autonomia do fim e as mudanças de contrato. Fable. Sai em `docs/especificacao/tutorial.md`.
+- [ ] **7.2 Estado e contrato.** Projeto do tutorial separado do projeto da casa (gravado à parte, um não apaga o outro), entrar e sair do modo, casa escondida. Coordenador.
+- [ ] **7.3 Cena só com o quartinho.** Casa, varandas e cômodos fora da cena e da sombra; câmera enquadrada no quartinho; destaque do lugar onde a peça do passo deve ser solta e do terminal onde o cabo deve chegar. `cena3d` (Fable).
+- [ ] **7.4 Textos do tutorial.** O que é cada peça, por que ela entra nessa ordem e o cuidado de segurança do passo. Texto por Opus; revisão de segurança por Fable.
+- [ ] **7.5 Painel do tutorial.** Passo atual, "Mostrar no catálogo", avanço automático quando o passo é cumprido, e o teste do fim: escolher o aparelho, acelerar o tempo e ler "a bateria segurou X h Y min". `interface` (Sonnet).
+- [ ] **7.6 Verificação com mouse e revisão.** O roteiro de capturas percorre o tutorial inteiro. `verificador` (Haiku) e `revisor` (Fable).
+
 ## 5. Como uma entrega é aceita
 
 1. O agente entrega e diz o que fez e o que não fez.

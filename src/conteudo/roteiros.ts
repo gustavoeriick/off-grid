@@ -4,7 +4,7 @@
 // e não contradizem os avisos de src/conteudo/seguranca.ts.
 
 import type { Catalogo, Categoria, Item, Protecao, TipoProtecao } from '../catalogo/tipos';
-import type { AnaliseCircuito, Cabo, Dispositivo, Projeto, Sugestao } from '../nucleo/tipos';
+import type { AnaliseCircuito, Cabo, Destaque, Dispositivo, Projeto, Sugestao } from '../nucleo/tipos';
 
 /** O que um passo precisa saber da análise: `estado.derivados` serve como está. */
 export interface DerivadosDoPasso {
@@ -23,6 +23,8 @@ export interface Passo {
   /** Categoria do catálogo a abrir, quando não há um item só. */
   categoria?: Categoria;
   feito: (projeto: Projeto, derivados: DerivadosDoPasso, catalogo: Catalogo) => boolean;
+  /** O que a cena realça enquanto este é o passo da vez: onde soltar a peça ou onde o cabo deve chegar. */
+  onde?: (projeto: Projeto, catalogo: Catalogo) => Destaque[];
 }
 
 export interface Roteiro {
@@ -30,6 +32,8 @@ export interface Roteiro {
   titulo: string;
   paraQuem: string;
   passos: Passo[];
+  /** O que o painel oferece quando todos os passos estão feitos. Sem valor, a queda de luz. */
+  fim?: 'teste-de-autonomia';
 }
 
 // ---------------------------------------------------------------- Auxiliares
@@ -311,8 +315,143 @@ export const ROTEIRO_24V: Roteiro = {
   ],
 };
 
+// ---------------------------------------------------------------- Tutorial: só o quartinho (docs/especificacao/tutorial.md)
+
+const superficie = (id: string): Destaque => ({ tipo: 'superficie', id });
+const terminal = (disp: string, t: string): Destaque => ({ tipo: 'terminal', disp, terminal: t });
+
+/** Os dois terminais de cada ligação que ainda não tem cabo. */
+function ligacoesQueFaltam(projeto: Projeto, ligacoes: [string, string, string, string][]): Destaque[] {
+  return ligacoes.flatMap(([a, ta, b, tb]) => (caboEntre(projeto, a, ta, b, tb) ? [] : [terminal(a, ta), terminal(b, tb)]));
+}
+
+const primeiro = (projeto: Projeto, catalogo: Catalogo, teste: (item: Item) => boolean): Dispositivo | undefined =>
+  dispositivosQue(projeto, catalogo, teste)[0];
+
+export const ROTEIRO_TUTORIAL: Roteiro = {
+  id: 'tutorial-quartinho',
+  titulo: 'Tutorial: energia solar no quartinho',
+  paraQuem:
+    'Para começar do zero: só o quartinho de ferramentas, uma placa no telhado e as peças lá dentro. Cada passo explica o que a peça faz, e no fim você testa quanto tempo a bateria segura um aparelho. A sua casa fica guardada e volta quando você sair.',
+  fim: 'teste-de-autonomia',
+  passos: [
+    {
+      id: 'placa',
+      titulo: 'Ponha a placa no telhado do quartinho',
+      texto:
+        'A placa solar transforma a luz do sol em eletricidade de corrente contínua (CC), a mesma de uma pilha: tem um polo positivo e um negativo. Arraste a placa de 100 W do catálogo para o telhado do quartinho, que está virado para o norte, o lado em que o sol passa no Rio. Por enquanto ela só fica no lugar: os cabos dela são os últimos a entrar.',
+      dica: 'A placa gera tensão sempre que há luz, mesmo sem nada ligado. Por isso, na vida real, ela é ligada por último e fica coberta enquanto se mexe nos cabos.',
+      itemId: 'placa-resun-100',
+      feito: (p, _d, c) => dispositivosQue(p, c, placaPequena).some((d) => d.superficie === 'telhado-quartinho'),
+      onde: () => [superficie('telhado-quartinho')],
+    },
+    {
+      id: 'bateria',
+      titulo: 'Ponha a bateria no piso',
+      texto:
+        'A bateria guarda a energia do dia para usar à noite. Esta é uma estacionária de chumbo de 12 V e 105 Ah: feita para descarregar devagar, muitas vezes, ao contrário da bateria de carro. Arraste-a para o piso do quartinho, em lugar arejado e longe de faísca.',
+      dica: 'Volts (V) são a "pressão" da eletricidade; ampère-hora (Ah) é quanto a bateria guarda. 12 V × 105 Ah dão cerca de 1.260 Wh, e a de chumbo só deve gastar metade disso para durar.',
+      itemId: 'bat-moura-12mn105',
+      feito: (p, _d, c) => dispositivosQue(p, c, bateriaDeChumbo12).length > 0,
+      onde: () => [superficie('piso-quartinho')],
+    },
+    {
+      id: 'inversor',
+      titulo: 'Ponha o inversor perto da bateria',
+      texto:
+        'Os aparelhos da casa usam corrente alternada (CA) de 127 V, a da tomada. O inversor transforma os 12 V da bateria nesses 127 V. Este é de 500 W e de onda pura, que serve para qualquer aparelho dentro dessa potência. Arraste-o para o piso, perto da bateria: quanto mais curto o cabo entre os dois, melhor.',
+      dica: 'Em 12 V a corrente é alta: 500 W puxam perto de 47 A da bateria. Por isso o cabo da bateria é grosso e curto.',
+      itemId: 'inv-aiker-500-12v-110',
+      feito: (p, _d, c) => dispositivosQue(p, c, inversor12DeOndaPura).length > 0,
+      onde: () => [superficie('piso-quartinho')],
+    },
+    {
+      id: 'cabos-da-bateria',
+      titulo: 'Ligue a bateria ao inversor',
+      texto:
+        'Puxe um cabo do positivo (+) da bateria até o BAT+ do inversor e outro do negativo (−) até o BAT−: clique em um terminal e arraste até o outro. Positivo com positivo, negativo com negativo; invertido, o inversor queima.',
+      dica: 'Na vida real, use ferramenta isolada e nunca deixe metal encostar nos dois polos da bateria: ela entrega centenas de ampères em um curto.',
+      categoria: 'cabo',
+      feito: (p, _d, c) => cabosDoBanco(p, c, ehInversorDeVerdade, { pos: 'batPos', neg: 'batNeg' }).length > 0,
+      onde: (p, c) => {
+        const b = primeiro(p, c, bateriaDeChumbo12);
+        const i = primeiro(p, c, inversor12DeOndaPura);
+        return b && i ? ligacoesQueFaltam(p, [[b.uid, 'pos', i.uid, 'batPos'], [b.uid, 'neg', i.uid, 'batNeg']]) : [];
+      },
+    },
+    {
+      id: 'fusivel',
+      titulo: 'Ponha o fusível no cabo positivo',
+      texto:
+        'O fusível é o ponto fraco de propósito: ele queima quando passa corrente demais, antes de o cabo esquentar e pegar fogo. Fica no cabo positivo, o mais perto possível da bateria. Arraste o fusível do catálogo e solte em cima do cabo positivo.',
+      dica: 'Na vida real, o fusível é instalado antes de o cabo ser ligado ao inversor. Ele precisa ser menor do que o cabo aguenta; se não for, o consultor avisa.',
+      itemId: 'prot-fusivel-anl-100',
+      feito: (p, _d, c) =>
+        cabosDoBanco(p, c, ehInversorDeVerdade, { pos: 'batPos', neg: 'batNeg' }).some(
+          (par) => temProtecao(par.pos, c, 'fusivel') || temProtecao(par.pos, c, 'disjuntorCC'),
+        ),
+      onde: (p, c) => cabosDoBanco(p, c, ehInversorDeVerdade, { pos: 'batPos', neg: 'batNeg' }).map((par): Destaque => ({ tipo: 'cabo', uid: par.pos.uid })),
+    },
+    {
+      id: 'controlador',
+      titulo: 'Instale o controlador de carga e ligue na bateria',
+      texto:
+        'A placa não pode ser ligada direto na bateria: sem controle, ela sobrecarrega a bateria e a estraga. O controlador de carga fica entre as duas e corta a carga na hora certa. Arraste-o para a parede do fundo e ligue o BAT+ dele no + da bateria e o BAT− no −.',
+      dica: 'O controlador é ligado primeiro na bateria e só depois na placa: é pela bateria que ele descobre se o sistema é de 12 ou de 24 V.',
+      itemId: 'ctl-pwm-30a',
+      feito: (p, _d, c) => cabosDoBanco(p, c, controladorPwm, { pos: 'batPos', neg: 'batNeg' }).length > 0,
+      onde: (p, c) => {
+        const ctl = primeiro(p, c, controladorPwm);
+        const b = primeiro(p, c, bateriaDeChumbo12);
+        if (!ctl) return [superficie('parede-quartinho-fundo')];
+        return b ? ligacoesQueFaltam(p, [[b.uid, 'pos', ctl.uid, 'batPos'], [b.uid, 'neg', ctl.uid, 'batNeg']]) : [];
+      },
+    },
+    {
+      id: 'cabos-da-placa',
+      titulo: 'Ligue a placa ao controlador',
+      texto:
+        'Agora a placa entra no circuito. Puxe um cabo do + da placa, no telhado, até o PV+ do controlador, e outro do − até o PV−. Com sol, o controlador passa a carregar a bateria.',
+      dica: 'Na vida real, cubra a placa com um pano escuro ou trabalhe sem sol ao fazer esta ligação, e nunca solte um conector da placa com o sistema funcionando.',
+      categoria: 'cabo',
+      feito: (p, _d, c) => {
+        const controladores = dispositivosQue(p, c, controladorPwm);
+        return dispositivosQue(p, c, placaPequena).some((placa) =>
+          controladores.some((ctl) => caboEntre(p, placa.uid, 'pos', ctl.uid, 'pvPos') && caboEntre(p, placa.uid, 'neg', ctl.uid, 'pvNeg')),
+        );
+      },
+      onde: (p, c) => {
+        const placa = primeiro(p, c, placaPequena);
+        const ctl = primeiro(p, c, controladorPwm);
+        return placa && ctl ? ligacoesQueFaltam(p, [[placa.uid, 'pos', ctl.uid, 'pvPos'], [placa.uid, 'neg', ctl.uid, 'pvNeg']]) : [];
+      },
+    },
+    {
+      id: 'aparelho',
+      titulo: 'Ligue um aparelho no inversor',
+      texto:
+        'Falta alguém para usar a energia. Arraste uma lâmpada para o piso do quartinho e ligue o plugue dela em "Saída para os aparelhos" do inversor. Se ela estiver desligada, clique nela e use o botão Ligar. Olhe os mostradores à direita: o consumo aparece, e a energia vem da placa ou da bateria.',
+      dica: 'A soma da potência dos aparelhos precisa caber nos 500 W do inversor.',
+      itemId: 'ap-lampada',
+      feito: (p, _d, c) =>
+        cabosDaSaida(p, c).some((cabo) => {
+          if (!aparelhoNaSaida(p, c, cabo)) return false;
+          const outra = cabo.de.terminal === 'caSaida' ? cabo.para : cabo.de;
+          return p.dispositivos.find((d) => d.uid === outra.disp)?.ligado === true;
+        }),
+      onde: (p, c) => {
+        const aparelho = primeiro(p, c, (i) => i.categoria === 'aparelho');
+        const inv = primeiro(p, c, inversor12DeOndaPura);
+        if (!aparelho) return [superficie('piso-quartinho')];
+        return inv ? ligacoesQueFaltam(p, [[aparelho.uid, 'plug', inv.uid, 'caSaida']]) : [];
+      },
+    },
+    PASSO_SEM_ERROS('Quando não houver mais erros, o sistema está montado e pronto para o teste da bateria.'),
+  ],
+};
+
 export const ROTEIROS: Roteiro[] = [ROTEIRO_12V, ROTEIRO_24V];
 
 export function roteiroPorId(id: string): Roteiro | undefined {
-  return ROTEIROS.find((r) => r.id === id);
+  return [ROTEIRO_TUTORIAL, ...ROTEIROS].find((r) => r.id === id);
 }

@@ -79,6 +79,29 @@ export function cenarioPlanoNoPapel(): Projeto {
 }
 
 /** O cenário anterior depois das correções que o consultor propõe. */
+/** Tutorial: só o quartinho, vazio, com a água do telhado virada para o norte (docs/especificacao/tutorial.md). */
+export function cenarioTutorial(): Projeto {
+  return {
+    versao: 2,
+    nome: 'Tutorial: o quartinho',
+    casa: {
+      ...structuredClone(CASA_INICIAL),
+      varandas: [],
+      paredesInternas: [],
+      comodos: [],
+      quartinho: { x: 0, z: 0, largura: 3, profundidade: 2.5, altura: 2.4, giro: 0 },
+      orientacaoGraus: 180,
+      soQuartinho: true,
+    },
+    localId: 'rio',
+    clima: 'tipico',
+    tensaoRede: 127,
+    prioridade: 'rede',
+    dispositivos: [],
+    cabos: [],
+  };
+}
+
 export function cenarioPlanoCorrigido(): Projeto {
   const projeto = cenarioPlanoNoPapel();
   projeto.nome = 'Plano corrigido';

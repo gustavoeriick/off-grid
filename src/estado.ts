@@ -5,7 +5,7 @@
 
 import { CATALOGO, grupoDoItem } from './catalogo';
 import type { Categoria, Item, Protecao, Uso } from './catalogo/tipos';
-import { cenarioPlanoNoPapel } from './nucleo/cenarios';
+import { cenarioPlanoNoPapel, cenarioTutorial } from './nucleo/cenarios';
 import { analisarCircuito } from './nucleo/circuito';
 import { ajustarParedesInternas } from './nucleo/comodos';
 import { analisarConsultor, modulosDaProtecao } from './nucleo/consultor';
@@ -18,7 +18,7 @@ import { converterProjeto } from './nucleo/migracao';
 import { calcularOrcamento } from './nucleo/orcamento';
 import { podeLigar, terminaisDe } from './nucleo/terminais';
 import type {
-  Acao, AmbientePlacas, AnaliseCircuito, Cabo, CasaConfig, Clima, Comodo, EstadoSim, Estimativas, Orcamento,
+  Acao, AmbientePlacas, AnaliseCircuito, Cabo, CasaConfig, Clima, Comodo, Destaque, EstadoSim, Estimativas, Orcamento,
   Local, Obstaculo, ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, SaidaPasso, Sugestao, Varanda, Vec3,
 } from './nucleo/tipos';
 
@@ -94,6 +94,8 @@ export interface EstadoApp {
   derivados: Derivados;
   simulacao: Simulacao;
   climaReal: ClimaReal;
+  /** O que a cena realça para guiar o passo da vez do tutorial. Não entra no projeto nem no histórico. */
+  destaques: Destaque[];
 }
 
 /**
@@ -101,9 +103,9 @@ export interface EstadoApp {
  * 'casa' (medidas, orientação, varandas, paredes internas, cômodos, quartinho), 'dispositivos' e 'cabos'.
  * 'derivados' avisa quando análise, estimativas, sugestões e orçamento foram recalculados.
  */
-export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima';
+export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima' | 'destaques';
 
-const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima'];
+const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima', 'destaques'];
 const ouvintes = Object.fromEntries(EVENTOS.map((e) => [e, new Set<() => void>()])) as Record<Evento, Set<() => void>>;
 
 /** 21/06/2026 ao meio-dia no Rio (UTC − 3). */
@@ -112,6 +114,8 @@ const INSTANTE_INICIAL = Date.UTC(2026, 5, 21, 15, 0, 0);
 const CHAVE = 'offgrid.projeto.v2';
 const CHAVE_V1 = 'offgrid.projeto.v1';
 const CHAVE_INVALIDO = 'offgrid.projeto.invalido';
+/** O projeto da casa, guardado enquanto o tutorial está aberto. */
+const CHAVE_CASA = 'offgrid.projeto.casa';
 const ESPERA_DERIVADOS_MS = 150;
 const ESPERA_GRAVAR_MS = 500;
 const LIMITE_HISTORICO = 50;
@@ -270,7 +274,13 @@ export const estado: EstadoApp = {
   derivados: calcularDerivados(projetoDeAbertura, INSTANTE_INICIAL),
   simulacao: undefined as unknown as Simulacao,
   climaReal: { situacao: 'nenhum', dataDosDados: null, fonte: null, mensagem: null },
+  destaques: [],
 };
+
+/** Verdadeiro com o projeto do tutorial aberto: só o quartinho existe. */
+export function emTutorial(): boolean {
+  return estado.projeto.casa.soQuartinho === true;
+}
 
 estado.simulacao = {
   quedaDeLuz: { ativa: false, inicioMsUtc: null, apagouMsUtc: null },
@@ -415,6 +425,9 @@ function agendarGravacao(): void {
 }
 
 // ---------------------------------------------------------------- Histórico (desfazer e refazer)
+
+/** Cópia em memória do projeto da casa enquanto o tutorial está aberto, para quando o navegador não deixa gravar. */
+let casaGuardada: string | null = null;
 
 const passado: string[] = [];
 const futuro: string[] = [];
@@ -859,11 +872,67 @@ export const acoes = {
     trocarProjeto(novo);
   },
 
-  /** Volta ao cenário "plano no papel". */
+  /** Volta ao cenário "plano no papel". Dentro do tutorial, recomeça o tutorial. */
   novoProjeto(): void {
     guardarNoHistorico();
     zerarSimulacao();
-    trocarProjeto(cenarioPlanoNoPapel());
+    trocarProjeto(emTutorial() ? cenarioTutorial() : cenarioPlanoNoPapel());
+  },
+
+  /**
+   * Abre o tutorial: só o quartinho, vazio. O projeto da casa fica guardado à parte e volta em `sairDoTutorial`.
+   * Dentro do tutorial, recomeça o tutorial sem mexer na casa guardada.
+   */
+  entrarNoTutorial(): void {
+    if (!emTutorial()) {
+      try {
+        armazenamento()?.setItem(CHAVE_CASA, JSON.stringify(estado.projeto));
+      } catch (erro) {
+        console.warn('Não foi possível guardar o projeto da casa antes do tutorial.', erro);
+      }
+      casaGuardada = JSON.stringify(estado.projeto);
+    }
+    passado.length = 0;
+    futuro.length = 0;
+    zerarSimulacao();
+    acoes.definirDestaques([]);
+    trocarProjeto(cenarioTutorial());
+  },
+
+  /** Fecha o tutorial e devolve o projeto da casa como estava. Sem projeto guardado, abre o "plano no papel". */
+  sairDoTutorial(): void {
+    if (!emTutorial()) return;
+    let casa: Projeto = cenarioPlanoNoPapel();
+    const texto = casaGuardada ?? armazenamento()?.getItem(CHAVE_CASA) ?? null;
+    if (texto) {
+      try {
+        const lido = converterProjeto(JSON.parse(texto));
+        conferirEstrutura(lido);
+        sanear(lido);
+        calcularDerivados(lido, estado.tempo.msUtc);
+        casa = lido;
+      } catch (erro) {
+        console.warn('O projeto da casa guardado não pôde ser aberto; abrindo o cenário inicial.', erro);
+      }
+    }
+    casaGuardada = null;
+    try {
+      armazenamento()?.removeItem(CHAVE_CASA);
+    } catch {
+      // Sem permissão: a chave fica, e a próxima entrada no tutorial a troca.
+    }
+    passado.length = 0;
+    futuro.length = 0;
+    zerarSimulacao();
+    acoes.definirDestaques([]);
+    trocarProjeto(casa);
+  },
+
+  /** O que a cena deve realçar. Lista igual à atual não avisa ninguém. */
+  definirDestaques(lista: Destaque[]): void {
+    if (JSON.stringify(lista) === JSON.stringify(estado.destaques)) return;
+    estado.destaques = lista;
+    avisar('destaques');
   },
 
   /** Texto JSON do projeto, para exportar. */
