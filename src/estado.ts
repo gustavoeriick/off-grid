@@ -11,13 +11,15 @@ import { ajustarParedesInternas } from './nucleo/comodos';
 import { analisarConsultor, modulosDaProtecao } from './nucleo/consultor';
 import { estadoInicial, passoSimulacao } from './nucleo/eletrica';
 import { estimar } from './nucleo/estimativas';
-import { irradianciaNasPlacas, localPorId } from './nucleo/irradiancia';
+import { baixarClimaDoDia } from './dados/openMeteo';
+import { registrarClimaReal, temClimaReal } from './nucleo/climaReal';
+import { irradianciaNasPlacas, localDoProjeto, localPorId } from './nucleo/irradiancia';
 import { converterProjeto } from './nucleo/migracao';
 import { calcularOrcamento } from './nucleo/orcamento';
 import { podeLigar, terminaisDe } from './nucleo/terminais';
 import type {
   Acao, AmbientePlacas, AnaliseCircuito, Cabo, CasaConfig, Clima, Comodo, EstadoSim, Estimativas, Orcamento,
-  ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, SaidaPasso, Sugestao, Varanda, Vec3,
+  Local, ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, SaidaPasso, Sugestao, Varanda, Vec3,
 } from './nucleo/tipos';
 
 export type ModoVisao = 'completa' | 'sem-telhado' | 'terreo';
@@ -66,6 +68,16 @@ export interface Simulacao {
   historico: PontoHistorico[];
 }
 
+/** Situação das medições do clima real para o dia simulado. */
+export interface ClimaReal {
+  situacao: 'nenhum' | 'baixando' | 'pronto' | 'erro';
+  /** Data de onde vieram as medições, no formato AAAA-MM-DD. Em data futura, é o mesmo dia de um ano anterior. */
+  dataDosDados: string | null;
+  fonte: string | null;
+  /** Mensagem de erro, quando a situação é 'erro'. */
+  mensagem: string | null;
+}
+
 export interface EstadoApp {
   projeto: Projeto;
   tempo: {
@@ -80,6 +92,7 @@ export interface EstadoApp {
   edicaoCasa: { ativa: boolean; andar: 0 | 1 };
   derivados: Derivados;
   simulacao: Simulacao;
+  climaReal: ClimaReal;
 }
 
 /**
@@ -87,9 +100,9 @@ export interface EstadoApp {
  * 'casa' (medidas, orientação, varandas, paredes internas, cômodos, quartinho), 'dispositivos' e 'cabos'.
  * 'derivados' avisa quando análise, estimativas, sugestões e orçamento foram recalculados.
  */
-export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao';
+export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima';
 
-const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao'];
+const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima'];
 const ouvintes = Object.fromEntries(EVENTOS.map((e) => [e, new Set<() => void>()])) as Record<Evento, Set<() => void>>;
 
 /** 21/06/2026 ao meio-dia no Rio (UTC − 3). */
@@ -177,7 +190,7 @@ const JANELA_HISTORICO_MS = 48 * 3_600_000;
 
 /** Hora local decimal, de 0 a 24, no fuso do local do projeto. */
 export function horaLocalDe(projeto: Projeto, msUtc: number): number {
-  const fuso = localPorId(projeto.localId)?.fuso ?? 0;
+  const fuso = localDoProjeto(projeto)?.fuso ?? 0;
   const ms = (((msUtc + fuso * 3_600_000) % 86_400_000) + 86_400_000) % 86_400_000;
   return ms / 3_600_000;
 }
@@ -185,7 +198,7 @@ export function horaLocalDe(projeto: Projeto, msUtc: number): number {
 /** Um passo do núcleo, de `dtHoras`, com as condições do instante `msUtc`. */
 function passo(projeto: Projeto, analise: AnaliseCircuito, sim: EstadoSim, msUtc: number, dtHoras: number, semRede: boolean): SaidaPasso {
   projetoDoAmbiente = projeto;
-  const local = localPorId(projeto.localId);
+  const local = localDoProjeto(projeto);
   const placas = local ? irradianciaNasPlacas(projeto, CATALOGO, local, msUtc, ambiente) : new Map();
   return passoSimulacao(projeto, CATALOGO, analise, sim, {
     dtHoras,
@@ -205,6 +218,7 @@ export const estado: EstadoApp = {
   edicaoCasa: { ativa: false, andar: 0 },
   derivados: calcularDerivados(projetoDeAbertura, INSTANTE_INICIAL),
   simulacao: undefined as unknown as Simulacao,
+  climaReal: { situacao: 'nenhum', dataDosDados: null, fonte: null, mensagem: null },
 };
 
 estado.simulacao = {
@@ -239,6 +253,58 @@ export function recalcularAgora(): void {
   estado.derivados = calcularDerivados(estado.projeto, estado.tempo.msUtc);
   avisar('derivados');
   atualizarMostradores();
+}
+
+// ---------------------------------------------------------------- Clima real
+
+const MS_DIA = 86_400_000;
+/** Dia local (número de dias desde 1970 no fuso do local) cujo download está em andamento ou falhou, para não repetir. */
+let diaPedido: string | null = null;
+
+function chaveDoDia(local: Local, msUtc: number): string {
+  return `${local.id}:${Math.floor((msUtc + local.fuso * 3_600_000) / MS_DIA)}`;
+}
+
+/**
+ * Com o clima 'real' escolhido, baixa as medições do dia simulado quando ainda não estão na memória.
+ * Enquanto não chegam, ou se a rede falha, o cálculo usa o clima típico e a tela avisa.
+ */
+function conferirClimaReal(): void {
+  const projeto = estado.projeto;
+  const local = localDoProjeto(projeto);
+  if (projeto.clima !== 'real' || !local) return;
+  const msUtc = estado.tempo.msUtc;
+  if (temClimaReal(local.id, msUtc)) {
+    if (estado.climaReal.situacao !== 'pronto' && estado.climaReal.situacao !== 'baixando') {
+      estado.climaReal = { ...estado.climaReal, situacao: 'pronto', mensagem: null };
+      avisar('clima');
+    }
+    return;
+  }
+  const chave = chaveDoDia(local, msUtc);
+  if (diaPedido === chave) return;
+  diaPedido = chave;
+  estado.climaReal = { situacao: 'baixando', dataDosDados: null, fonte: null, mensagem: null };
+  avisar('clima');
+  baixarClimaDoDia(local, msUtc).then(
+    (baixado) => {
+      registrarClimaReal(local.id, baixado.dados);
+      if (diaPedido !== chave) return;
+      estado.climaReal = { situacao: 'pronto', dataDosDados: baixado.dataDosDados, fonte: baixado.fonte, mensagem: null };
+      avisar('clima');
+      recalcularAgora();
+    },
+    (erro: unknown) => {
+      if (diaPedido !== chave) return;
+      estado.climaReal = {
+        situacao: 'erro',
+        dataDosDados: null,
+        fonte: null,
+        mensagem: erro instanceof Error ? erro.message : 'Não consegui baixar o clima deste dia.',
+      };
+      avisar('clima');
+    },
+  );
 }
 
 /** Passo de duração zero: atualiza os mostradores sem gastar bateria. */
@@ -618,10 +684,36 @@ export const acoes = {
 
   // ---- Projeto
 
+  /** Clima do cálculo. 'real' baixa as medições do dia simulado; até chegarem, vale o típico. */
   definirClima(clima: Clima): void {
     mudar([], undefined, (p) => {
       p.clima = clima;
     });
+    if (clima === 'real') {
+      diaPedido = null;
+      conferirClimaReal();
+    } else if (estado.climaReal.situacao !== 'nenhum') {
+      estado.climaReal = { situacao: 'nenhum', dataDosDados: null, fonte: null, mensagem: null };
+      avisar('clima');
+    }
+  },
+
+  /** Troca a cidade do projeto. Local fora da lista fixa fica guardado no próprio projeto. */
+  definirLocal(local: Local): void {
+    mudar([], undefined, (p) => {
+      p.localId = local.id;
+      if (localPorId(local.id)) delete p.localPersonalizado;
+      else p.localPersonalizado = local;
+    });
+    diaPedido = null;
+    conferirClimaReal();
+    avisar('tempo');
+  },
+
+  /** Tenta de novo o download do clima real, depois de um erro. */
+  tentarClimaRealDeNovo(): void {
+    diaPedido = null;
+    conferirClimaReal();
   },
 
   definirPrioridade(prioridade: Prioridade): void {
@@ -725,6 +817,7 @@ export const acoes = {
   definirTempo(msUtc: number): void {
     estado.tempo.msUtc = msUtc;
     avisar('tempo');
+    conferirClimaReal();
     atualizarMostradores();
   },
 
@@ -752,6 +845,7 @@ export const acoes = {
       registrarNoHistorico(agora, saida);
     }
     estado.tempo.msUtc = agora;
+    conferirClimaReal();
     avisar('tempo');
     avisar('simulacao');
   },

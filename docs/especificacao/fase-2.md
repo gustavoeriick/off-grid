@@ -196,3 +196,12 @@ Cada entrega passa pelo `verificador` e, ao fim da fase, pelo `revisor`. Desempe
 - Simulação na tela (bateria descendo, queda de luz) e painéis de consultor e orçamento: fase 3.
 - Casas que não são retangulares, mais de dois andares, portas e janelas definidas à mão, duas varandas no mesmo lado.
 - Cabo passando por eletroduto com trajeto desenhado: o comprimento continua pela fórmula da seção 8.
+
+## 8. Decisões das fases 3 a 5 tomadas durante a construção
+
+Registradas aqui porque foram decididas pelo coordenador na noite de 14 para 15/11/2026, com autorização do Gustavo para seguir e relatar depois.
+
+- **Laço de simulação (3.2).** Fica em `src/estado.ts`: `acoes.avancarTempo(minutos)` simula em passos de até 5 minutos, avaliados no meio do passo; `definirTempo` salta sem gastar bateria; a queda de luz guarda o instante de início e o instante em que a bateria esvaziou; o histórico guarda um ponto a cada 10 minutos, por 48 horas.
+- **Clima real (5.1).** O clima `real` usa medições horárias do Open-Meteo para o dia simulado. Data que já passou há cerca de uma semana usa as medições daquele dia; data futura ou recente usa o mesmo dia e mês do ano mais recente disponível, e a tela mostra de quando são os dados. Na requisição vão só a latitude e a longitude da cidade. Enquanto os dados não chegam, ou se a rede falha, o cálculo usa o clima típico e a tela avisa. Convenção: o carimbo é o fim da hora; a radiação é a média da hora e vale no meio dela; a temperatura é instantânea.
+- **Outras cidades (5.1).** Lista das 27 capitais em `src/dados/cidades.ts`. Ao escolher uma, as médias mensais de irradiação e de temperatura vêm da NASA POWER e ficam guardadas no projeto (`localPersonalizado`).
+- **Textos de aprender (4.2 e 4.3).** Em `src/conteudo/`: o "Por quê?" de cada regra, o glossário e os avisos de segurança, com teste que exige um "Por quê?" para toda regra do consultor. Revisão de segurança feita pelo Fable.
