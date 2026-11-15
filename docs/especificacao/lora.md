@@ -321,3 +321,10 @@ Saída de `node scripts/referencia/lora-referencia.mjs`. Tolerância de 0,01 nas
 **Relevo:** pixel (128; 0; 0): 0 m. (130; 110; 128): 622,50 m. (127; 255; 0): −1 m. No zoom 11: (0; 0) fica no bloco 1024/1024, pixel (0; 0). (−10; −50) fica no bloco 739/1081, pixel (142,2; 46,1). (45; 90) fica no bloco 1536/736, pixel (0; 183,5).
 
 Os testes do núcleo e do relevo usam perfis e blocos feitos à mão, em lugares sem relação com o Gustavo. Nenhum teste nem captura de tela usa a região das casas.
+
+## 9. Registros da construção
+
+- **Antena de altura zero** não tem conta definida no § 3.1.1.2 da norma. O núcleo devolve perda de caminho liso zero nesse caso. Na prática ele não acontece: o estado não aceita antena abaixo de 1 m.
+- **Frase do caminho liso no veredito.** Aparece quando a parcela `terraLisaDb` é de 3 dB ou mais. Se ela responde por 40% ou mais da perda no relevo, o texto diz "O caminho é liso (mar, baía ou planície) e a curva da Terra tira N dB do sinal."; senão, diz "Dessa perda, N dB vêm da curva da Terra.", porque há morro no caminho e ele não é liso. Os 40% são uma escolha de redação, não um dado de norma.
+- **Teste com os serviços de verdade,** em 15/11/2026, na região da Chapada dos Veadeiros (Goiás), um lugar público sem relação com o Gustavo: o mapa do OpenStreetMap e o relevo da AWS carregaram, as altitudes vieram coerentes com a região (de 830 a 1.620 m) e a página só falou com esses dois serviços. A verificação automática continua usando blocos falsos, sem rede.
+- **Delete com um enlace selecionado** apaga só o enlace; os pontos ficam. **"Ver todos"** enquadra os pontos no mapa.

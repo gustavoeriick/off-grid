@@ -109,7 +109,12 @@ export function calcularEnlace(
   const veredito = vereditoDoEnlace(conta.folgaDb, geometria.zonaLivre);
   let texto = textoDoVeredito(veredito, conta.folgaDb, geometria);
   if (difracao.terraLisaDb >= LIMITE_DA_FRASE_DE_CAMINHO_LISO_DB) {
-    texto += ` O caminho é liso (mar, baía ou planície) e a curva da Terra tira ${Math.round(difracao.terraLisaDb)} dB do sinal.`;
+    // Só chama o caminho de liso quando a curva da Terra responde por boa parte da perda no relevo;
+    // com morro no caminho, a parcela existe, mas o caminho não é liso.
+    const liso = difracao.terraLisaDb >= 0.4 * difracao.perdaDb;
+    texto += liso
+      ? ` O caminho é liso (mar, baía ou planície) e a curva da Terra tira ${Math.round(difracao.terraLisaDb)} dB do sinal.`
+      : ` Dessa perda, ${Math.round(difracao.terraLisaDb)} dB vêm da curva da Terra.`;
   }
   return { geometria, difracao, conta, veredito, texto };
 }
