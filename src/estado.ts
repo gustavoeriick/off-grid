@@ -1,9 +1,9 @@
 // Estado do aplicativo e ações. Arquivo do coordenador.
 // Especificação: docs/especificacao/cena-e-interface.md, seção 10, e docs/especificacao/fase-2.md.
-// Fase 2: projeto editável (dispositivos, cabos, casa), seleção, desfazer, derivados e gravação.
-// A simulação no tempo (bateria, queda de luz) entra na fase 3.
+// Projeto editável (dispositivos, cabos, casa, obstáculos), seleção, desfazer, derivados, gravação,
+// simulação no tempo (bateria, queda de luz) e clima real.
 
-import { CATALOGO } from './catalogo';
+import { CATALOGO, grupoDoItem } from './catalogo';
 import type { Categoria, Item, Protecao, Uso } from './catalogo/tipos';
 import { cenarioPlanoNoPapel } from './nucleo/cenarios';
 import { analisarCircuito } from './nucleo/circuito';
@@ -111,6 +111,7 @@ const INSTANTE_INICIAL = Date.UTC(2026, 5, 21, 15, 0, 0);
 
 const CHAVE = 'offgrid.projeto.v2';
 const CHAVE_V1 = 'offgrid.projeto.v1';
+const CHAVE_INVALIDO = 'offgrid.projeto.invalido';
 const ESPERA_DERIVADOS_MS = 150;
 const ESPERA_GRAVAR_MS = 500;
 const LIMITE_HISTORICO = 50;
@@ -161,6 +162,39 @@ function calcularDerivados(projeto: Projeto, msUtc: number): Derivados {
   };
 }
 
+/** Confere o mínimo da forma de um projeto antes de aceitá-lo. Lança erro com mensagem para o usuário. */
+function conferirEstrutura(projeto: Projeto): void {
+  const casa = projeto.casa as Partial<CasaConfig> | undefined;
+  const listas: unknown[] = [projeto.dispositivos, projeto.cabos, casa?.varandas, casa?.paredesInternas, casa?.comodos];
+  if (!casa || listas.some((l) => !Array.isArray(l)) || !casa.quartinho) {
+    throw new Error('Este arquivo não é um projeto do simulador, ou está incompleto.');
+  }
+}
+
+/** Tira do projeto o que ficou apontando para peça que não existe mais: cabos sem ponta e cabos em quadro removido. */
+function sanear(projeto: Projeto): void {
+  const pecas = new Map(projeto.dispositivos.map((d) => [d.uid, d]));
+  const ehQuadro = (uid: string): boolean => {
+    const item = CATALOGO.get(pecas.get(uid)?.itemId ?? '');
+    return item?.categoria === 'acessorio' && item.tipo === 'quadro';
+  };
+  let mudou = false;
+  const cabos: Cabo[] = [];
+  for (const c of projeto.cabos) {
+    if (!pecas.has(c.de.disp) || !pecas.has(c.para.disp)) {
+      mudou = true;
+      continue;
+    }
+    if (c.quadro !== null && c.quadro !== undefined && !ehQuadro(c.quadro)) {
+      mudou = true;
+      cabos.push({ ...c, quadro: null });
+    } else {
+      cabos.push(c);
+    }
+  }
+  if (mudou) projeto.cabos = cabos;
+}
+
 function armazenamento(): Storage | null {
   try {
     return typeof localStorage === 'undefined' ? null : localStorage;
@@ -175,9 +209,19 @@ function projetoInicial(): Projeto {
   const texto = guarda?.getItem(CHAVE) ?? guarda?.getItem(CHAVE_V1);
   if (texto) {
     try {
-      return converterProjeto(JSON.parse(texto));
+      const projeto = converterProjeto(JSON.parse(texto));
+      conferirEstrutura(projeto);
+      calcularDerivados(projeto, INSTANTE_INICIAL);
+      return projeto;
     } catch (erro) {
       console.warn('O projeto gravado não pôde ser aberto; abrindo o cenário inicial.', erro);
+      // O texto que não abriu fica guardado em outra chave, para não se perder.
+      try {
+        guarda?.setItem(CHAVE_INVALIDO, texto);
+        guarda?.removeItem(CHAVE);
+      } catch {
+        // Sem espaço ou sem permissão: segue com o cenário inicial.
+      }
     }
   }
   return cenarioPlanoNoPapel();
@@ -194,6 +238,12 @@ export function horaLocalDe(projeto: Projeto, msUtc: number): number {
   const fuso = localDoProjeto(projeto)?.fuso ?? 0;
   const ms = (((msUtc + fuso * 3_600_000) % 86_400_000) + 86_400_000) % 86_400_000;
   return ms / 3_600_000;
+}
+
+/** Número do dia local, no fuso do local do projeto. */
+function diaLocalDe(projeto: Projeto, msUtc: number): number {
+  const fuso = localDoProjeto(projeto)?.fuso ?? 0;
+  return Math.floor((msUtc + fuso * 3_600_000) / 86_400_000);
 }
 
 /** Um passo do núcleo, de `dtHoras`, com as condições do instante `msUtc`. */
@@ -259,53 +309,80 @@ export function recalcularAgora(): void {
 // ---------------------------------------------------------------- Clima real
 
 const MS_DIA = 86_400_000;
-/** Dia local (número de dias desde 1970 no fuso do local) cujo download está em andamento ou falhou, para não repetir. */
-let diaPedido: string | null = null;
+/** Dias (cidade e dia local) com download em andamento ou que falharam, para não repetir o pedido. */
+const pedidos = new Map<string, 'baixando' | 'erro'>();
+/** De onde vieram as medições de cada dia já baixado. */
+const origens = new Map<string, { dataDosDados: string; fonte: string }>();
 
 function chaveDoDia(local: Local, msUtc: number): string {
   return `${local.id}:${Math.floor((msUtc + local.fuso * 3_600_000) / MS_DIA)}`;
 }
 
+function definirClimaReal(novo: ClimaReal): void {
+  const a = estado.climaReal;
+  if (a.situacao === novo.situacao && a.dataDosDados === novo.dataDosDados && a.fonte === novo.fonte && a.mensagem === novo.mensagem) return;
+  estado.climaReal = novo;
+  avisar('clima');
+}
+
 /**
  * Com o clima 'real' escolhido, baixa as medições do dia simulado quando ainda não estão na memória.
  * Enquanto não chegam, ou se a rede falha, o cálculo usa o clima típico e a tela avisa.
+ * A situação mostrada é sempre a do dia, da cidade e do projeto atuais.
  */
 function conferirClimaReal(): void {
   const projeto = estado.projeto;
   const local = localDoProjeto(projeto);
-  if (projeto.clima !== 'real' || !local) return;
-  const msUtc = estado.tempo.msUtc;
-  if (temClimaReal(local.id, msUtc)) {
-    if (estado.climaReal.situacao !== 'pronto' && estado.climaReal.situacao !== 'baixando') {
-      estado.climaReal = { ...estado.climaReal, situacao: 'pronto', mensagem: null };
-      avisar('clima');
-    }
+  if (projeto.clima !== 'real' || !local) {
+    definirClimaReal({ situacao: 'nenhum', dataDosDados: null, fonte: null, mensagem: null });
     return;
   }
+  const msUtc = estado.tempo.msUtc;
   const chave = chaveDoDia(local, msUtc);
-  if (diaPedido === chave) return;
-  diaPedido = chave;
-  estado.climaReal = { situacao: 'baixando', dataDosDados: null, fonte: null, mensagem: null };
-  avisar('clima');
+  if (temClimaReal(local.id, msUtc)) {
+    const origem = origens.get(chave);
+    definirClimaReal({ situacao: 'pronto', dataDosDados: origem?.dataDosDados ?? null, fonte: origem?.fonte ?? null, mensagem: null });
+    return;
+  }
+  const pedido = pedidos.get(chave);
+  if (pedido === 'baixando') {
+    definirClimaReal({ situacao: 'baixando', dataDosDados: null, fonte: null, mensagem: null });
+    return;
+  }
+  if (pedido === 'erro') return;
+  pedidos.set(chave, 'baixando');
+  definirClimaReal({ situacao: 'baixando', dataDosDados: null, fonte: null, mensagem: null });
+  const ehODiaAtual = (): boolean => {
+    const atual = localDoProjeto(estado.projeto);
+    return estado.projeto.clima === 'real' && !!atual && chaveDoDia(atual, estado.tempo.msUtc) === chave;
+  };
   baixarClimaDoDia(local, msUtc).then(
     (baixado) => {
       registrarClimaReal(local.id, baixado.dados);
-      if (diaPedido !== chave) return;
-      estado.climaReal = { situacao: 'pronto', dataDosDados: baixado.dataDosDados, fonte: baixado.fonte, mensagem: null };
-      avisar('clima');
+      pedidos.delete(chave);
+      origens.set(chave, { dataDosDados: baixado.dataDosDados, fonte: baixado.fonte });
+      if (!ehODiaAtual()) return;
+      conferirClimaReal();
       recalcularAgora();
     },
     (erro: unknown) => {
-      if (diaPedido !== chave) return;
-      estado.climaReal = {
+      pedidos.set(chave, 'erro');
+      if (!ehODiaAtual()) return;
+      definirClimaReal({
         situacao: 'erro',
         dataDosDados: null,
         fonte: null,
         mensagem: erro instanceof Error ? erro.message : 'Não consegui baixar o clima deste dia.',
-      };
-      avisar('clima');
+      });
     },
   );
+}
+
+/** Zera a simulação: bateria cheia, sem queda de luz, histórico vazio. Usado ao abrir ou começar um projeto. */
+function zerarSimulacao(): void {
+  estado.simulacao.quedaDeLuz = { ativa: false, inicioMsUtc: null, apagouMsUtc: null };
+  estado.simulacao.estadoSim = estadoInicial();
+  estado.simulacao.historico = [];
 }
 
 /** Passo de duração zero: atualiza os mostradores sem gastar bateria. */
@@ -341,6 +418,8 @@ function agendarGravacao(): void {
 
 const passado: string[] = [];
 const futuro: string[] = [];
+/** O que havia para refazer antes do arraste em andamento, para devolver se ele for cancelado. */
+let futuroAntesDoArraste: string[] = [];
 
 type Recorte = 'casa' | 'dispositivos' | 'cabos';
 
@@ -356,6 +435,7 @@ function guardarNoHistorico(): void {
 }
 
 function depoisDeMudar(recortes: Recorte[]): void {
+  sanear(estado.projeto);
   limparSelecaoOrfa();
   for (const r of recortes) avisar(r);
   avisar('projeto');
@@ -372,6 +452,7 @@ function mudar(recortes: Recorte[], opcoes: OpcoesMudanca | undefined, fn: (p: P
 function trocarProjeto(novo: Projeto): void {
   estado.projeto = novo;
   depoisDeMudar(['casa', 'dispositivos', 'cabos']);
+  conferirClimaReal();
 }
 
 function limparSelecaoOrfa(): void {
@@ -395,7 +476,13 @@ function limparSelecaoOrfa(): void {
 
 function novoUid(prefixo: string, usados: Iterable<string>): string {
   const conjunto = new Set(usados);
-  let n = conjunto.size + 1;
+  let maior = 0;
+  for (const uid of conjunto) {
+    if (!uid.startsWith(prefixo)) continue;
+    const numero = Number(uid.slice(prefixo.length));
+    if (Number.isInteger(numero) && numero > maior) maior = numero;
+  }
+  let n = Math.max(maior, conjunto.size) + 1;
   while (conjunto.has(`${prefixo}${n}`)) n += 1;
   return `${prefixo}${n}`;
 }
@@ -454,10 +541,17 @@ function pontoMedio(projeto: Projeto, cabo: Cabo): Vec3 {
 function quadroPara(projeto: Projeto, cabo: Cabo, protecao: Protecao): string | null {
   const modulos = modulosDaProtecao(protecao);
   if (modulos === null) return cabo.quadro;
+  let doCabo = 0;
+  for (const id of cabo.protecoes) {
+    const item = CATALOGO.get(id);
+    if (item?.categoria === 'protecao') doCabo += modulosDaProtecao(item) ?? 0;
+  }
   const cabe = (uid: string): boolean => {
     const item = itemDe(projeto, uid);
     const lugares = item?.categoria === 'acessorio' ? (item.modulos ?? 0) : 0;
-    return modulosOcupados(projeto, uid) + modulos <= lugares;
+    // No quadro em que o cabo já está, as proteções dele já estão contadas; em outro, vão todas junto.
+    const levaJunto = uid === cabo.quadro ? 0 : doCabo;
+    return modulosOcupados(projeto, uid) + levaJunto + modulos <= lugares;
   };
   if (cabo.quadro && cabe(cabo.quadro)) return cabo.quadro;
   const meio = pontoMedio(projeto, cabo);
@@ -634,6 +728,7 @@ export const acoes = {
     const atual = itemDe(estado.projeto, uid);
     const novo = CATALOGO.get(itemId);
     if (!atual || !novo || atual.categoria !== novo.categoria) return false;
+    if (grupoDoItem(CATALOGO, atual.id)?.chave !== grupoDoItem(CATALOGO, novo.id)?.chave) return false;
     const ids = (item: Item): string => terminaisDe(item).map((t) => t.id).sort().join(",");
     if (ids(atual) !== ids(novo)) return false;
     mudar(["dispositivos", "cabos"], undefined, (p) => {
@@ -684,7 +779,7 @@ export const acoes = {
     let mudou = false;
     const cabos = estado.projeto.cabos.map((c) => {
       const novo = comprimentos.get(c.uid);
-      if (novo === undefined || novo === c.comprimento) return c;
+      if (novo === undefined || !Number.isFinite(novo) || novo === c.comprimento) return c;
       mudou = true;
       return { ...c, comprimento: novo };
     });
@@ -720,13 +815,7 @@ export const acoes = {
     mudar([], undefined, (p) => {
       p.clima = clima;
     });
-    if (clima === 'real') {
-      diaPedido = null;
-      conferirClimaReal();
-    } else if (estado.climaReal.situacao !== 'nenhum') {
-      estado.climaReal = { situacao: 'nenhum', dataDosDados: null, fonte: null, mensagem: null };
-      avisar('clima');
-    }
+    conferirClimaReal();
   },
 
   /** Troca a cidade do projeto. Local fora da lista fixa fica guardado no próprio projeto. */
@@ -736,14 +825,13 @@ export const acoes = {
       if (localPorId(local.id)) delete p.localPersonalizado;
       else p.localPersonalizado = local;
     });
-    diaPedido = null;
     conferirClimaReal();
     avisar('tempo');
   },
 
   /** Tenta de novo o download do clima real, depois de um erro. */
   tentarClimaRealDeNovo(): void {
-    diaPedido = null;
+    for (const [chave, situacao] of pedidos) if (situacao === 'erro') pedidos.delete(chave);
     conferirClimaReal();
   },
 
@@ -762,13 +850,19 @@ export const acoes = {
   /** Abre um projeto lido de arquivo ou de outro lugar. Lança erro se a versão for desconhecida. */
   carregarProjeto(dados: unknown): void {
     const novo = converterProjeto(dados);
+    conferirEstrutura(novo);
+    sanear(novo);
+    // Se o cálculo não roda com este projeto, o erro aparece aqui, antes de trocar o que está na tela.
+    calcularDerivados(novo, estado.tempo.msUtc);
     guardarNoHistorico();
+    zerarSimulacao();
     trocarProjeto(novo);
   },
 
   /** Volta ao cenário "plano no papel". */
   novoProjeto(): void {
     guardarNoHistorico();
+    zerarSimulacao();
     trocarProjeto(cenarioPlanoNoPapel());
   },
 
@@ -806,13 +900,18 @@ export const acoes = {
 
   /** Marca o ponto de retorno antes de um arraste feito com `historico: false`. */
   marcarHistorico(): void {
+    futuroAntesDoArraste = [...futuro];
     guardarNoHistorico();
   },
 
   /** Cancela um arraste: volta ao ponto marcado por `marcarHistorico`, sem deixar nada para refazer. */
   cancelarArraste(): void {
     const anterior = passado.pop();
-    if (anterior) trocarProjeto(JSON.parse(anterior) as Projeto);
+    if (!anterior) return;
+    futuro.length = 0;
+    futuro.push(...futuroAntesDoArraste);
+    futuroAntesDoArraste = [];
+    trocarProjeto(JSON.parse(anterior) as Projeto);
   },
 
   desfazer(): void {
@@ -846,10 +945,13 @@ export const acoes = {
 
   /** Salta para um instante, sem simular o intervalo: a bateria fica como estava. */
   definirTempo(msUtc: number): void {
+    const diaAntes = diaLocalDe(estado.projeto, estado.tempo.msUtc);
     estado.tempo.msUtc = msUtc;
     avisar('tempo');
     conferirClimaReal();
     atualizarMostradores();
+    // As estimativas do dia e as regras de geração são do dia simulado.
+    if (diaLocalDe(estado.projeto, msUtc) !== diaAntes) agendarDerivados();
   },
 
   /**
@@ -875,10 +977,12 @@ export const acoes = {
       }
       registrarNoHistorico(agora, saida);
     }
+    const diaAntes = diaLocalDe(estado.projeto, estado.tempo.msUtc);
     estado.tempo.msUtc = agora;
     conferirClimaReal();
     avisar('tempo');
     avisar('simulacao');
+    if (diaLocalDe(estado.projeto, agora) !== diaAntes) agendarDerivados();
   },
 
   /** Liga ou desliga a queda de luz. Ao ligar, guarda o instante de início. */
@@ -911,3 +1015,6 @@ export const acoes = {
 
 /** Categoria do catálogo que uma ação 'ver-catalogo' pede para abrir. */
 export type CategoriaDoCatalogo = Categoria;
+
+// Projeto aberto já com o clima real escolhido: pede as medições do dia logo.
+conferirClimaReal();
