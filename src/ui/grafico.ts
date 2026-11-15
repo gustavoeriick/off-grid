@@ -4,7 +4,7 @@
 import { CATALOGO } from '../catalogo';
 import { acoes, assinar, estado, horaLocalDe } from '../estado';
 import { infoBanco } from '../nucleo/eletrica';
-import { localPorId } from '../nucleo/irradiancia';
+import { localDoProjeto } from '../nucleo/irradiancia';
 import type { Prioridade } from '../nucleo/tipos';
 import { el, h, num } from './formato';
 
@@ -25,7 +25,7 @@ const COR = {
 };
 
 function nomeDoDia(msUtc: number): string {
-  const d = new Date(msUtc + (localPorId(estado.projeto.localId)?.fuso ?? 0) * 3_600_000);
+  const d = new Date(msUtc + (localDoProjeto(estado.projeto)?.fuso ?? 0) * 3_600_000);
   return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 

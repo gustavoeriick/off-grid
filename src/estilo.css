@@ -1296,3 +1296,177 @@ button:disabled {
   color: #b3541e;
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------- Clima real, cidade e passo a passo (tarefas 4.1 e 5.1) */
+
+.clima-situacao {
+  max-width: 260px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--suave);
+}
+
+.clima-situacao[hidden] {
+  display: none;
+}
+
+.clima-situacao.erro {
+  color: #b3261e;
+}
+
+.clima-tentar {
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 1px 6px;
+}
+
+.clima-tentar[hidden] {
+  display: none;
+}
+
+#seletor-cidade {
+  width: 100%;
+  margin: 4px 0;
+}
+
+#cidade-situacao[hidden] {
+  display: none;
+}
+
+#cidade-situacao.erro {
+  color: #b3261e;
+}
+
+.roteiro-opcao {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--destaque);
+  border-radius: 6px;
+}
+
+.roteiro-opcao h4 {
+  margin: 0 0 4px;
+}
+
+.roteiro-opcao p {
+  margin: 0 0 6px;
+}
+
+/* O painel do passo a passo não captura o ponteiro: só os botões respondem. Fica no canto de baixo, à esquerda,
+   longe da barra de tempo (que é irmã de #centro, não está dentro dele). */
+.passo-a-passo {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 3;
+  width: 330px;
+  max-height: calc(100% - 24px);
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 8px 12px 10px;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--destaque);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.passo-a-passo[hidden] {
+  display: none;
+}
+
+#barra-obstaculos:not([hidden]) ~ .passo-a-passo {
+  bottom: 60px;
+}
+
+.passo-a-passo button {
+  pointer-events: auto;
+}
+
+.passo-a-passo p {
+  margin: 0 0 6px;
+}
+
+.passo-contagem {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--destaque);
+}
+
+.passo-roteiro {
+  font-weight: 400;
+  text-transform: none;
+  color: var(--suave);
+}
+
+.passo-titulo {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.passo-dica {
+  color: var(--suave);
+}
+
+.passo-feito {
+  padding: 3px 8px;
+  background: #e3f4e6;
+  border-radius: 4px;
+  color: #1b5e20;
+  font-weight: 600;
+}
+
+.passo-lista {
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+}
+
+.passo-item {
+  display: flex;
+  gap: 6px;
+  color: var(--suave);
+}
+
+.passo-marca {
+  width: 12px;
+  flex: none;
+  text-align: center;
+}
+
+.passo-item.feito {
+  color: #1b5e20;
+}
+
+.passo-item.atual {
+  color: #1f2933;
+  font-weight: 700;
+}
+
+.passo-item.pulado {
+  text-decoration: line-through;
+}
+
+.passo-botoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.passo-botao {
+  font-size: 12px;
+}
+
+/* Cartão do catálogo que o passo a passo apontou: dura alguns segundos. */
+.destaque-passo {
+  outline: 3px solid #ef6c00;
+  outline-offset: 2px;
+  background: #fff3e0;
+  transition: background 0.3s;
+}

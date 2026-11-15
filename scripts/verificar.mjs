@@ -1162,6 +1162,444 @@ async function principal() {
   }
   await verificarSimulacaoEAprender();
 
+  // 11. Obstáculos que fazem sombra (muro, vizinho, árvore) e placas no chão, sobre suporte (tarefas 5.2 e 5.3).
+  async function verificarObstaculosEPlacasNoChao() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const projeto = async () => (await estado()).projeto;
+    const telaDoPonto = (p) => og((q) => window.__offgrid.telaDoPonto(q), p);
+    const selecao = () => og(() => window.__offgrid.estado().selecao);
+    const parado = async () => {
+      await esperar(300);
+      await og(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    };
+    const levar = async (de, ate) => {
+      await pagina.mouse.move(de[0], de[1]);
+      await esperar(150);
+      await pagina.mouse.down();
+      await pagina.mouse.move(ate[0], ate[1], { steps: 10 });
+      await parado();
+    };
+    const soltar = async () => {
+      await pagina.mouse.up();
+      await parado();
+    };
+    const fecharAvisos = async () => {
+      for (let i = 0; i < 20 && (await pagina.locator('#avisos-seguranca .entendi').count()); i++) await pagina.locator('#avisos-seguranca .entendi').click();
+    };
+    /** Fração da geração do dia que a sombra tira de uma placa, recalculada na hora. */
+    const perdaDe = (uid) =>
+      og((u) => {
+        window.__offgrid.recalcular();
+        return window.__offgrid.estado().derivados.estimativas.perdaSombra.get(u);
+      }, uid);
+    const campo = async (chave, valor) => {
+      const c = pagina.locator(`#item-selecionado [data-campo="${chave}"]`);
+      await c.fill(String(valor));
+      await c.press('Enter');
+      // O foco sai do campo, para os atalhos de teclado voltarem a valer.
+      await og(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+      await parado();
+    };
+    const obstaculos = async () => (await projeto()).obstaculos ?? [];
+    const noCanvas = (p) => og(([x, y]) => document.elementFromPoint(x, y) === document.querySelector('#cena canvas'), p);
+
+    // Começa do cenário inicial, ao meio-dia de 21/06, com a frente da casa para o norte.
+    await og(() => {
+      const a = window.__offgrid.acoes;
+      if (window.__offgrid.estado().edicaoCasa.ativa) a.definirEdicaoDaCasa(false);
+      a.novoProjeto();
+      a.definirTempo(Date.UTC(2026, 5, 21, 15, 0, 0));
+    });
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await parado();
+    await fecharAvisos();
+    const semObstaculo = await perdaDe('placa1');
+    const malhasSemObstaculo = (await og(() => window.__offgrid.resumoDaSombra())).malhas;
+    conferir(typeof semObstaculo === 'number', 'a placa do cenário deveria ter a perda por sombra calculada');
+
+    // ---- Vizinho pela barra "Acrescentar", levado pelos campos do painel para o norte da varanda, com 12 m de altura.
+    await pagina.locator('#botao-editar-casa').click();
+    await parado();
+    conferir(await pagina.locator('#barra-obstaculos').isVisible(), 'a barra "Acrescentar" deveria aparecer em "Editar casa"');
+    await pagina.locator('#barra-obstaculos [data-obstaculo="vizinho"]').click();
+    await parado();
+    let lista = await obstaculos();
+    conferir(lista.length === 1 && lista[0].tipo === 'vizinho' && lista[0].largura === 8 && lista[0].profundidade === 8 && lista[0].altura === 6, `o vizinho deveria nascer com 8 × 8 × 6 m: ${JSON.stringify(lista)}`);
+    conferir(Math.abs(lista[0].x) === 13 && lista[0].z === 0, `o vizinho deveria nascer a 5 m da lateral da casa: ${JSON.stringify(lista[0])}`);
+    const vizinho = lista[0].uid;
+    conferir((await selecao())?.tipo === 'obstaculo' && (await selecao()).uid === vizinho, 'o vizinho criado deveria ficar selecionado');
+    // Em cima da casa não pode: o campo recusa e nada muda.
+    await campo('x', 0);
+    conferir((await obstaculos())[0].x === lista[0].x, 'o vizinho não deveria poder ir para cima da casa');
+    await campo('z', 12.5);
+    await campo('x', 0);
+    await campo('altura', 12);
+    lista = await obstaculos();
+    conferir(lista[0].x === 0 && lista[0].z === 12.5 && lista[0].altura === 12, `os campos deveriam levar o vizinho para o norte da varanda: ${JSON.stringify(lista[0])}`);
+    const comVizinho = await perdaDe('placa1');
+    const malhasComVizinho = (await og(() => window.__offgrid.resumoDaSombra())).malhas;
+    console.log(`sombra na placa da varanda: ${(semObstaculo * 100).toFixed(1)} % sem obstáculo, ${(comVizinho * 100).toFixed(1)} % com um vizinho de 12 m ao norte`);
+    conferir(comVizinho > semObstaculo + 0.2, `o vizinho alto do lado do sol deveria aumentar a perda por sombra: ${semObstaculo} → ${comVizinho}`);
+    conferir(malhasComVizinho > malhasSemObstaculo, 'as malhas do vizinho deveriam entrar no cálculo de sombra');
+    await captura('60-editar-casa-com-vizinho-ao-norte');
+
+    // ---- Mover com o ponteiro: preso à grade de 0,5 m, um ponto de desfazer por arraste.
+    const topo = await telaDoPonto([0, 12, 12.5]);
+    const destino = await telaDoPonto([4, 12, 12.5]);
+    conferir((await noCanvas(topo)) && (await noCanvas(destino)), 'o vizinho deveria estar à vista na cena, na vista de cima');
+    await levar(topo, destino);
+    const arrastando = await og(() => window.__offgrid.edicao());
+    conferir(arrastando.modo === 'obstaculo' && arrastando.valido === true, `arrastar o vizinho deveria movê-lo: ${JSON.stringify(arrastando)}`);
+    await soltar();
+    lista = await obstaculos();
+    conferir(Math.abs(lista[0].x - 4) <= 0.5 && (lista[0].x * 2) % 1 === 0 && lista[0].z === 12.5, `o vizinho deveria ter ido para perto de x = 4, na grade de 0,5 m: ${JSON.stringify(lista[0])}`);
+    await pagina.keyboard.press('Control+Z');
+    await parado();
+    lista = await obstaculos();
+    conferir(lista.length === 1 && lista[0].x === 0, 'um Ctrl+Z deveria desfazer o arraste inteiro do vizinho');
+
+    // ---- Muro e árvore; R gira o muro; Delete remove a árvore.
+    await pagina.locator('#barra-obstaculos [data-obstaculo="muro"]').click();
+    await parado();
+    await pagina.locator('#barra-obstaculos [data-obstaculo="arvore"]').click();
+    await parado();
+    lista = await obstaculos();
+    const muro = lista.find((o) => o.tipo === 'muro');
+    const arvore = lista.find((o) => o.tipo === 'arvore');
+    conferir(lista.length === 3 && muro && arvore, `a barra deveria criar o muro e a árvore: ${JSON.stringify(lista)}`);
+    conferir(muro.largura === 6 && muro.profundidade === 0.15 && muro.altura === 2.2 && arvore.altura === 6 && arvore.largura === 4, 'muro e árvore deveriam nascer com as medidas iniciais');
+    await captura('61-muro-vizinho-e-arvore-de-cima');
+    await og((u) => window.__offgrid.acoes.selecionar({ tipo: 'obstaculo', uid: u }), muro.uid);
+    await pagina.keyboard.press('r');
+    await parado();
+    conferir(Math.abs((await obstaculos()).find((o) => o.uid === muro.uid).giro) === 90, 'R deveria girar o muro em 90°');
+    await og((u) => window.__offgrid.acoes.selecionar({ tipo: 'obstaculo', uid: u }), arvore.uid);
+    await pagina.keyboard.press('Delete');
+    await parado();
+    conferir((await obstaculos()).length === 2 && (await selecao()) === null, 'Delete deveria remover a árvore selecionada');
+    await pagina.keyboard.press('Control+Z');
+    await parado();
+    conferir((await obstaculos()).length === 3, 'Ctrl+Z deveria trazer a árvore de volta');
+
+    // Fora da edição, com a casa inteira: os três obstáculos e a sombra do vizinho sobre a varanda.
+    await pagina.locator('#botao-editar-casa').click();
+    await parado();
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await mudarCamera([-24, 16, -34], [0, 3, -4]);
+    await captura('62-vizinho-muro-e-arvore');
+    await og(() => window.__offgrid.acoes.definirTempo(Date.UTC(2026, 5, 21, 12, 0, 0)));
+    await captura('62b-sombra-do-vizinho-as-9h');
+    await og(() => window.__offgrid.acoes.definirTempo(Date.UTC(2026, 5, 21, 15, 0, 0)));
+
+    // ---- Remover o vizinho: a perda por sombra volta ao que era.
+    await og((u) => window.__offgrid.acoes.removerObstaculo(u), vizinho);
+    await parado();
+    const semVizinho = await perdaDe('placa1');
+    conferir(Math.abs(semVizinho - semObstaculo) < 0.01, `sem o vizinho a perda por sombra deveria voltar: ${semObstaculo} → ${semVizinho}`);
+
+    // ---- Placa do catálogo para o terreno: fica sobre suporte, inclinada e virada para o norte.
+    await mudarCamera([-18, 16, -26], [-3, 0, -6]);
+    await parado();
+    const cartaoDaPlaca = await og((id) => window.__offgrid.telaDoCartao(id), 'placa-renepv-585');
+    await levar(cartaoDaPlaca, await telaDoPonto([6, 0, 9]));
+    let s = await og(() => window.__offgrid.interacao());
+    conferir(s.modo === 'catalogo' && s.valido === true, `a placa sobre o terreno deveria ficar verde: ${JSON.stringify(s)}`);
+    await soltar();
+    await fecharAvisos();
+    let p = await projeto();
+    const noChao = p.dispositivos[p.dispositivos.length - 1];
+    conferir(noChao.superficie === 'terreno' && noChao.inclinacaoGraus === 23, `a placa solta no terreno deveria ficar sobre suporte, a 23°: ${JSON.stringify(noChao)}`);
+    let normal = await og((u) => window.__offgrid.ambiente().normal(u), noChao.uid);
+    conferir(Math.abs(normal[0]) < 0.01 && normal[2] < -0.3 && Math.abs(normal[1] - Math.cos((23 * Math.PI) / 180)) < 0.001, `a face da placa no chão deveria olhar para o norte e para cima: ${normal}`);
+    await mudarCamera([-8.5, 1.7, -13], [-6, 0.9, -9]);
+    await captura('63-placa-no-chao-sobre-suporte');
+
+    // Inclinação e direção pelo painel; Ctrl+Z desfaz.
+    await campo('inclinacao', 35);
+    p = await projeto();
+    conferir(p.dispositivos.find((d) => d.uid === noChao.uid).inclinacaoGraus === 35, 'o campo "Inclinação" deveria mudar a inclinação da placa');
+    normal = await og((u) => window.__offgrid.ambiente().normal(u), noChao.uid);
+    conferir(Math.abs(normal[1] - Math.cos((35 * Math.PI) / 180)) < 0.001 && normal[2] < 0, `com 35° a normal deveria deitar mais para o norte: ${normal}`);
+    await campo('direcao', 90);
+    normal = await og((u) => window.__offgrid.ambiente().normal(u), noChao.uid);
+    conferir(normal[0] > 0.5 && Math.abs(normal[2]) < 0.01, `com direção 90 a face deveria olhar para o leste: ${normal}`);
+    await captura('64-placa-no-chao-inclinada-para-o-leste');
+    await pagina.keyboard.press('Control+Z');
+    await pagina.keyboard.press('Control+Z');
+    await parado();
+    p = await projeto();
+    conferir(p.dispositivos.find((d) => d.uid === noChao.uid).inclinacaoGraus === 23 && p.dispositivos.find((d) => d.uid === noChao.uid).giro === 0, 'dois Ctrl+Z deveriam voltar a inclinação e a direção');
+
+    // No terreno só ficam placas e estação portátil.
+    await mudarCamera([-18, 16, -26], [-3, 0, -6]);
+    await parado();
+    await levar(await og((id) => window.__offgrid.telaDoCartao(id), 'ap-geladeira'), await telaDoPonto([4, 0, 9]));
+    s = await og(() => window.__offgrid.interacao());
+    conferir(s.modo === 'catalogo' && s.valido === false, `a geladeira no terreno deveria ficar vermelha: ${JSON.stringify(s)}`);
+    await soltar();
+    await levar(await og((id) => window.__offgrid.telaDoCartao(id), 'est-ecoflow-delta2'), await telaDoPonto([4, 0, 9]));
+    s = await og(() => window.__offgrid.interacao());
+    conferir(s.modo === 'catalogo' && s.valido === true, `a estação portátil no terreno deveria ficar verde: ${JSON.stringify(s)}`);
+    await soltar();
+    await fecharAvisos();
+    p = await projeto();
+    conferir(p.dispositivos[p.dispositivos.length - 1].superficie === 'terreno', 'a estação portátil deveria ficar no terreno');
+    await captura('65-placa-e-estacao-no-terreno');
+
+    const quadros = await og(() => window.__offgrid.medirQuadros(20, true));
+    console.log(`obstáculos e placa no chão: quadro de ${quadros.ms.toFixed(1)} ms com sombra (desenho por software), ${quadros.chamadas} chamadas, ${quadros.triangulos} triângulos`);
+    await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
+  }
+  await verificarObstaculosEPlacasNoChao();
+
+  // 9. Clima real, cidade e passo a passo (tarefas 5.1 e 4.1). A rede é simulada com `page.route`: o roteiro não depende da internet.
+  async function verificarClimaCidadePassoAPasso() {
+    const { readFileSync } = await import('node:fs');
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const texto = readFileSync(join(raiz, 'src', 'dados', 'exemplosDeResposta.ts'), 'utf8');
+    const pegar = (nome) => JSON.parse(new RegExp(`export const ${nome} = (\\{.*\\});`).exec(texto)[1]);
+    const exemploMeteo = pegar('RESPOSTA_OPEN_METEO');
+    const exemploNasa = pegar('RESPOSTA_NASA_POWER');
+
+    // O corpo do Open-Meteo: o dia 21/12/2025 do exemplo, repetido em cada dia que a requisição pede.
+    const corpoMeteo = (inicio, fim) => {
+      const h = exemploMeteo.hourly;
+      const campos = ['shortwave_radiation', 'direct_normal_irradiance', 'diffuse_radiation', 'temperature_2m'];
+      const saida = { time: [], ...Object.fromEntries(campos.map((c) => [c, []])) };
+      for (let d = Date.parse(inicio); d <= Date.parse(fim); d += 86400000) {
+        const dia = new Date(d).toISOString().slice(0, 10);
+        for (let hora = 0; hora < 24; hora++) {
+          saida.time.push(`${dia}T${String(hora).padStart(2, '0')}:00`);
+          for (const c of campos) saida[c].push(h[c][24 + hora]);
+        }
+      }
+      return { ...exemploMeteo, hourly: saida };
+    };
+    let meteoFalha = false;
+    let nasaFalha = false;
+    let pedidosNasa = 0;
+    const cors = { 'access-control-allow-origin': '*' };
+    await pagina.route('https://archive-api.open-meteo.com/**', (rota) => {
+      if (meteoFalha) return rota.abort('failed');
+      const u = new URL(rota.request().url());
+      return rota.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(corpoMeteo(u.searchParams.get('start_date'), u.searchParams.get('end_date'))) });
+    });
+    await pagina.route('https://power.larc.nasa.gov/**', (rota) => {
+      pedidosNasa += 1;
+      if (nasaFalha) return rota.abort('failed');
+      return rota.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(exemploNasa) });
+    });
+
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await og(() => window.__offgrid.acoes.definirTempo(Date.UTC(2026, 5, 21, 15, 0, 0)));
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
+
+    // ---- Clima real: a opção existe, mostra "baixando…" e depois a data dos dados.
+    const opcoes = await pagina.locator('#clima option').allTextContents();
+    conferir(opcoes.includes('Real (medido)'), `o seletor de clima deveria ter "Real (medido)": ${opcoes}`);
+    conferir(await pagina.locator('#clima-situacao').isHidden(), 'sem o clima real escolhido, o texto da situação fica escondido');
+    await pagina.locator('#clima').selectOption('real');
+    await pagina.waitForFunction(() => /dados de|mesmo dia/.test(document.querySelector('#clima-situacao')?.textContent ?? ''), null, { timeout: 10000 });
+    let situacao = await pagina.locator('#clima-situacao').textContent();
+    conferir(/dados de 21\/06\/202[56]/.test(situacao) && situacao.includes('Open-Meteo'), `o texto deveria dizer de que dia são os dados: "${situacao}"`);
+    conferir((await estado()).climaReal.situacao === 'pronto', 'o estado do clima real deveria estar pronto');
+    await captura('70-clima-real-data-dos-dados');
+
+    // Data futura: o texto diz "mesmo dia de <ano anterior>".
+    const futuro = await og(() => {
+      const d = new Date(Date.now() + 30 * 86400000);
+      return { ms: Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 15), ano: d.getUTCFullYear() };
+    });
+    await og((ms) => window.__offgrid.acoes.definirTempo(ms), futuro.ms);
+    await pagina.waitForFunction((ano) => (document.querySelector('#clima-situacao')?.textContent ?? '').includes(`mesmo dia de ${ano}`), futuro.ano - 1, { timeout: 10000 });
+    situacao = await pagina.locator('#clima-situacao').textContent();
+    console.log(`clima real em data futura: "${situacao}"`);
+    await captura('70b-clima-real-dia-futuro');
+
+    // Sem rede: aparece o erro, o aviso de que vale o clima típico e o botão; com a rede de volta, o botão resolve.
+    const errosAntes = erros.length;
+    meteoFalha = true;
+    await og((ms) => window.__offgrid.acoes.definirTempo(ms), futuro.ms + 3 * 86400000);
+    await pagina.waitForFunction(() => document.querySelector('#clima-situacao')?.classList.contains('erro'), null, { timeout: 10000 });
+    situacao = await pagina.locator('#clima-situacao').textContent();
+    conferir(situacao.includes('Open-Meteo') && situacao.includes('clima típico'), `o erro deveria falar do Open-Meteo e do clima típico: "${situacao}"`);
+    conferir(await pagina.getByRole('button', { name: 'Tentar de novo' }).isVisible(), 'o botão "Tentar de novo" deveria aparecer no erro');
+    await captura('71-clima-real-erro-tentar-de-novo');
+    // As falhas de rede acima foram provocadas de propósito: não contam como erro da página.
+    await esperar(300);
+    erros.splice(errosAntes);
+    meteoFalha = false;
+    await pagina.getByRole('button', { name: 'Tentar de novo' }).click();
+    await pagina.waitForFunction(() => /mesmo dia|dados de/.test(document.querySelector('#clima-situacao')?.textContent ?? ''), null, { timeout: 10000 });
+    conferir(!(await pagina.getByRole('button', { name: 'Tentar de novo' }).isVisible()), 'o botão some quando os dados chegam');
+
+    // ---- Cidade: escolher Recife baixa as médias, muda o local do projeto e o rótulo da hora.
+    await og((ms) => window.__offgrid.acoes.definirTempo(ms), Date.UTC(2026, 5, 21, 15, 0, 0));
+    await pagina.locator('[data-aba="sistema"]').click();
+    conferir((await pagina.locator('#seletor-cidade option:checked').textContent()) === 'Rio de Janeiro (RJ)', 'o seletor deveria mostrar o Rio de Janeiro no começo');
+    await pagina.locator('#seletor-cidade').selectOption({ label: 'Recife (PE)' });
+    await pagina.waitForFunction(() => window.__offgrid.estado().projeto.localId !== 'rio', null, { timeout: 10000 });
+    let e = await estado();
+    conferir(e.projeto.localId === 'local--8.05--34.88' && e.projeto.localPersonalizado?.nome === 'Recife', `a cidade do projeto deveria ser Recife: ${e.projeto.localId}`);
+    const rotuloHora = await pagina.locator('.grupo-hora .rotulo').textContent();
+    conferir(rotuloHora.startsWith('Hora em Recife'), `o rótulo da hora deveria citar Recife: "${rotuloHora}"`);
+    await pagina.waitForFunction(() => window.__offgrid.estado().climaReal.situacao === 'pronto', null, { timeout: 10000 });
+    await pagina.locator('#seletor-cidade').scrollIntoViewIfNeeded();
+    await captura('72-seletor-de-cidade-recife');
+
+    // Erro ao baixar: a cidade não muda e a mensagem aparece.
+    nasaFalha = true;
+    const errosNasa = erros.length;
+    await pagina.locator('#seletor-cidade').selectOption({ label: 'Salvador (BA)' });
+    await pagina.waitForFunction(() => document.querySelector('#cidade-situacao')?.classList.contains('erro'), null, { timeout: 10000 });
+    e = await estado();
+    conferir(e.projeto.localId === 'local--8.05--34.88', 'com a rede falhando a cidade não deveria mudar');
+    conferir((await pagina.locator('#seletor-cidade option:checked').textContent()) === 'Recife (PE)', 'o seletor deveria voltar para Recife');
+    conferir((await pagina.locator('#cidade-situacao').textContent()).includes('NASA POWER'), 'a mensagem de erro deveria citar a NASA POWER');
+    await pagina.locator('#cidade-situacao').scrollIntoViewIfNeeded();
+    await captura('73-seletor-de-cidade-erro');
+    await esperar(300);
+    erros.splice(errosNasa);
+    nasaFalha = false;
+
+    // O Rio da lista fixa usa o local fixo, sem baixar nada.
+    const pedidosAntes = pedidosNasa;
+    await pagina.locator('#seletor-cidade').selectOption({ label: 'Rio de Janeiro (RJ)' });
+    await pagina.waitForFunction(() => window.__offgrid.estado().projeto.localId === 'rio', null, { timeout: 10000 });
+    e = await estado();
+    conferir(pedidosNasa === pedidosAntes && e.projeto.localPersonalizado === undefined, 'o Rio da lista fixa não deveria baixar nada nem guardar local personalizado');
+    conferir((await pagina.locator('.grupo-hora .rotulo').textContent()).startsWith('Hora no Rio'), 'o rótulo volta para "Hora no Rio"');
+    await og(() => window.__offgrid.acoes.definirClima('tipico'));
+    await pagina.unroute('https://archive-api.open-meteo.com/**');
+    await pagina.unroute('https://power.larc.nasa.gov/**');
+
+    // ---- Passo a passo.
+    const contagem = () => pagina.locator('#passo-a-passo .passo-contagem').textContent();
+    const painelVisivel = () => pagina.locator('#passo-a-passo').isVisible();
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await pagina.locator('[data-aba="consultor"]').click();
+    await pagina.locator('#botao-passo-a-passo').click();
+    await pagina.locator('#painel-escolha-roteiro').waitFor({ state: 'visible' });
+    conferir((await pagina.locator('#painel-escolha-roteiro .roteiro-opcao').count()) === 2, 'a escolha deveria listar os dois roteiros');
+    await captura('74-passo-a-passo-escolha');
+
+    // 12 V: pergunta antes, e a montagem fica vazia (sem a tomada da rede).
+    let mensagemDoDialogo = '';
+    pagina.once('dialog', (d) => {
+      mensagemDoDialogo = d.message();
+      d.accept();
+    });
+    await pagina.locator('[data-roteiro="primeiro-sistema-12v"]').click();
+    await pagina.locator('#passo-a-passo').waitFor({ state: 'visible' });
+    conferir(mensagemDoDialogo.includes('casa vazia') && mensagemDoDialogo.includes('desfazer'), `a pergunta antes de começar: "${mensagemDoDialogo}"`);
+    conferir((await contagem()).startsWith('Passo 1 de 8'), `o roteiro de 12 V deveria começar no passo 1 de 8: ${await contagem()}`);
+    let p = (await estado()).projeto;
+    conferir(p.dispositivos.length === 0 && p.cabos.length === 0, 'o roteiro de 12 V deveria começar com a casa vazia');
+    await captura('75-passo-a-passo-12v-passo-1');
+    await pagina.getByRole('button', { name: 'Sair do passo a passo' }).click();
+    conferir(!(await painelVisivel()), 'sair deveria esconder o painel');
+
+    // 24 V: mantém a tomada da rede; o painel diz "Passo 1 de 8".
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await pagina.locator('#botao-passo-a-passo').click();
+    pagina.once('dialog', (d) => d.accept());
+    await pagina.locator('[data-roteiro="plano-da-casa-24v"]').click();
+    await pagina.locator('#passo-a-passo').waitFor({ state: 'visible' });
+    conferir((await contagem()).startsWith('Passo 1 de 8'), `o roteiro de 24 V deveria começar no passo 1 de 8: ${await contagem()}`);
+    p = (await estado()).projeto;
+    conferir(p.cabos.length === 0 && p.dispositivos.length === 1 && p.dispositivos[0].itemId === 'rede-tomada', `o roteiro de 24 V deveria manter só a tomada da rede: ${JSON.stringify(p.dispositivos.map((d) => d.itemId))}`);
+    const sessao = await og(() => sessionStorage.getItem('offgrid.passoapasso'));
+    conferir(sessao && JSON.parse(sessao).roteiro === 'plano-da-casa-24v', `o roteiro em andamento deveria ficar no sessionStorage: ${sessao}`);
+    await captura('76-passo-a-passo-24v-passo-1');
+
+    // O painel não captura o ponteiro fora dos botões e não cobre a barra de tempo.
+    const geometria = await og(() => {
+      const painel = document.querySelector('#passo-a-passo');
+      const r = painel.getBoundingClientRect();
+      const base = document.querySelector('#base').getBoundingClientRect();
+      const titulo = painel.querySelector('.passo-titulo').getBoundingClientRect();
+      const noTitulo = document.elementFromPoint(titulo.left + 10, titulo.top + titulo.height / 2);
+      const botao = painel.querySelector('button').getBoundingClientRect();
+      const noBotao = document.elementFromPoint(botao.left + botao.width / 2, botao.top + botao.height / 2);
+      return { baixo: r.bottom, topoDaBase: base.top, textoCapturaPonteiro: painel.contains(noTitulo), botaoResponde: painel.contains(noBotao) };
+    });
+    conferir(geometria.baixo <= geometria.topoDaBase, `o painel não deveria cobrir a barra de tempo: ${JSON.stringify(geometria)}`);
+    conferir(!geometria.textoCapturaPonteiro && geometria.botaoResponde, `o painel só deveria capturar o ponteiro nos botões: ${JSON.stringify(geometria)}`);
+
+    // Mostrar no catálogo: no passo 1 o item é a bateria; abre a aba e destaca o cartão.
+    await pagina.getByRole('button', { name: 'Mostrar no catálogo' }).click();
+    conferir((await pagina.locator('#abas-catalogo [data-cat="baterias"]').getAttribute('aria-selected')) === 'true', 'o catálogo deveria abrir na aba Baterias');
+    conferir((await pagina.locator('#lista-catalogo .cartao.destaque-passo').count()) === 1, 'o cartão do item do passo deveria ficar destacado');
+    await captura('77-passo-a-passo-mostrar-no-catalogo');
+
+    // Cumpre os dois primeiros passos: o painel avança sozinho, com o "Feito!".
+    const encaixe = (itemId, superficie, ponto, normal) => og(([i, s, pt, n]) => window.__offgrid.encaixar(i, s, pt, n), [itemId, superficie, ponto, normal]);
+    const noPiso = await encaixe('bat-alfx-24v-100', { id: 'piso-quartinho', tipo: 'piso' }, [6.5, 0.05, -2.0], [0, 1, 0]);
+    await og((enc) => window.__offgrid.acoes.adicionarDispositivo('bat-alfx-24v-100', enc), noPiso);
+    await og(() => window.__offgrid.recalcular());
+    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo .passo-contagem')?.textContent.startsWith('Passo 2 de 8'), null, { timeout: 5000 });
+    conferir((await pagina.locator('#passo-a-passo .passo-feito').count()) === 1, 'ao cumprir o passo 1 deveria aparecer o "Feito!"');
+    await captura('78-passo-a-passo-feito-e-passo-2');
+    const naParede = await encaixe('inv-anenji-3kw-24v-127', { id: 'parede-quartinho-fundo', tipo: 'parede' }, [6.5, 1.3, -2.95], [0, 0, 1]);
+    await og((enc) => window.__offgrid.acoes.adicionarDispositivo('inv-anenji-3kw-24v-127', enc), naParede);
+    await og(() => window.__offgrid.recalcular());
+    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo .passo-contagem')?.textContent.startsWith('Passo 3 de 8'), null, { timeout: 5000 });
+    await captura('79-passo-a-passo-passo-3');
+
+    // Pular: o passo 3 sai da frente.
+    await pagina.getByRole('button', { name: 'Pular' }).click();
+    conferir((await contagem()).startsWith('Passo 4 de 8'), `pular deveria ir para o passo 4: ${await contagem()}`);
+    conferir((await pagina.locator('#passo-a-passo .passo-item.pulado').count()) === 1, 'o passo pulado deveria aparecer marcado na lista');
+
+    // Recarregar a página: o andamento volta da sessão (o projeto volta da gravação do navegador).
+    await esperar(900);
+    await pagina.reload();
+    await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true, null, { timeout: 30000 });
+    await pagina.locator('#passo-a-passo').waitFor({ state: 'visible' });
+    conferir((await contagem()).startsWith('Passo 4 de 8'), `depois de recarregar o painel deveria continuar no passo 4: ${await contagem()}`);
+
+    // O plano corrigido inteiro (convertido para a cena): todos os passos ficam feitos e vem o resumo.
+    await og(() => {
+      const a = window.__offgrid.acoes;
+      a.novoProjeto();
+      const proj = JSON.parse(JSON.stringify(window.__offgrid.estado().projeto));
+      const disp = (uid, itemId) => ({ uid, itemId, pos: [0, 0, 0], quat: [0, 0, 0, 1], superficie: null, giro: 0, ligado: true, uso: null });
+      const i = proj.dispositivos.findIndex((d) => d.uid === 'placa1');
+      proj.dispositivos.splice(i + 1, 0, disp('placa2', 'placa-renepv-585'));
+      for (const c of proj.cabos) {
+        if (c.uid === 'c1') {
+          c.protecoes.push('prot-dps-cc-600');
+          c.quadro = 'quadro-cc';
+        }
+        if (c.uid === 'c2') c.de = { disp: 'placa2', terminal: 'neg' };
+        if (c.uid === 'c3' || c.uid === 'c4') c.caboId = 'cabo-bat-35';
+        if (c.de.terminal === 'caSaida') {
+          c.protecoes.push('prot-disjuntor-ca-16');
+          c.quadro = 'quadro-ca';
+        }
+      }
+      proj.dispositivos.push(disp('quadro-cc', 'acc-quadro-8'), disp('quadro-ca', 'acc-quadro-8'));
+      proj.cabos.push({ uid: 'c12', de: { disp: 'placa1', terminal: 'neg' }, para: { disp: 'placa2', terminal: 'pos' }, caboId: 'cabo-solar-6', comprimento: 1.5, protecoes: [], quadro: null });
+      a.carregarProjeto(proj);
+      window.__offgrid.recalcular();
+    });
+    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo')?.dataset.situacao === 'resumo', null, { timeout: 5000 });
+    const resumo = await pagina.locator('#passo-a-passo').textContent();
+    conferir(resumo.includes('Montagem concluída') && /autonomia|sustenta/.test(resumo) && resumo.includes('Orçamento total: R$') && resumo.includes('queda de luz'), `o resumo deveria trazer autonomia, orçamento e a sugestão da queda de luz: "${resumo}"`);
+    await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
+    await captura('80-passo-a-passo-resumo');
+
+    // A sugestão da queda de luz liga a simulação; sair apaga o painel e o andamento.
+    await pagina.getByRole('button', { name: 'Simular queda de luz' }).click();
+    conferir((await estado()).simulacao.quedaDeLuz.ativa === true, 'o botão do resumo deveria ligar a queda de luz');
+    await og(() => window.__offgrid.acoes.alternarQuedaDeLuz());
+    await pagina.getByRole('button', { name: 'Sair do passo a passo' }).click();
+    conferir(!(await painelVisivel()), 'sair deveria esconder o painel');
+    conferir((await og(() => sessionStorage.getItem('offgrid.passoapasso'))) === null, 'sair deveria apagar o andamento da sessão');
+  }
+  await verificarClimaCidadePassoAPasso();
+
   if (erros.length) throw new Error(`Erros na página:\n${erros.join('\n')}`);
   console.log('Verificação concluída sem erros.');
 }

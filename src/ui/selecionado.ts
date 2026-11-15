@@ -72,7 +72,7 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
   ].filter((n) => n !== null);
 
   const linha = h('div', { class: 'acoes-item' });
-  linha.append(botao('Girar', () => window.dispatchEvent(new CustomEvent('offgrid:girar-selecionado')), { title: 'Gira a peça em 90° sobre a superfície' }));
+  linha.append(botao('Girar', () => window.dispatchEvent(new CustomEvent('offgrid:girar-selecionado')), { title: d.superficie === 'terreno' && item.categoria === 'placa' ? 'Vira a face da placa 15° no sentido dos ponteiros do relógio' : 'Gira a peça em 90° sobre a superfície' }));
   linha.append(botao('Apagar', () => acoes.removerDispositivo(d.uid), { class: 'perigo' }));
   nos.push(linha);
   nos.push(...camposDaPlacaNoChao(d, item, redesenhar));

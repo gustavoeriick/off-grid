@@ -2,15 +2,18 @@
 // Especificação: docs/especificacao/cena-e-interface.md, seções 1 e 12.
 
 import { acoes, assinar, estado, type ModoVisao } from '../estado';
-import { localPorId } from '../nucleo/irradiancia';
+import { localDoProjeto } from '../nucleo/irradiancia';
 import type { CasaConfig, Clima, Varanda } from '../nucleo/tipos';
 import { montarGlossario } from './aprender';
 import { montarAvisos, reiniciarAvisosVistos } from './avisos';
 import { montarCatalogo } from './catalogo';
+import { montarCidade } from './cidade';
+import { montarClima, rotuloDaHora } from './clima';
 import { montarCampoDoComodo } from './comodos';
 import { montarGrafico } from './grafico';
 import { montarMostradores } from './mostradores';
 import { montarBarraDeObstaculos } from './obstaculos';
+import { montarPassoAPasso } from './passoAPasso';
 import { montarPaineis } from './paineis';
 import { montarSelecionado } from './selecionado';
 import { montarTopo } from './topo';
@@ -19,7 +22,9 @@ import { LADOS, LIMITES_VARANDA, avisoDoQuartinho, deslocamentoMaximo, inclinaca
 const MS_HORA = 3_600_000;
 const MS_DIA = 24 * MS_HORA;
 /** Fuso do local do projeto, em ms (o Rio fica em UTC − 3). Vem do núcleo, não é escrito aqui. */
-const DESLOCAMENTO_RIO_MS = (localPorId(estado.projeto.localId)?.fuso ?? -3) * MS_HORA;
+function deslocamentoMs(): number {
+  return (localDoProjeto(estado.projeto)?.fuso ?? -3) * MS_HORA;
+}
 const ANO = 2026;
 const INICIO_ANO_MS = Date.UTC(ANO, 0, 1, 3, 0, 0);
 const FIM_ANO_MS = Date.UTC(ANO + 1, 0, 1, 3, 0, 0);
@@ -32,9 +37,9 @@ function el<T extends HTMLElement>(seletor: string): T {
   return e;
 }
 
-/** Data e hora locais do Rio a partir do instante UTC. */
+/** Data e hora locais da cidade do projeto (o Rio, até escolher outra) a partir do instante UTC. */
 function localDoRio(msUtc: number) {
-  const d = new Date(msUtc + DESLOCAMENTO_RIO_MS);
+  const d = new Date(msUtc + deslocamentoMs());
   return { dia: d.getUTCDate(), mes: d.getUTCMonth(), minutos: d.getUTCHours() * 60 + d.getUTCMinutes() };
 }
 
@@ -43,7 +48,7 @@ function diasNoMes(mes: number): number {
 }
 
 function msUtcDe(mes: number, dia: number, minutos: number): number {
-  return Date.UTC(ANO, mes, dia, 0, 0, 0) - DESLOCAMENTO_RIO_MS + minutos * 60_000;
+  return Date.UTC(ANO, mes, dia, 0, 0, 0) - deslocamentoMs() + minutos * 60_000;
 }
 
 function doisDigitos(n: number): string {
@@ -60,6 +65,7 @@ function numeroDe(campo: HTMLInputElement): number | null {
 }
 
 export function montarInterface(): void {
+  montarClima();
   montarVisao();
   montarTempo();
   montarClimaERotacao();
@@ -76,6 +82,8 @@ export function montarInterface(): void {
   montarGlossario();
   montarAvisos();
   montarBarraDeObstaculos();
+  montarCidade();
+  montarPassoAPasso();
   registrarAuxiliaresDeVerificacao();
 }
 
@@ -115,6 +123,7 @@ function montarTempo(): void {
     mes.value = String(l.mes);
     dia.max = String(diasNoMes(l.mes));
     hora.value = String(l.minutos);
+    rotuloDaHora(horaTexto);
     horaTexto.textContent = `${doisDigitos(Math.floor(l.minutos / 60))}:${doisDigitos(l.minutos % 60)}`;
     botoesVel.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.vel) === estado.tempo.velocidade)));
   };

@@ -194,6 +194,31 @@ function telaDoCartao(itemId: string): [number, number] | null {
   return [r.left + r.width / 2, nome ? nome.top + nome.height / 2 : r.top + r.height / 2];
 }
 
+let esperaDoDestaque: ReturnType<typeof setTimeout> | null = null;
+
+function marcarDestaque(alvo: HTMLElement): void {
+  document.querySelectorAll('.destaque-passo').forEach((e) => e.classList.remove('destaque-passo'));
+  alvo.classList.add('destaque-passo');
+  if (esperaDoDestaque) clearTimeout(esperaDoDestaque);
+  esperaDoDestaque = setTimeout(() => alvo.classList.remove('destaque-passo'), 4000);
+}
+
+/** Passo a passo: abre a aba do item, rola até o cartão e o destaca por alguns segundos. Devolve falso se não há cartão. */
+export function destacarNoCatalogo(itemId: string): boolean {
+  if (!telaDoCartao(itemId)) return false;
+  const g = grupoDoItem(CATALOGO, itemId);
+  const c = [...document.querySelectorAll<HTMLElement>('#lista-catalogo .cartao')].find((x) => x.dataset.grupo === g?.chave);
+  if (!c) return false;
+  marcarDestaque(c);
+  return true;
+}
+
+/** Passo a passo, sem um item só: abre a aba da categoria e destaca a lista. */
+export function destacarCategoriaNoCatalogo(categoria: Categoria): void {
+  abrirCatalogo(categoria);
+  marcarDestaque(el<HTMLElement>('#lista-catalogo'));
+}
+
 /** Acrescenta ao `window.__offgrid`, que a cena cria, sem substituí-lo. */
 function exporNoGlobal(): void {
   const w = window as unknown as { __offgrid?: Record<string, unknown> };
