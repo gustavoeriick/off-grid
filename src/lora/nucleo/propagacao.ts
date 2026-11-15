@@ -110,7 +110,7 @@ export function difracaoDeBullington(
     .slice(1, n - 1)
     .filter((p) => p.dKm > 0 && p.dKm < d)
     .map((p) => ({ di: p.dKm, alto: p.altM + 500 * ce * p.dKm * (d - p.dKm) }));
-  if (d <= 0 || meio.length === 0) return { visada: true, lucDb: 0, perdaDb: 0 };
+  if (d <= 0 || meio.length === 0) return { visada: true, lucDb: 0, perdaDb: 0, terraLisaDb: 0 };
 
   let stim = -Infinity;
   for (const p of meio) stim = Math.max(stim, (p.alto - hts) / p.di);
@@ -134,5 +134,5 @@ export function difracaoDeBullington(
     luc = perdaPorObstaculoDb(nuB);
   }
   const perdaDb = luc + (1 - Math.exp(-luc / 6)) * (10 + 0.02 * d);
-  return { visada, lucDb: luc, perdaDb };
+  return { visada, lucDb: luc, perdaDb, terraLisaDb: 0 };
 }

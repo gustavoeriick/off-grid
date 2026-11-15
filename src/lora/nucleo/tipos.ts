@@ -102,8 +102,10 @@ export interface Difracao {
   visada: boolean;
   /** Perda do obstáculo equivalente. */
   lucDb: number;
-  /** Perda por difração do caminho. */
+  /** Perda por difração do caminho, pelo método completo (especificação, seção 4.5.1). */
   perdaDb: number;
+  /** Parcela de `perdaDb` que vem do caminho liso (mar, baía, planície): `máx(Lsph − Lbs; 0)`. Zero na parte de Bullington sozinha. */
+  terraLisaDb: number;
 }
 
 export type Veredito = 'folga' | 'limite' | 'nao-fecha';

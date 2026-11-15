@@ -36,7 +36,7 @@ Contas: a curva é `d1·d2 / (2·k·R)`, com `k = 4/3` e `R = 6.371 km`; o raio 
 
 Antena no telhado de um sobrado fica a 6 ou 8 m, bem abaixo disso. Mas caminho sem a zona livre não é caminho fechado: o sinal contorna o obstáculo e perde força (difração). Pela conta da norma ITU-R P.526, em terreno liso e sem nada em cima, antenas a 8 m perdem cerca de 12 dB a mais em 20 km e 19 dB em 40 km. Sobra folga de uns 24 dB em 20 km e de uns 10 dB em 40 km.
 
-Dois avisos sobre esses números. Primeiro, a conta usada é a parte simples do método e **subestima a perda em caminho liso**, como sobre o mar ou a baía; a correção entra na tarefa L1.4. Segundo, terreno liso e vazio quase não existe: o que derruba o enlace na prática são os prédios, as árvores e os morros do caminho, e a folga de 10 a 24 dB some com um bairro no meio.
+**Correção de 15/11/2026, com o método completo da norma (tarefa L1.4):** esses números eram otimistas. Em caminho liso, como sobre o mar ou a baía, antenas a 8 m perdem 23 dB a mais em 20 km e 40 dB em 40 km. A folga fica em 12 dB em 20 km e em 10 dB **negativos** em 40 km. Ou seja: sobre água, de telhado a telhado, os 20 km fecham e os 40 km não. E terreno liso e vazio quase não existe: o que derruba o enlace na prática são os prédios, as árvores e os morros do caminho.
 
 ### 1.4 A resposta honesta à pergunta, por enquanto
 

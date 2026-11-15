@@ -122,7 +122,67 @@ J(ν) = 6,9 + 20·log(√((ν − 0,1)² + 1) + ν − 0,1)   para ν > −0,78;
 Perda = Luc + (1 − e^(−Luc/6))·(10 + 0,02·d)
 ```
 
-**Limite conhecido:** esta é só a parte de Bullington. O método completo da norma (§ 4.5.2) soma uma correção de Terra esférica, que pesa em caminho liso: mar, baía, planície. Sem ela, a perda nesses caminhos fica subestimada. A correção é a tarefa L1.4; até lá, vale a regra do veredito da seção 4.7, que não deixa um caminho raspando ser dado como "com folga".
+Esta é só a parte de Bullington, `difracaoDeBullington`. Sozinha, ela subestima a perda em caminho liso: mar, baía, planície. O enlace usa o método completo, a seguir.
+
+### 4.5.1 Método completo (tarefa L1.4)
+
+ITU-R P.526-16, § 4.5.2 (equações 58 a 66) e § 3.2 com § 3.1.1.2 (equações 13 a 18 e 21 a 25), lidas nas páginas da norma em 15/11/2026. Função `difracaoCompleta(perfil, alturaInicioM, alturaFimM, mhz): Difracao`.
+
+```
+Lba = Bullington do perfil de verdade, com hts = h1 + altura da antena e hrs = hn + altura da antena
+
+Superfície lisa ajustada ao perfil (h em m, d em km; i de 2 a n):
+  v1 = Σ (di − di−1)·(hi + hi−1)
+  v2 = Σ (di − di−1)·[hi·(2·di + di−1) + hi−1·(di + 2·di−1)]
+  hstip = (2·v1·d − v2) / d²
+  hsrip = (v2 − v1·d) / d²
+
+Obstrução acima da reta entre as antenas (i de 2 a n − 1):
+  hobi  = hi − [hts·(d − di) + hrs·di] / d
+  hobs  = máx(hobi)      αobt = máx(hobi / di)      αobr = máx(hobi / (d − di))
+  Se hobs ≤ 0:  hstp = hstip                         hsrp = hsrip
+  Senão:        hstp = hstip − hobs·αobt/(αobt + αobr)    hsrp = hsrip − hobs·αobr/(αobt + αobr)
+  hst = mín(hstp; h1)     hsr = mín(hsrp; hn)
+  h'ts = hts − hst        h'rs = hrs − hsr
+
+Lbs  = Bullington de um perfil com as mesmas distâncias e todas as alturas zero, com antenas a h'ts e h'rs
+Lsph = Terra esférica (abaixo), com a distância d e as alturas h1 = h'ts e h2 = h'rs
+Perda = Lba + máx(Lsph − Lbs; 0)
+```
+
+Terra esférica, § 3.2. Unidades consistentes: aqui `h1`, `h2` e `λ` entram em km; `ae` é o raio efetivo, em km.
+
+```
+dlos = √(2·ae)·(√h1 + √h2)
+Se d ≥ dlos:  Lsph = máx(0; A(ae))
+Senão:
+  c = (h1 − h2)/(h1 + h2)        m = d² / (4·ae·(h1 + h2))
+  b = 2·√((m + 1)/(3·m))·cos( π/3 + (1/3)·arccos( (3·c/2)·√(3·m/(m + 1)³) ) )
+  d1 = (d/2)·(1 + b)             d2 = d − d1
+  h    = [ (h1 − d1²/(2·ae))·d2 + (h2 − d2²/(2·ae))·d1 ] / d
+  hreq = 0,552·√(d1·d2·λ/d)
+  Se h > hreq:  Lsph = 0
+  Senão:
+    aem = 0,5·( d / (√h1 + √h2) )²
+    Ah  = A(aem)
+    Lsph = 0 se Ah < 0; senão (1 − h/hreq)·Ah
+```
+
+`A(a)` é a perda além do horizonte do § 3.1.1.2, com `β = 1` (vale acima de 20 MHz em terra e de 300 MHz no mar), `d` em km, `a` em km, `f` em MHz e as alturas em m:
+
+```
+X = 2,188·f^(1/3)·a^(−2/3)·d
+Y = 9,575×10⁻³·f^(2/3)·a^(−1/3)·h          (um Y para cada antena)
+F(X) = 11 + 10·log(X) − 17,6·X             para X ≥ 1,6;   senão −20·log(X) − 5,6488·X^1,425
+G(Y) = 17,6·√(Y − 1,1) − 5·log(Y − 1,1) − 8   para Y > 2;  senão 20·log(Y + 0,1·Y³)
+A = −( F(X) + G(Y1) + G(Y2) )
+```
+
+O piso de `G(Y)` da norma (`2 + 20·log K`) não é aplicado: com `β = 1` o `K` é muito pequeno, e antena de 1 m ou mais fica sempre acima dele. O `máx(0; …)` do caso além do horizonte é um resguardo do projeto, não da norma.
+
+`Difracao.perdaDb` passa a ser a perda do método completo, e `Difracao.terraLisaDb` guarda a parcela `máx(Lsph − Lbs; 0)`, para a tela dizer quanto da perda vem do caminho liso. `calcularEnlace` usa `difracaoCompleta`.
+
+**Efeito:** em caminho liso com antenas a 8 m, a perda sobe de 11,6 para 23,3 dB em 20 km e de 19,0 para 39,7 dB em 40 km. No Long Fast com 22 dBm e sem ganho, a folga fica em 12,0 dB em 20 km e em −10,4 dB em 40 km: sobre água, os 20 km fecham e os 40 km não.
 
 ### 4.6 Conta do enlace
 
@@ -235,6 +295,24 @@ Saída de `node scripts/referencia/lora-referencia.mjs`. Tolerância de 0,01 nas
 | Morro de 100 m no meio (um ponto só), 20 km, antenas a 10 m | não | 23,36 dB | 33,55 dB |
 | Morros de 80 m aos 5 km e de 120 m aos 14 km, 20 km, antenas a 10 m | não | 28,25 dB | 38,56 dB |
 | Uma ponta a 300 m e a outra a 10 m, plano, 40 km | sim | 0 | 0 |
+
+**Terra esférica (§ 3.2),** 915 MHz, alturas acima da superfície lisa: 20 km com antenas a 8 m: 23,31 dB. 20 km a 30 m: 0. 40 km a 8 m: 39,65 dB. 40 km a 60 m: 0. 40 km com 300 m e 10 m: 0. 80 km a 10 m: 68,57 dB.
+
+**Método completo (§ 4.5.2),** 915 MHz, um ponto a cada 0,1 km:
+
+| Caso | Bullington do caminho | Do caminho liso | Terra esférica | Perda |
+|---|---|---|---|---|
+| Plano ao nível do mar, 20 km, antenas a 8 m | 11,57 | 11,57 | 23,31 | 23,31 dB |
+| Plano ao nível do mar, 20 km, antenas a 30 m | 0 | 0 | 0 | 0 |
+| Plano ao nível do mar, 40 km, antenas a 8 m | 18,99 | 18,99 | 39,65 | 39,65 dB |
+| Plano ao nível do mar, 40 km, antenas a 60 m | 0 | 0 | 0 | 0 |
+| Planalto a 800 m, 20 km, antenas a 8 m | 11,57 | 11,57 | 23,31 | 23,31 dB |
+| Morro de 100 m no meio (um ponto só), 20 km, antenas a 10 m | 33,55 | 0 | 0 | 33,55 dB |
+| Serra de 300 m entre 8 e 12 km, 20 km, antenas a 10 m | 45,46 | 0 | 0 | 45,46 dB |
+| Rampa de 0 a 400 m, 30 km, antenas a 6 m | 16,06 | 16,06 | 36,98 | 36,98 dB |
+| Terreno a 300 m só no primeiro ponto e mar depois, 40 km, antenas a 6 m | 0 | 0 | 0 | 0 |
+
+**Conta do enlace com o método completo,** Long Fast, 22 dBm, 0 dBi, sem cabo: plano ao nível do mar, 20 km, antenas a 8 m: folga de 11,99 dB e zona não livre: "fecha no limite". O mesmo com 40 km: folga de −10,37 dB: "não fecha".
 
 **Conta do enlace,** Long Fast, 22 dBm, 0 dBi, sem cabo: 20 km no ar livre: chega −95,70 dBm, folga 35,30 dB. 40 km: chega −101,72 dBm, folga 29,28 dB. Morro de 100 m no meio de 20 km, antenas de 3 dBi e 1 dB de cabo no total: chega −124,24 dBm, folga 6,76 dB: "fecha no limite".
 
