@@ -782,3 +782,61 @@ function duasFileirasNoAnenji(): Projeto {
     ['c.pos', 'inv.pvPos', 'cabo-solar-6'], ['c.neg', 'd.pos', 'cabo-solar-6'], ['d.neg', 'inv.pvNeg', 'cabo-solar-6'],
   ]);
 }
+
+describe('consultor: cômodo do aparelho citado no texto', () => {
+  const posicionar = (projeto: Projeto, uid: string, superficie: string | null, pos: [number, number, number]): Projeto => {
+    const d = projeto.dispositivos.find((x) => x.uid === uid)!;
+    d.superficie = superficie;
+    d.pos = pos;
+    return projeto;
+  };
+  const COZINHA: [string, [number, number, number]] = ['piso-terreo', [-2, 0, -2.5]];
+  const SALA: [string, [number, number, number]] = ['piso-terreo', [1, 0, 2]];
+  const VARANDA: [string, [number, number, number]] = ['piso-varanda-frente', [0, 0, 4]];
+
+  const pico = (g: [string | null, [number, number, number]], pc: [string | null, [number, number, number]]): Projeto => {
+    const projeto = montar({ inv: AIKER, b: BELIFOU, g: 'ap-geladeira', pc: 'ap-pc-trabalho' }, [
+      ...ligaBanco('inv', 'b'),
+      ['inv.caSaida', 'g.plug', 'cabo-ca-2p5'],
+      ['inv.caSaida', 'pc.plug', 'cabo-ca-2p5'],
+    ]);
+    posicionar(projeto, 'g', g[0], g[1]);
+    return posicionar(projeto, 'pc', pc[0], pc[1]);
+  };
+
+  it('`pico-de-partida` cita o cômodo da geladeira; sem superfície, o texto é o de antes', () => {
+    const com = da(consultar(pico(COZINHA, SALA)), 'pico-de-partida');
+    expect(com.titulo).toBe('O inversor pode não aguentar a partida de Geladeira grande (Cozinha)');
+    const semPosicao = da(consultar(pico([null, [0, 0, 0]], [null, [0, 0, 0]])), 'pico-de-partida');
+    expect(semPosicao.titulo).toBe('O inversor pode não aguentar a partida de Geladeira grande');
+  });
+
+  it('aparelho na varanda cita "Varanda"', () => {
+    const projeto = montar({ inv: 'inv-jesudom-3k2-24v-220', b: ALFX, g: 'ap-geladeira' }, [...ligaBanco('inv', 'b'), ['inv.caSaida', 'g.plug', 'cabo-ca-2p5']]);
+    posicionar(projeto, 'g', ...VARANDA);
+    expect(da(consultar(projeto), 'aparelho-tensao').titulo).toBe('Geladeira grande (Varanda) é de 127 V e o inversor entrega 220 V');
+  });
+
+  it('`onda-modificada` cita o cômodo do PC', () => {
+    const projeto = montar({ inv: 'inv-vedo-1000-mod', b: BELIFOU, pc: 'ap-pc-24h' }, [...ligaBanco('inv', 'b'), ['inv.caSaida', 'pc.plug', 'cabo-ca-2p5']]);
+    posicionar(projeto, 'pc', ...SALA);
+    expect(da(consultar(projeto), 'onda-modificada').titulo).toBe('Inversor de onda modificada com PC ligado 24 h (Sala)');
+  });
+
+  it('`autonomia-curta` cita o cômodo do aparelho que mais gasta', () => {
+    const projeto = pico(COZINHA, SALA);
+    const r = analisar(projeto);
+    const semCasa = analisar(pico([null, [0, 0, 0]], [null, [0, 0, 0]]));
+    const texto = (p: Projeto, e: Estimativas): string => da(analisarConsultor(p, CATALOGO, analisar(p).analise, { ...e, autonomiaHoras: 4 }), 'autonomia-curta').texto;
+    const antes = texto(pico([null, [0, 0, 0]], [null, [0, 0, 0]]), semCasa.estimativas);
+    const depois = texto(projeto, r.estimativas);
+    expect(depois).toMatch(/Desligar .+ \((Cozinha|Sala)\) sozinho/);
+    expect(depois.replace(/ \((Cozinha|Sala)\)/, '')).toBe(antes);
+  });
+
+  it('área sem nome não acrescenta nada', () => {
+    const projeto = pico(COZINHA, SALA);
+    projeto.casa.comodos = [];
+    expect(da(consultar(projeto), 'pico-de-partida').titulo).toBe('O inversor pode não aguentar a partida de Geladeira grande');
+  });
+});

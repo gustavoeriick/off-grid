@@ -5,6 +5,7 @@ import type {
 } from '../catalogo/tipos';
 import { caminhosAteOSorvedouro, correntesDeProjeto, quedasDeTensao } from './cabos';
 import { montarRedes } from './circuito';
+import { comodoDe } from './comodos';
 import { FATOR_TENSAO_CARGA, infoBanco, LIMITE_CARREGADOR_REDE_A, vmpQuente, vocFrio } from './eletrica';
 import type {
   Acao, AnaliseCircuito, Cabo, Circuito, CodigoProblema, Estimativas, InfoBanco, Nivel, PlanoMaisPlaca, Projeto,
@@ -151,6 +152,12 @@ export function analisarConsultor(
   if (sistema === null) return lista;
 
   const dispositivo = (uid: string) => projeto.dispositivos.find((d) => d.uid === uid);
+  /** "Nome (Cômodo)" do aparelho `uid`; só o nome quando ele não está em um cômodo com nome. */
+  const comComodo = (uid: string, nome: string): string => {
+    const d = dispositivo(uid);
+    const comodo = d ? comodoDe(projeto.casa, d) : null;
+    return comodo && comodo.nome !== 'Sem nome' ? `${nome} (${comodo.nome})` : nome;
+  };
   const itemDe = (uid: string): Item | undefined => {
     const d = dispositivo(uid);
     return d ? catalogo.get(d.itemId) : undefined;
@@ -254,7 +261,7 @@ export function analisarConsultor(
     sugerir({
       regra: 'aparelho-tensao',
       nivel: 'erro',
-      titulo: `${c.item.nome} é de ${inteiro(c.item.tensao)} V e o inversor entrega ${inteiro(inversor.saidaV)} V`,
+      titulo: `${comComodo(c.uid, c.item.nome)} é de ${inteiro(c.item.tensao)} V e o inversor entrega ${inteiro(inversor.saidaV)} V`,
       texto: 'Ligar um aparelho na tensão errada queima o aparelho ou o deixa sem força.',
       alvos: [c.uid],
     });
@@ -266,7 +273,7 @@ export function analisarConsultor(
       sugerir({
         regra: 'onda-modificada',
         nivel: 'alerta',
-        titulo: `Inversor de onda modificada com ${c.item.nome}`,
+        titulo: `Inversor de onda modificada com ${comComodo(c.uid, c.item.nome)}`,
         texto:
           'Onda modificada esquenta motores e pode travar ou danificar fontes de computador e nobreaks. Para esses aparelhos use inversor de onda senoidal pura.',
         alvos: [sistema.inversor, c.uid],
@@ -483,7 +490,7 @@ export function analisarConsultor(
         `O que está ligado soma ${inteiro(somaPotencia)} W e o inversor entrega ${inteiro(inversor.potenciaW)} W. ` +
         'Ele desarma. Desligue algo ou use um inversor maior.',
       alvos: [sistema.inversor, ...ligadas.map((c) => c.uid)],
-      acao: { tipo: 'desligar', rotulo: `Desligar ${minuscula(maior.item.nome)}`, dispositivo: maior.uid },
+      acao: { tipo: 'desligar', rotulo: `Desligar ${comComodo(maior.uid, minuscula(maior.item.nome))}`, dispositivo: maior.uid },
     });
   }
 
@@ -494,7 +501,7 @@ export function analisarConsultor(
     sugerir({
       regra: 'pico-de-partida',
       nivel: 'alerta',
-      titulo: `O inversor pode não aguentar a partida de ${c.item.nome}`,
+      titulo: `O inversor pode não aguentar a partida de ${comComodo(c.uid, c.item.nome)}`,
       texto:
         'Motor puxa várias vezes a potência normal no instante em que liga. ' +
         `Aqui a partida chega a ${inteiro(partida)} W e o inversor aguenta ${inteiro(inversor.picoW)} W de pico.`,
@@ -579,7 +586,7 @@ export function analisarConsultor(
       const total = ligadas.reduce((s, c) => s + c.item.mediaW, 0);
       const antes = total / inversor.rendimento + inversor.consumoVazioW;
       const depois = (total - maior.item.mediaW) / inversor.rendimento + inversor.consumoVazioW;
-      partes.push(`Desligar ${maior.item.nome} sozinho leva a ${horas((autonomia * antes) / depois)} horas.`);
+      partes.push(`Desligar ${comComodo(maior.uid, maior.item.nome)} sozinho leva a ${horas((autonomia * antes) / depois)} horas.`);
     }
     const s: Sugestao = {
       regra: 'autonomia-curta',
