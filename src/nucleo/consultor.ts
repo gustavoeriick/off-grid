@@ -743,6 +743,37 @@ function regrasDeCabos(
     }
   }
 
+  // sem-protecao-do-controlador: o cabo positivo do controlador externo até a bateria precisa de fusível ou disjuntor CC próprio.
+  if (banco !== null && sistema.banco.length > 0 && sistema.controlador !== null) {
+    const doControlador = cabosComEnd(sistema.controlador, 'batPos');
+    const protegido = doControlador.some((c) =>
+      c.protecoes.some((id) => {
+        const p = catalogo.get(id);
+        return p?.categoria === 'protecao' && TIPOS_DE_CORRENTE_CC.includes(p.tipo);
+      }),
+    );
+    const disp = projeto.dispositivos.find((d) => d.uid === sistema.controlador);
+    const item = disp ? catalogo.get(disp.itemId) : undefined;
+    if (doControlador.length > 0 && !protegido && item?.categoria === 'controlador') {
+      const corrente = item.solar.correnteCargaA;
+      // A mesma folga de 10% de `protecao-pequena` no circuito da bateria: proteção no limite abre em uso normal.
+      const escolhida = primeiroOuMaior(protecoesCorrente, (p) => p.correnteA >= 1.1 * corrente && p.tensaoMaxV >= banco.tensaoCarga);
+      const s: Sugestao = {
+        regra: 'sem-protecao-do-controlador',
+        nivel: 'erro',
+        titulo: 'Falta proteção no cabo do controlador até a bateria',
+        texto:
+          'Todo cabo que sai do positivo da bateria precisa de fusível ou disjuntor próprio, perto dela: em um curto, é ele que abre antes de o cabo pegar fogo. ' +
+          `Este controlador carrega com até ${um(corrente)} A: a proteção fica pelo menos 10% acima disso e abaixo do que o cabo aguenta.`,
+        alvos: doControlador.map((c) => c.uid),
+      };
+      if (escolhida) {
+        s.acao = { tipo: 'proteger-cabos', rotulo: `Instalar ${minuscula(escolhida.nome)}`, itens: [{ cabo: doControlador[0].uid, protecaoId: escolhida.id }] };
+      }
+      sugerir(s);
+    }
+  }
+
   // protecao-de-ca-em-cc
   const protecoesDoCabo = (c: InfoCabo): Protecao[] =>
     c.cabo.protecoes.flatMap((id) => {

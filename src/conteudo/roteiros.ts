@@ -175,7 +175,7 @@ export const ROTEIRO_12V: Roteiro = {
       id: 'controlador',
       titulo: 'Ligue um controlador de carga na bateria',
       texto:
-        'O controlador de carga fica entre a placa e a bateria e cuida da carga para não estragar a bateria. O PWM é o tipo mais simples e barato. Ligue-o primeiro na bateria (BAT+ no +, BAT− no −) e só depois na placa: os manuais pedem essa ordem.',
+        'O controlador de carga fica entre a placa e a bateria e cuida da carga para não estragar a bateria. O PWM é o tipo mais simples e barato. Ligue-o primeiro na bateria (BAT+ no +, BAT− no −) e só depois na placa: os manuais pedem essa ordem. O cabo positivo dele também sai do polo da bateria e precisa de proteção própria: arraste o disjuntor CC de 80 A, da aba Proteções, para esse cabo.',
       dica: 'O PWM serve bem para placas de 12 V, como a deste roteiro. O MPPT aproveita mais as placas maiores, mas custa mais.',
       itemId: 'ctl-pwm-30a',
       feito: (p, _d, c) => dispositivosQue(p, c, controladorPwm).length > 0 && cabosDoBanco(p, c, controladorPwm, { pos: 'batPos', neg: 'batNeg' }).length > 0,
@@ -396,15 +396,23 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       id: 'controlador',
       titulo: 'Instale o controlador de carga e ligue na bateria',
       texto:
-        'A placa não pode ser ligada direto na bateria: sem controle, ela sobrecarrega a bateria e a estraga. O controlador de carga fica entre as duas e corta a carga na hora certa. Arraste-o para a parede do fundo e ligue o BAT+ dele no + da bateria e o BAT− no −.',
-      dica: 'O controlador é ligado primeiro na bateria e só depois na placa: é pela bateria que ele descobre se o sistema é de 12 ou de 24 V. Na vida real, este cabo positivo também leva um fusível próprio, perto da bateria, do valor que o manual do controlador indicar: todo cabo que sai do polo da bateria precisa de proteção. O simulador ainda não cobra esse fusível.',
+        'A placa não pode ser ligada direto na bateria: sem controle, ela sobrecarrega a bateria e a estraga. O controlador de carga fica entre as duas e corta a carga na hora certa. Arraste-o para a parede do fundo e ligue o BAT+ dele no + da bateria e o BAT− no −. Depois proteja esse cabo positivo: arraste o disjuntor CC de 80 A, da aba Proteções, para cima dele.',
+      dica: 'O controlador é ligado primeiro na bateria e só depois na placa: é pela bateria que ele descobre se o sistema é de 12 ou de 24 V. Todo cabo que sai do polo positivo da bateria precisa de proteção própria, perto dela. O controlador carrega com até 30 A, e a proteção fica acima disso com folga: no catálogo, a menor que serve é a de 80 A, que ainda protege este cabo de 35 mm² (ele aguenta 155 A). Na compra, um disjuntor CC de 40 A, se o manual do controlador indicar, faz o mesmo papel.',
       itemId: 'ctl-pwm-30a',
-      feito: (p, _d, c) => cabosDoBanco(p, c, controladorPwm, { pos: 'batPos', neg: 'batNeg' }).length > 0,
+      feito: (p, _d, c) =>
+        cabosDoBanco(p, c, controladorPwm, { pos: 'batPos', neg: 'batNeg' }).some(
+          (par) => temProtecao(par.pos, c, 'fusivel') || temProtecao(par.pos, c, 'disjuntorCC'),
+        ),
       onde: (p, c) => {
         const ctl = primeiro(p, c, controladorPwm);
         const b = primeiro(p, c, bateriaDeChumbo12);
         if (!ctl) return [superficie('parede-quartinho-fundo')];
-        return b ? ligacoesQueFaltam(p, [[b.uid, 'pos', ctl.uid, 'batPos'], [b.uid, 'neg', ctl.uid, 'batNeg']]) : [];
+        if (!b) return [];
+        const faltam = ligacoesQueFaltam(p, [[b.uid, 'pos', ctl.uid, 'batPos'], [b.uid, 'neg', ctl.uid, 'batNeg']]);
+        if (faltam.length > 0) return faltam;
+        // Cabos ligados: falta a proteção no positivo.
+        const positivo = caboEntre(p, b.uid, 'pos', ctl.uid, 'batPos');
+        return positivo ? [{ tipo: 'cabo', uid: positivo.uid }] : [];
       },
     },
     {

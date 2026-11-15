@@ -889,3 +889,33 @@ describe('consultor: cômodo do aparelho citado no texto', () => {
     expect(da(consultar(projeto), 'pico-de-partida').titulo).toBe('O inversor pode não aguentar a partida de Geladeira grande');
   });
 });
+
+describe('`sem-protecao-do-controlador`', () => {
+  const sistema = (): Projeto =>
+    montar({ inv: AIKER, b: 'bat-moura-12mn105', ctl: PWM, p: 'placa-resun-100' }, [
+      ['inv.batPos', 'b.pos', 'cabo-bat-35', 1], ['inv.batNeg', 'b.neg', 'cabo-bat-35', 1],
+      ['ctl.batPos', 'b.pos', 'cabo-bat-35', 1], ['ctl.batNeg', 'b.neg', 'cabo-bat-35', 1],
+      ['p.pos', 'ctl.pvPos', 'cabo-solar-6'], ['p.neg', 'ctl.pvNeg', 'cabo-solar-6'],
+    ]);
+
+  it('cabo do controlador até a bateria sem fusível: erro, com o disjuntor CC de 80 A na ação', () => {
+    const projeto = sistema();
+    projeto.cabos[0]!.protecoes = ['prot-fusivel-anl-100'];
+    // O fusível do inversor não protege o cabo do controlador.
+    const s = da(consultar(projeto), 'sem-protecao-do-controlador');
+    expect(s.nivel).toBe('erro');
+    expect(s.texto).toContain('carrega com até 30 A');
+    expect(s.alvos).toEqual([projeto.cabos[2]!.uid]);
+    expect(s.acao).toMatchObject({ tipo: 'proteger-cabos', itens: [{ cabo: projeto.cabos[2]!.uid, protecaoId: 'prot-disjuntor-cc-80' }] });
+    aplicar(projeto, s.acao!);
+    const depois = regras(consultar(projeto));
+    expect(depois).not.toContain('sem-protecao-do-controlador');
+    // 32 A ficaria abaixo dos 10% de folga sobre os 30 A; o de 80 A, em cabo de 155 A, não gera outra queixa de cabo.
+    for (const r of ['protecao-maior-que-o-cabo', 'cabo-fino', 'protecao-pequena', 'tensao-da-protecao']) expect(depois).not.toContain(r);
+  });
+
+  it('não aparece sem controlador externo: plano no papel e plano corrigido', () => {
+    expect(regras(consultar(cenarioPlanoNoPapel()))).not.toContain('sem-protecao-do-controlador');
+    expect(regras(consultar(cenarioPlanoCorrigido()))).not.toContain('sem-protecao-do-controlador');
+  });
+});

@@ -52,7 +52,7 @@ function projeto12V(): Projeto {
     cabos: [
       cabo('c1', 'bateria.pos', 'inversor.batPos', 'cabo-bat-35', ['prot-fusivel-anl-100']),
       cabo('c2', 'bateria.neg', 'inversor.batNeg', 'cabo-bat-35'),
-      cabo('c3', 'ctl.batPos', 'bateria.pos', 'cabo-bat-35'),
+      cabo('c3', 'ctl.batPos', 'bateria.pos', 'cabo-bat-35', ['prot-disjuntor-cc-80']),
       cabo('c4', 'ctl.batNeg', 'bateria.neg', 'cabo-bat-35'),
       cabo('c5', 'placa.pos', 'ctl.pvPos', 'cabo-solar-6'),
       cabo('c6', 'placa.neg', 'ctl.pvNeg', 'cabo-solar-6'),

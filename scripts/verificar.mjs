@@ -1941,6 +1941,15 @@ async function principal() {
     await exigirDestaque('terminal', 'no passo 6, com o controlador, deveria haver realce de terminais');
     await cabo(bateria, 'pos', ctl, 'batPos');
     await cabo(bateria, 'neg', ctl, 'batNeg');
+    // Com os dois cabos, o passo 6 ainda pede a proteção no positivo do controlador: realce no cabo e disjuntor sobre ele.
+    await noPasso(6);
+    d = await exigirDestaque('cabo', 'no passo 6, com os cabos, deveria haver realce no cabo positivo do controlador');
+    p = await projeto();
+    const caboCtl = p.cabos.find((c) => [c.de, c.para].some((x) => x.disp === ctl && x.terminal === 'batPos'));
+    conferir(d.length === 1 && d[0].uid === caboCtl.uid, `o realce deveria ser o cabo positivo do controlador: ${JSON.stringify(d)}`);
+    const sDj = await levar(await doCartao('prot-disjuntor-cc-80'), await og((u) => window.__offgrid.telaDoCabo(u, 0.5), caboCtl.uid));
+    conferir(sDj.modo === 'protecao' && sDj.valido === true, `o disjuntor sobre o cabo do controlador deveria poder ser instalado: ${JSON.stringify(sDj)}`);
+    await soltar();
     await noPasso(7);
 
     // ---- Passo 7: cabos da placa no controlador.

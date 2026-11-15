@@ -240,8 +240,12 @@ describe('tutorial', () => {
     const positivo = liga(bat, 'pos', inv, 'batPos');
     liga(bat, 'neg', inv, 'batNeg');
     acoes.instalarProtecao(positivo, 'prot-fusivel-anl-100');
-    liga(bat, 'pos', ctl, 'batPos');
+    const doControlador = liga(bat, 'pos', ctl, 'batPos');
     liga(bat, 'neg', ctl, 'batNeg');
+    // Sem proteção no cabo do controlador, o consultor acusa erro e o passo 6 não fecha.
+    recalcularAgora();
+    expect(estado.derivados.sugestoes.some((s) => s.regra === 'sem-protecao-do-controlador')).toBe(true);
+    acoes.instalarProtecao(doControlador, 'prot-disjuntor-cc-80');
     liga(placa, 'pos', ctl, 'pvPos');
     liga(placa, 'neg', ctl, 'pvNeg');
     liga(lamp, 'plug', inv, 'caSaida');

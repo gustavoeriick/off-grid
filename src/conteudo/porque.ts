@@ -210,6 +210,11 @@ export const PORQUE: Record<string, PorQue> = {
       'O fusível protege o cabo, não o aparelho: ele é o ponto fraco de propósito. Por isso fica no começo do cabo, junto ao positivo: um curto em qualquer ponto depois dele faz a corrente passar por ele. O trecho entre a bateria e o fusível fica sem proteção, então precisa ser o mais curto possível. O seu plano prevê fusível ou disjuntor CC de 150 A junto ao positivo. Com esse fusível o cabo precisa aguentar 150 A: o de 25 mm² aguenta 125 A, e o simulador pede 35 mm².',
     termos: ['fusivel', 'disjuntor-cc', 'curto-circuito', 'bitola'],
   },
+  'sem-protecao-do-controlador': {
+    texto:
+      'A bateria é a fonte mais perigosa do sistema: em um curto ela entrega centenas de ampères, e é isso que derrete o cabo. O fusível do inversor só protege o cabo do inversor. O cabo do controlador de carga é outro cabo saindo do mesmo polo positivo, em geral mais fino, e precisa da proteção dele, perto da bateria. O valor fica acima da corrente do controlador, com pelo menos 10% de folga para não abrir em uso normal, e sempre igual ou abaixo do que o cabo aguenta. O simulador escolhe a menor proteção do catálogo que atende; o manual do controlador costuma indicar o valor certo para ele.',
+    termos: ['fusivel', 'disjuntor-cc', 'curto-circuito'],
+  },
   'protecao-de-ca-em-cc': {
     texto:
       'Ao abrir um circuito com corrente, forma-se um arco elétrico entre os contatos. Em corrente alternada, a corrente passa por zero 120 vezes por segundo, e o arco se apaga sozinho em uma dessas passagens. Em corrente contínua ela nunca passa por zero, e o arco continua aceso se o disjuntor não foi feito para apagá-lo. O disjuntor CC é construído para isso e muitas vezes tem polaridade marcada, que precisa ser seguida.',

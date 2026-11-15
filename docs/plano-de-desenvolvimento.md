@@ -265,7 +265,7 @@ A coleta complementar (parte D) foi feita em 14/11/2026 e está no mesmo arquivo
 
 Ideias para depois, anotadas a pedido do Gustavo em 15/11/2026 (nada disso está planejado nem aprovado):
 
-- **Segunda área do projeto sobre Lora.** Ele pediu só para anotar; o escopo está em aberto.
+- **Segunda área do projeto sobre o rádio LoRa** (longo alcance e baixo consumo). Ele pediu só para anotar; o escopo está em aberto.
 - **Acabamento da instalação:** preço e mais opções de grampo, canaleta ou eletroduto para os circuitos de tomada, e prateleira para bateria e inversor.
 
 O objetivo do projeto, nas palavras dele em 15/11/2026: aprender sobre instalação solar off-grid e ter uma noção da autonomia do conjunto.
