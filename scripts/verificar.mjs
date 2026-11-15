@@ -8,6 +8,7 @@ import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { interceptarBlocos, LUGARES } from './blocos-falsos.mjs';
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pasta = join(raiz, 'verificacao');
@@ -98,7 +99,11 @@ async function principal() {
     if (m.type() === 'error') erros.push(`console: ${m.text()}`);
   });
   pagina.on('pageerror', (e) => erros.push(`página: ${e.message}`));
-  pagina.on('requestfailed', (r) => erros.push(`requisição falhou: ${r.url()}`));
+  pagina.on('requestfailed', (r) => {
+    // O mapa do ambiente de rádio desiste sozinho dos blocos de que não precisa mais (ao mudar de zoom, por exemplo): isso não é erro.
+    if (r.failure()?.errorText === 'net::ERR_ABORTED' && r.url().startsWith('https://tile.openstreetmap.org/')) return;
+    erros.push(`requisição falhou: ${r.url()}`);
+  });
   pagina.on('response', (r) => {
     if (r.status() >= 400) erros.push(`HTTP ${r.status()}: ${r.url()}`);
   });
@@ -2435,10 +2440,221 @@ async function principal() {
   }
   await verificarArrumarCabos();
 
+  // Mapa e corte do terreno do ambiente de rádio (especificacao/lora.md, seção 7), tudo com o mouse.
+  // O terreno é o inventado em scripts/blocos-falsos.mjs: dois morros que se enxergam por cima de um vale
+  // (enlace que fecha com folga) e um lugar atrás de uma serra (enlace que não fecha).
+  async function verificarLoraMapa(lora, pedidos) {
+    const tela = (c) => pagina.evaluate(([lat, lon]) => window.__lora.mapa.telaDe(lat, lon), [c.lat, c.lon]);
+    const telaDoPonto = (id) => pagina.evaluate((i) => window.__lora.telaDoPonto(i), id);
+    const situacao = () =>
+      pagina.evaluate(() => {
+        const en = window.__lora.estado().projeto.enlaces[0];
+        const s = en ? window.__lora.situacaoDoEnlace(en.de, en.para) : null;
+        if (!s || s.estado !== 'pronto') return s;
+        return { estado: 'pronto', veredito: s.resultado.veredito, texto: s.resultado.texto, km: s.resultado.geometria.distanciaKm, zonaLivre: s.resultado.geometria.zonaLivre, folgaDb: s.resultado.conta.folgaDb };
+      });
+    const esperarSituacao = async (estado) => {
+      await pagina.waitForFunction(
+        (alvo) => {
+          const en = window.__lora.estado().projeto.enlaces[0];
+          return en && window.__lora.situacaoDoEnlace(en.de, en.para)?.estado === alvo;
+        },
+        estado,
+        { timeout: 30000 },
+      );
+      return situacao();
+    };
+    /** Espera o mapa parar de se mexer (o enquadramento é animado). */
+    const mapaParado = async () => {
+      const ler = () => pagina.evaluate(() => JSON.stringify([window.__lora.mapa.centro(), window.__lora.mapa.zoom()]));
+      let anterior = await ler();
+      for (let i = 0; i < 50; i++) {
+        await esperar(200);
+        const agora = await ler();
+        if (agora === anterior) return;
+        anterior = agora;
+      }
+      throw new Error('O mapa não parou de se mexer.');
+    };
+    const pressionado = async (seletor) => (await pagina.locator(seletor).getAttribute('aria-pressed')) === 'true';
+    const cursorDoMapa = () => pagina.evaluate(() => getComputedStyle(document.querySelector('#lora-mapa .maplibregl-canvas-container')).cursor);
+
+    // Abertura: projeto vazio mostra o Brasil inteiro, sem centrar em cidade nenhuma; os créditos e o aviso estão na tela.
+    let e = await lora();
+    conferir(e.projeto.pontos.length === 0, `o projeto de rádio deveria estar vazio: ${e.projeto.pontos.length} pontos`);
+    await esperar(800);
+    const visao = await pagina.evaluate(() => ({ c: window.__lora.mapa.centro(), z: window.__lora.mapa.zoom() }));
+    conferir(visao.z < 5 && visao.c.lat < -8 && visao.c.lat > -22 && visao.c.lon < -46 && visao.c.lon > -62, `a visão inicial deveria ser o Brasil inteiro: ${JSON.stringify(visao)}`);
+    const creditos = await pagina.locator('#lora-mapa .maplibregl-ctrl-attrib').textContent();
+    conferir(creditos.includes('© colaboradores do OpenStreetMap') && creditos.includes('Terrain Tiles'), `os créditos do mapa e do relevo deveriam aparecer: "${creditos}"`);
+    conferir((await pagina.locator('#lora-mapa .maplibregl-ctrl-zoom-in').count()) === 1, 'o mapa deveria ter os botões de zoom');
+    conferir((await pagina.locator('#lora-corte').isHidden()), 'sem enlace selecionado, o corte do terreno fica escondido');
+    const aviso = pagina.locator('#lora-aviso-mapa');
+    conferir((await aviso.textContent()).includes('nunca saem deste navegador'), 'o aviso de privacidade do mapa deveria aparecer na primeira vez');
+    await pagina.locator('#lora-aviso-entendi').click();
+    conferir((await aviso.count()) === 0, '"Entendi" deveria fechar o aviso do mapa');
+
+    // Ferramenta "Novo ponto": fica marcada, o cursor muda e o próximo clique no mapa cria uma casa.
+    await pagina.evaluate(([lat, lon]) => window.__lora.mapa.irPara(lat, lon, 9.9), [LUGARES.centro.lat, LUGARES.centro.lon]);
+    await esperar(800);
+    conferir(await pagina.locator('#lora-ligar').isDisabled(), 'sem dois pontos, "Ligar dois pontos" fica desligado');
+    await pagina.locator('#lora-novo-ponto').click();
+    conferir((await pressionado('#lora-novo-ponto')) && (await cursorDoMapa()) === 'crosshair', `"Novo ponto" deveria ficar marcado e mudar o cursor: ${await cursorDoMapa()}`);
+    let p = await tela(LUGARES.morroA);
+    await pagina.mouse.click(p.x, p.y);
+    e = await lora();
+    conferir(e.projeto.pontos.length === 1 && e.projeto.pontos[0].tipo === 'casa', 'o clique no mapa deveria criar uma casa');
+    conferir(Math.abs(e.projeto.pontos[0].lat - LUGARES.morroA.lat) < 0.002 && Math.abs(e.projeto.pontos[0].lon - LUGARES.morroA.lon) < 0.002, `o ponto deveria ficar onde foi o clique: ${JSON.stringify(e.projeto.pontos[0])}`);
+    conferir(e.selecao?.tipo === 'ponto' && !(await pressionado('#lora-novo-ponto')), 'o ponto novo fica selecionado e a ferramenta desliga');
+    await pagina.locator('#lora-novo-ponto').click();
+    p = await tela(LUGARES.morroB);
+    await pagina.mouse.click(p.x, p.y);
+    e = await lora();
+    conferir(e.projeto.pontos.length === 2, 'o segundo clique deveria criar o segundo ponto');
+    const [idA, idB] = e.projeto.pontos.map((x) => x.id);
+    conferir((await pagina.locator('#lora-mapa .lora-ponto[data-tipo="casa"]').count()) === 2, 'o mapa deveria mostrar as duas casas');
+    conferir((await pagina.locator('#lora-mapa .lora-ponto-nome').allTextContents()).join('|') === 'Ponto 1|Ponto 2', 'cada ponto mostra o nome ao lado');
+    conferir(await pagina.locator('#lora-ligar-direto').isVisible(), 'com dois pontos soltos, o mapa oferece ligar direto');
+    await captura('103-lora-dois-pontos');
+
+    // "Ligar dois pontos": Esc cancela; depois, um clique em cada ponto cria o enlace.
+    const a = await telaDoPonto(idA);
+    const b = await telaDoPonto(idB);
+    await pagina.locator('#lora-ligar').click();
+    await pagina.mouse.click(a.x, a.y);
+    conferir((await pagina.locator('#lora-dica').textContent()).includes('Ponto 1'), 'a dica deveria dizer que falta o segundo ponto');
+    await pagina.keyboard.press('Escape');
+    conferir(!(await pressionado('#lora-ligar')) && (await lora()).projeto.enlaces.length === 0, 'Esc deveria cancelar a ligação');
+    await pagina.locator('#lora-ligar').click();
+    conferir(await pressionado('#lora-ligar'), '"Ligar dois pontos" deveria ficar marcado');
+    await pagina.mouse.click(a.x, a.y);
+    await pagina.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2 + 40);
+    await captura('104-lora-ligando');
+    await pagina.mouse.click(b.x, b.y);
+    e = await lora();
+    conferir(e.projeto.enlaces.length === 1 && e.selecao?.tipo === 'enlace', 'os dois cliques deveriam criar o enlace e selecioná-lo');
+
+    // O enlace calcula com o relevo baixado: de morro a morro, por cima do vale, fecha com folga.
+    let s = await esperarSituacao('pronto');
+    conferir(s.veredito === 'folga' && s.zonaLivre && s.km > 20 && s.km < 22, `de morro a morro o enlace deveria fechar com folga: ${JSON.stringify(s)}`);
+    const rotulo = pagina.locator('#lora-mapa .lora-enlace-rotulo');
+    conferir((await rotulo.textContent()).includes('km') && (await rotulo.textContent()).includes('fecha com folga'), `o rótulo do enlace deveria dizer a distância e o veredito: "${await rotulo.textContent()}"`);
+    conferir((await pagina.locator('#lora-mapa .lora-enlace').getAttribute('data-tom')) === 'folga', 'a linha deveria ter a cor do veredito');
+
+    // Clique fora tira a seleção e esconde o corte; clique na linha seleciona o enlace e mostra o corte.
+    p = await tela(LUGARES.centro);
+    await pagina.mouse.click(p.x, p.y);
+    conferir((await lora()).selecao === null && (await pagina.locator('#lora-corte').isHidden()), 'clique no mapa vazio deveria tirar a seleção e esconder o corte');
+    const a2 = await telaDoPonto(idA);
+    const b2 = await telaDoPonto(idB);
+    await pagina.mouse.click(a2.x + (b2.x - a2.x) * 0.25, a2.y + (b2.y - a2.y) * 0.25);
+    conferir((await lora()).selecao?.tipo === 'enlace', 'clique na linha deveria selecionar o enlace');
+    const corte = pagina.locator('#lora-corte');
+    conferir(await corte.isVisible(), 'com o enlace selecionado, o corte do terreno aparece');
+    for (const parte of ['.corte-terreno', '.corte-linha', '.corte-fresnel-60', '.corte-fresnel-contorno', '.corte-pior', '.corte-antena']) {
+      conferir((await corte.locator(parte).count()) >= 1, `o corte do terreno deveria desenhar ${parte}`);
+    }
+    const textoDoCorte = await corte.textContent();
+    conferir(['Ponto 1', 'Ponto 2', 'km', 'Zona de Fresnel', 'fecha com folga', 'antena a 6 m'].every((t) => textoDoCorte.includes(t)), `o corte deveria ter nomes, eixos, legenda e veredito: "${textoDoCorte}"`);
+    await captura('105-lora-enlace-com-folga');
+
+    // O ponteiro sobre o corte mostra distância, altitude e folga, e marca o lugar no mapa.
+    let g = await corte.locator('.lora-corte-grafico').boundingBox();
+    await pagina.mouse.move(g.x + g.width * 0.45, g.y + g.height * 0.6);
+    const leitura = await corte.locator('.lora-corte-leitura').textContent();
+    conferir(leitura.includes('km de Ponto 1') && leitura.includes('de altitude') && leitura.includes('Folga de'), `a leitura do ponteiro deveria ter distância, altitude e folga: "${leitura}"`);
+    conferir(await pagina.locator('#lora-mapa .lora-marca-caminho').isVisible(), 'o lugar do ponteiro deveria aparecer marcado no mapa');
+    await captura('106-lora-ponteiro-no-corte');
+
+    // Arrastar o ponto 2 para trás da serra: o enlace recalcula e deixa de fechar. O arraste é um passo só de desfazer.
+    const antes = (await lora()).projeto.pontos[1];
+    const de = await telaDoPonto(idB);
+    const para = await tela(LUGARES.atrasDaSerra);
+    await pagina.mouse.move(de.x, de.y);
+    await pagina.mouse.down();
+    await pagina.mouse.move((de.x + para.x) / 2, (de.y + para.y) / 2, { steps: 6 });
+    await pagina.mouse.move(para.x, para.y, { steps: 6 });
+    await pagina.mouse.up();
+    e = await lora();
+    conferir(Math.abs(e.projeto.pontos[1].lat - LUGARES.atrasDaSerra.lat) < 0.003 && Math.abs(e.projeto.pontos[1].lon - LUGARES.atrasDaSerra.lon) < 0.003, `o arraste deveria levar o ponto ao lugar novo: ${JSON.stringify(e.projeto.pontos[1])}`);
+    conferir(e.selecao?.tipo === 'enlace', 'arrastar a ponta do enlace selecionado mantém o enlace selecionado');
+    s = await esperarSituacao('pronto');
+    conferir(s.veredito === 'nao-fecha' && !s.zonaLivre && s.folgaDb < 0, `com a serra no caminho o enlace não deveria fechar: ${JSON.stringify(s)}`);
+    conferir((await rotulo.textContent()).includes('não fecha') && (await corte.textContent()).includes('corta a linha'), 'o mapa e o corte deveriam dizer que o enlace não fecha e onde o terreno corta a linha');
+    g = await corte.locator('.lora-corte-grafico').boundingBox();
+    await pagina.mouse.move(g.x + g.width * 0.62, g.y + g.height * 0.6);
+    await captura('107-lora-enlace-nao-fecha');
+    await pagina.mouse.move(g.x + g.width * 0.5, g.y - 200);
+    await pagina.keyboard.press('Control+z');
+    e = await lora();
+    conferir(e.projeto.pontos[1].lat === antes.lat && e.projeto.pontos[1].lon === antes.lon, 'um Ctrl+Z só deveria devolver o ponto arrastado ao lugar de antes');
+    s = await esperarSituacao('pronto');
+    conferir(s.veredito === 'folga', `desfeito o arraste, o enlace volta a fechar com folga: ${JSON.stringify(s)}`);
+
+    // "Novo repetidor": desenho diferente do da casa. Delete apaga o ponto selecionado.
+    await pagina.locator('#lora-novo-repetidor').click();
+    p = await tela(LUGARES.centro);
+    await pagina.mouse.click(p.x, p.y);
+    e = await lora();
+    conferir(e.projeto.pontos.length === 3 && e.projeto.pontos[2].tipo === 'repetidor' && e.selecao?.tipo === 'ponto', 'o clique deveria criar um repetidor e selecioná-lo');
+    conferir((await pagina.locator('#lora-mapa .lora-ponto[data-tipo="repetidor"]').count()) === 1, 'o repetidor deveria ter o desenho próprio');
+    await captura('108-lora-repetidor');
+    await pagina.keyboard.press('Delete');
+    e = await lora();
+    conferir(e.projeto.pontos.length === 2 && e.projeto.enlaces.length === 1, 'Delete deveria apagar o repetidor selecionado, e só ele');
+
+    // Relevo que não baixa: o corte mostra o erro e "Tentar de novo" refaz a conta. O ponto vai para longe, onde nenhum bloco foi baixado.
+    const errosAntes = erros.length;
+    pedidos.relevoFalha = true;
+    await pagina.evaluate((id) => window.__lora.acoes.alterarPonto(id, { lat: -10.7, lon: -50.6 }), idB);
+    await pagina.evaluate(([x, y]) => window.__lora.acoes.selecionar({ tipo: 'enlace', de: x, para: y }), [idA, idB]);
+    s = await esperarSituacao('erro');
+    conferir(s.mensagem.includes('bloco de relevo'), `a falha do relevo deveria ter mensagem clara: ${JSON.stringify(s)}`);
+    conferir((await corte.locator('.lora-corte-situacao').textContent()).includes('bloco de relevo') && (await corte.locator('#lora-corte-tentar').isVisible()), 'o corte deveria mostrar o erro e o botão "Tentar de novo"');
+    conferir((await rotulo.textContent()).includes('sem relevo'), 'o rótulo do enlace deveria dizer que falta o relevo');
+    await pagina.locator('#lora-enquadrar').click();
+    await mapaParado();
+    await captura('109-lora-erro-de-relevo');
+    pedidos.relevoFalha = false;
+    await esperar(300);
+    // Os erros de rede deste trecho são os provocados de propósito (resposta 503 do relevo); qualquer outro continua valendo.
+    const provocados = erros.splice(errosAntes);
+    erros.push(...provocados.filter((x) => !x.includes('503')));
+    await pagina.locator('#lora-corte-tentar').click();
+    s = await esperarSituacao('pronto');
+    conferir(await corte.locator('.corte-terreno').isVisible(), 'depois de "Tentar de novo" o corte do terreno deveria aparecer');
+    await pagina.keyboard.press('Control+z');
+    s = await esperarSituacao('pronto');
+    conferir(s.veredito === 'folga', 'desfazer a mudança de lugar devolve o enlace com folga');
+
+    // Delete com o enlace selecionado apaga só o enlace; com um ponto selecionado, apaga o ponto.
+    await pagina.evaluate(([x, y]) => window.__lora.acoes.selecionar({ tipo: 'enlace', de: x, para: y }), [idA, idB]);
+    await pagina.keyboard.press('Delete');
+    e = await lora();
+    conferir(e.projeto.enlaces.length === 0 && e.projeto.pontos.length === 2, 'Delete com o enlace selecionado deveria apagar só o enlace');
+    conferir((await pagina.locator('#lora-mapa .lora-enlace').count()) === 0 && (await corte.isHidden()), 'sem enlace, a linha e o corte somem');
+    await pagina.locator('#lora-enquadrar').click();
+    await mapaParado();
+    const fim = await telaDoPonto(idB);
+    await pagina.mouse.click(fim.x, fim.y);
+    conferir((await lora()).selecao?.id === idB, 'clique no ponto deveria selecioná-lo');
+    await pagina.keyboard.press('Delete');
+    e = await lora();
+    conferir(e.projeto.pontos.length === 1 && e.projeto.pontos[0].id === idA, 'Delete deveria apagar o ponto selecionado');
+    await captura('110-lora-ponto-apagado');
+
+    // Privacidade: só os dois serviços interceptados foram chamados, e os dois foram mesmo usados.
+    conferir(pedidos.outros.length === 0, `nenhum pedido deveria sair para outro endereço: ${pedidos.outros.join(', ')}`);
+    conferir(pedidos.mapa > 0 && pedidos.relevo > 0, `o mapa e o relevo deveriam ter pedido blocos: ${pedidos.mapa} e ${pedidos.relevo}`);
+  }
+
   // Ambiente de rádio LoRa (especificacao/lora.md, seção 1): página própria, seletor de ambiente e projetos separados.
   // Os pontos de teste ficam em lugares neutros, sem relação com casa nenhuma.
   async function verificarLora() {
     const solarAntes = await pagina.evaluate(() => JSON.stringify(window.__offgrid.estado().projeto));
+    // O ambiente de rádio pede blocos de mapa e de relevo a dois serviços de fora. Aqui eles são interceptados e
+    // respondidos com blocos falsos: a verificação não depende da internet e nada sai para fora.
+    const pedidos = await interceptarBlocos(pagina, url);
     // O seletor fica na barra do alto, que continua com uma linha só em 1280 px.
     const topo = await pagina.locator('#topo').boundingBox();
     conferir(topo.height <= 49, `a barra do alto do solar deveria ter uma linha só: ${topo.height} px`);
@@ -2465,7 +2681,9 @@ async function principal() {
       const p2 = a.adicionarPonto(-10.2, -50.3, 'casa', 'Ponto B');
       a.ligar(p1, p2);
     });
-    conferir((await pagina.locator('#lora-resumo').textContent()).includes('2 pontos e 1 enlace'), 'o resumo deveria contar os pontos e o enlace');
+    e = await lora();
+    conferir(e.projeto.pontos.length === 2 && e.projeto.enlaces.length === 1, 'o projeto deveria ter dois pontos e um enlace');
+    conferir((await pagina.locator('#lora-mapa .lora-ponto').count()) === 2 && (await pagina.locator('#lora-mapa .lora-enlace').count()) === 1, 'o mapa deveria desenhar os dois pontos e o enlace');
     await pagina.keyboard.press('Control+z');
     conferir((await lora()).projeto.enlaces.length === 0, 'Ctrl+Z deveria desfazer o enlace');
     await esperar(600);
@@ -2480,6 +2698,8 @@ async function principal() {
     await pagina.locator('#lora-lista-de-projetos .projeto-item[data-nome="Rede de teste"] [data-acao="apagar"]').click();
     conferir((await lora()).projeto.nome !== 'Rede de teste', 'apagar deveria abrir outro projeto');
     await pagina.locator('#lora-painel-projetos .fechar-sobreposto').click();
+
+    await verificarLoraMapa(lora, pedidos);
 
     // De volta ao solar: o projeto dele está como estava.
     await pagina.locator('.ambientes a', { hasText: 'Solar' }).click();

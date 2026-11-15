@@ -29,15 +29,723 @@
   padding: 10px 12px;
 }
 
-.lora-espera {
-  max-width: 34rem;
-  margin: 12vh auto 0;
-  padding: 16px 20px;
+/* ---------------------------------------------------------------- Mapa, pontos e enlaces (L2.1) */
+
+#lora-centro {
+  display: flex;
+  flex-direction: column;
+  /* Cores do veredito no mapa e no corte do terreno; sempre acompanhadas das palavras. */
+  --tom-folga: #1b7f3b;
+  --tom-limite: #e0a100;
+  --tom-nao-fecha: #c62828;
+  --tom-cinza: #7b8794;
+}
+
+#lora-mapa-area {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 180px;
+}
+
+#lora-mapa {
+  position: absolute;
+  inset: 0;
+}
+
+#lora-mapa .maplibregl-ctrl-attrib {
+  font-size: 11px;
+}
+
+#lora-mapa-area[data-ferramenta='ponto'] .maplibregl-canvas-container,
+#lora-mapa-area[data-ferramenta='repetidor'] .maplibregl-canvas-container {
+  cursor: crosshair;
+}
+
+#lora-mapa-area[data-ferramenta='ligar'] .maplibregl-canvas-container {
+  cursor: default;
+}
+
+#lora-mapa-area[data-ferramenta='ligar'] .lora-ponto {
+  cursor: pointer;
+}
+
+.lora-ferramentas {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
   background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.lora-dica {
+  position: absolute;
+  top: 50px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  width: fit-content;
+  max-width: min(44rem, calc(100% - 24px));
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 4px 10px;
+  background: #fff8e1;
+  border: 1px solid #f0c36d;
+  border-radius: 6px;
+  color: #5d4300;
+  font-size: 12.5px;
+  line-height: 1.5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.lora-dica[hidden] {
+  display: none;
+}
+
+.lora-dica button {
+  padding: 1px 8px;
+  font-size: 12.5px;
+  color: #1f2933;
+}
+
+.lora-aviso-mapa {
+  position: absolute;
+  left: 12px;
+  bottom: 40px;
+  z-index: 4;
+  width: 320px;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  padding: 8px 12px 10px;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--destaque);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.lora-aviso-mapa h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.lora-aviso-mapa p {
+  margin: 0 0 6px;
+}
+
+.lora-aviso-mapa button {
+  background: var(--destaque);
+  border-color: var(--destaque);
+  color: #fff;
+}
+
+/* A camada dos enlaces e dos pontos fica por cima do mapa e só os desenhos respondem ao ponteiro. */
+.lora-linhas,
+.lora-marcas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lora-enlace-borda {
+  stroke: #fff;
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.lora-enlace-traco {
+  stroke: var(--tom-cinza);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.lora-enlace-alvo {
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.lora-enlace[data-tom='folga'] .lora-enlace-traco { stroke: var(--tom-folga); }
+.lora-enlace[data-tom='limite'] .lora-enlace-traco { stroke: var(--tom-limite); }
+.lora-enlace[data-tom='nao-fecha'] .lora-enlace-traco { stroke: var(--tom-nao-fecha); }
+.lora-enlace[data-tom='calculando'] .lora-enlace-traco { stroke-dasharray: 2 9; }
+.lora-enlace[data-tom='erro'] .lora-enlace-traco { stroke-dasharray: 10 8; }
+
+.lora-enlace.selecionado .lora-enlace-borda {
+  stroke: #1f2933;
+  stroke-width: 10;
+}
+
+.lora-enlace.selecionado .lora-enlace-traco {
+  stroke-width: 5;
+}
+
+.lora-elastico {
+  stroke: var(--destaque);
+  stroke-width: 3;
+  stroke-dasharray: 6 6;
+  stroke-linecap: round;
+}
+
+.lora-enlace-rotulo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 2px 7px;
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  background: #fff;
+  color: #1f2933;
+  font-size: 12.5px;
+  white-space: nowrap;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.lora-enlace-rotulo[hidden] {
+  display: none;
+}
+
+.lora-enlace-rotulo:hover {
+  background: #eef2f6;
+}
+
+.lora-enlace-rotulo.selecionado {
+  border-color: #1f2933;
+  box-shadow: 0 0 0 1px #1f2933, 0 1px 5px rgba(0, 0, 0, 0.3);
+}
+
+.lora-enlace-cor {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tom-cinza);
+}
+
+.lora-enlace-rotulo[data-tom='folga'] .lora-enlace-cor { background: var(--tom-folga); }
+.lora-enlace-rotulo[data-tom='limite'] .lora-enlace-cor { background: var(--tom-limite); }
+.lora-enlace-rotulo[data-tom='nao-fecha'] .lora-enlace-cor { background: var(--tom-nao-fecha); }
+
+/* Um ponto: o desenho fica centrado na coordenada e o nome vai ao lado. */
+.lora-ponto {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
+  cursor: grab;
+  touch-action: none;
+  --cor-do-ponto: var(--destaque);
+}
+
+.lora-ponto:hover {
+  background: none;
+}
+
+.lora-ponto:focus-visible {
+  outline: none;
+}
+
+.lora-ponto[data-tipo='repetidor'] {
+  --cor-do-ponto: #6a1b9a;
+}
+
+.lora-ponto.arrastando {
+  cursor: grabbing;
+  z-index: 2;
+}
+
+.lora-ponto-desenho {
+  position: absolute;
+  left: -17px;
+  top: -17px;
+  width: 34px;
+  height: 34px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--cor-do-ponto);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--cor-do-ponto);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+/* O repetidor é um losango; a casa é um círculo. A diferença não depende da cor. */
+.lora-ponto[data-tipo='repetidor'] .lora-ponto-desenho {
+  border-radius: 7px;
+  transform: rotate(45deg);
+}
+
+.lora-ponto[data-tipo='repetidor'] .lora-ponto-desenho svg {
+  transform: rotate(-45deg);
+}
+
+.lora-ponto-desenho svg {
+  width: 20px;
+  height: 20px;
+}
+
+.lora-ponto:focus-visible .lora-ponto-desenho {
+  outline: 2px solid var(--destaque);
+  outline-offset: 3px;
+}
+
+.lora-ponto.selecionado .lora-ponto-desenho,
+.lora-ponto.origem .lora-ponto-desenho {
+  background: var(--cor-do-ponto);
+  color: #fff;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--cor-do-ponto), 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.lora-ponto.na-ponta .lora-ponto-desenho {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #1f2933, 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.lora-ponto-nome {
+  position: absolute;
+  left: 24px;
+  top: -11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1f2933;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+}
+
+.lora-ponto.selecionado .lora-ponto-nome {
+  left: 29px;
+  background: #1f2933;
+  color: #fff;
+}
+
+.lora-marca-caminho {
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #1f2933;
+  box-shadow: 0 0 0 2px #1f2933, 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.lora-marca-caminho[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- Corte do terreno (L2.2) */
+
+#lora-corte {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px 8px;
+  background: var(--painel);
+  border-top: 1px solid var(--borda);
+}
+
+#lora-corte[hidden] {
+  display: none;
+}
+
+.lora-corte-topo {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.lora-corte-topo h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.lora-corte-trecho {
+  font-weight: 600;
+}
+
+.lora-corte-selo {
+  padding: 1px 9px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #e8ebee;
+  color: #3b4650;
+}
+
+.lora-corte-selo[data-tom='folga'] { background: #d9f2df; color: #12632a; }
+.lora-corte-selo[data-tom='limite'] { background: #fff3cd; color: #664d03; }
+.lora-corte-selo[data-tom='nao-fecha'],
+.lora-corte-selo[data-tom='erro'] { background: #fdecea; color: #8a1c1c; }
+
+.lora-corte-frase {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--suave);
+}
+
+.lora-corte-grafico {
+  position: relative;
+  height: 210px;
+  margin-top: 4px;
+}
+
+.lora-corte-grafico[hidden] {
+  display: none;
+}
+
+.lora-corte-grafico svg {
+  display: block;
+  font-size: 11px;
+  fill: var(--suave);
+  user-select: none;
+}
+
+.corte-grade { stroke: #e3e8ed; stroke-width: 1; }
+.corte-risco { stroke: #9aa5b1; stroke-width: 1; }
+.corte-fim { font-weight: 600; fill: #1f2933; }
+.corte-terreno { fill: #cdbb9c; }
+.corte-terreno-borda { fill: none; stroke: #7a6548; stroke-width: 1.5; stroke-linejoin: round; }
+.corte-fresnel-inteira { fill: rgba(21, 101, 192, 0.1); }
+.corte-fresnel-60 { fill: rgba(21, 101, 192, 0.28); }
+.corte-fresnel-contorno { fill: none; stroke: #1565c0; stroke-width: 1; stroke-dasharray: 4 3; }
+.corte-linha { fill: none; stroke: #1f2933; stroke-width: 1.8; }
+.corte-antena line { stroke: #1f2933; stroke-width: 3; }
+.corte-antena circle { fill: #fff; stroke: #1f2933; stroke-width: 2; }
+.corte-nome { font-size: 13px; font-weight: 600; fill: #1f2933; }
+.corte-pior line { stroke: #1b7f3b; stroke-width: 2; }
+.corte-pior circle { fill: #1b7f3b; stroke: #fff; stroke-width: 1.5; }
+.corte-pior text { font-size: 12px; font-weight: 600; fill: #12632a; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.corte-pior.ruim line { stroke: #c62828; }
+.corte-pior.ruim circle { fill: #c62828; }
+.corte-pior.ruim text { fill: #8a1c1c; }
+.corte-guia line { stroke: #1f2933; stroke-width: 1; stroke-dasharray: 3 3; }
+.corte-guia circle { fill: #1f2933; stroke: #fff; stroke-width: 1.5; }
+.corte-alvo { fill: transparent; cursor: crosshair; }
+
+.lora-corte-leitura {
+  position: absolute;
+  top: 44px;
+  z-index: 1;
+  max-width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 9px;
+  background: #1f2933;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.lora-corte-leitura[hidden] {
+  display: none;
+}
+
+.lora-corte-leitura [data-folga='corta'],
+.lora-corte-leitura [data-folga='apertado'] {
+  color: #ffd180;
+}
+
+.lora-corte-espera {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 60px;
+  color: var(--suave);
+}
+
+.lora-corte-espera[hidden] {
+  display: none;
+}
+
+.lora-corte-espera.erro {
+  color: #b3261e;
+}
+
+.lora-corte-espera button {
+  color: #1f2933;
+}
+
+.lora-corte-situacao {
+  margin: 0;
+}
+
+.lora-corte-legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--suave);
+}
+
+.lora-corte-legenda[hidden] {
+  display: none;
+}
+
+.lora-corte-legenda span::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.lora-corte-legenda .l-terreno::before { background: #cdbb9c; border-top: 2px solid #7a6548; box-sizing: border-box; }
+.lora-corte-legenda .l-linha::before { height: 0; border-top: 2px solid #1f2933; border-radius: 0; vertical-align: 3px; }
+.lora-corte-legenda .l-fresnel::before { background: linear-gradient(rgba(21, 101, 192, 0.45) 60%, rgba(21, 101, 192, 0.15) 60%); border-bottom: 1px dashed #1565c0; box-sizing: border-box; }
+.lora-corte-legenda .l-nota::before { display: none; }
+.lora-corte-legenda .l-nota { flex: 1 1 100%; }
+
+/* ---------------------------------------------------------------- Painéis da direita (L2.3) */
+
+.lora-painel {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #fff;
   border: 1px solid var(--borda);
   border-radius: 8px;
 }
 
-.lora-espera h2 {
-  margin: 0 0 8px;
+.lora-painel h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.lora-painel h3 {
+  margin: 12px 0 4px;
+  font-size: 13.5px;
+}
+
+.lora-painel p {
+  margin: 4px 0;
+}
+
+.lora-ajuda {
+  color: var(--suave);
+  font-size: 13px;
+}
+
+.lora-termo {
+  border-bottom: 1px dotted var(--suave);
+  cursor: help;
+}
+
+.lora-lista,
+.lora-melhorias {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lora-melhorias li {
+  padding: 5px 0;
+  border-top: 1px solid var(--borda);
+  font-size: 13px;
+}
+
+.lora-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  width: 100%;
+  margin: 0 0 4px;
+  text-align: left;
+}
+
+.lora-selo {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #e8ebee;
+  color: #3b4650;
+}
+
+.lora-selo.folga {
+  background: #d9f2df;
+  color: #12632a;
+}
+
+.lora-selo.limite {
+  background: #fff3cd;
+  color: #664d03;
+}
+
+.lora-selo.nao-fecha,
+.lora-selo.erro {
+  background: #fdecea;
+  color: #8a1c1c;
+}
+
+.lora-campo {
+  margin: 6px 0;
+}
+
+.lora-campo label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.lora-campo input[type='number'] {
+  width: 78px;
+}
+
+.lora-campo input[type='text'] {
+  width: 190px;
+}
+
+.lora-campo select {
+  max-width: 190px;
+}
+
+.lora-config > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.lora-nota {
+  display: block;
+  color: #8a5a00;
+  font-size: 12px;
+}
+
+.lora-aviso {
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #fff3cd;
+  color: #664d03;
+  font-size: 12.5px;
+}
+
+.lora-aviso.lora-erro {
+  background: #fdecea;
+  color: #8a1c1c;
+}
+
+.lora-aviso.fixo {
+  margin-top: 10px;
+  background: #e8f0fb;
+  color: #1c3d6e;
+}
+
+.lora-acoes {
+  margin-top: 10px;
+}
+
+.lora-perigo {
+  color: #8a1c1c;
+}
+
+.lora-veredito {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 15px;
+  background: #e8ebee;
+}
+
+.lora-veredito.folga {
+  background: #d9f2df;
+  color: #12632a;
+}
+
+.lora-veredito.limite {
+  background: #fff3cd;
+  color: #664d03;
+}
+
+.lora-veredito.nao-fecha {
+  background: #fdecea;
+  color: #8a1c1c;
+}
+
+.lora-conta {
+  margin: 0;
+}
+
+.lora-linha {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--borda);
+}
+
+.lora-linha dt {
+  font-size: 13px;
+}
+
+.lora-linha dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.lora-linha p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.lora-linha.total dt,
+.lora-linha.total dd {
+  font-weight: 700;
+}
+
+.lora-campo.lora-larga label {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.lora-campo.lora-larga select {
+  max-width: 100%;
+  width: 100%;
 }

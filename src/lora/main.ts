@@ -1,32 +1,29 @@
 // Entrada do ambiente de rádio LoRa (lora.html). Especificação: docs/especificacao/lora.md.
-// Fase L1: a página, o seletor de ambiente e os projetos. O mapa e o enlace entram na fase L2.
+// Fase L2: o mapa com os pontos e os enlaces no centro, o corte do terreno embaixo dele e os painéis à direita.
 
-import { acoesLora, assinarLora, estadoLora } from './estado';
-import { el, h } from './ui/dom';
+import { definirRelevo, situacaoDoEnlace } from './calculo';
+import { acoesLora, estadoLora } from './estado';
+import { montarCorteLora } from './mapa/corte';
+import { montarMapaLora } from './mapa/mapa';
+import { el } from './ui/dom';
+import { montarPaineisLora } from './ui/paineis';
 import { montarTopoLora } from './ui/topo';
 
 montarTopoLora();
 
-// Enquanto o mapa não existe, o centro explica o que este ambiente vai fazer e o que já está gravado no projeto.
-const centro = el<HTMLElement>('#lora-centro');
-const resumo = h('p', { id: 'lora-resumo' });
-centro.append(
-  h(
-    'div',
-    { class: 'lora-espera' },
-    h('h2', null, 'Rádio LoRa'),
-    h('p', null, 'Aqui você vai marcar pontos em um mapa e ver se um rádio LoRa consegue ligar um ao outro: o corte do terreno, a conta do sinal e onde pôr um repetidor.'),
-    h('p', null, 'LoRa é um rádio de longo alcance e baixo consumo. Ele manda mensagens de texto curtas, não voz nem internet.'),
-    h('p', { class: 'detalhe' }, 'O mapa e a conta do enlace ainda estão em construção. Os projetos já podem ser criados e trocados no menu Projeto.'),
-    resumo,
-  ),
-);
-const mostrarResumo = (): void => {
-  const p = estadoLora.projeto;
-  resumo.textContent = `Projeto "${p.nome}": ${p.pontos.length} ${p.pontos.length === 1 ? 'ponto' : 'pontos'} e ${p.enlaces.length} ${p.enlaces.length === 1 ? 'enlace' : 'enlaces'}.`;
-};
-assinarLora('projeto', mostrarResumo);
-mostrarResumo();
+const mapa = montarMapaLora(el<HTMLElement>('#lora-mapa-area'));
+montarCorteLora(el<HTMLElement>('#lora-corte'), mapa);
+montarPaineisLora(el<HTMLElement>('#lora-direita'));
 
 // Para a verificação e para depuração no navegador.
-(window as unknown as { __lora: unknown }).__lora = { pronto: true, estado: () => estadoLora, acoes: acoesLora };
+(window as unknown as { __lora: unknown }).__lora = {
+  pronto: true,
+  estado: () => estadoLora,
+  acoes: acoesLora,
+  /** Posição de um ponto na janela, em pixels. */
+  telaDoPonto: (id: string) => mapa.telaDoPonto(id),
+  /** O mapa: centro, zoom, ir para um lugar e a posição de uma coordenada na janela. */
+  mapa: { centro: () => mapa.centro(), zoom: () => mapa.zoom(), irPara: mapa.irPara, telaDe: mapa.telaDe },
+  definirRelevo,
+  situacaoDoEnlace,
+};
