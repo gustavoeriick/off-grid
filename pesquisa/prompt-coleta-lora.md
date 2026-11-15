@@ -10,7 +10,7 @@ Como usar:
 
 Se o site mostrar uma verificação de segurança, peça para continuar em ritmo mais lento.
 
-A parte E (homologação na Anatel) é a mais importante e a mais trabalhosa. Se a coleta ficar longa, rode primeiro as partes A a D e depois a parte E sozinha, colando o início do prompt até "PARTE A", a parte E e o formato.
+A parte E (homologação na Anatel) é opcional: o Gustavo decidiu em 15/11/2026 que a homologação entra no simulador só como informação, sem impedir nem filtrar nenhum aparelho. Ela é a mais trabalhosa; pode ficar de fora da primeira coleta, ou rodar depois sozinha, colando o início do prompt até "PARTE A", a parte E e o formato.
 
 ```text
 Preciso de uma pesquisa de preços no Mercado Livre (mercadolivre.com.br) para um projeto pessoal.
