@@ -27,7 +27,12 @@ export interface TerminalNaCasa {
   saida: THREE.Vector3;
   tipo: TipoTerminal;
   rotulo: string;
+  /** Raio do anel colorido. */
+  raio: number;
 }
+
+/** Como um terminal aparece enquanto um cabo é puxado. */
+export type RealceDeTerminal = 'aceso' | 'apagado' | 'normal';
 
 export interface PassagemPeloQuadro {
   /** Pontos em que o cabo entra e sai, na face de baixo da caixa, em coordenadas da casa. */
@@ -61,6 +66,13 @@ export interface CamadaDeDispositivos {
    * terminais vizinhos se sobrepõem; por isso vale o centro mais perto do raio, e não a primeira esfera tocada.
    */
   terminalNoRaio(raio: THREE.Ray): { disp: string; terminal: string; tipo: TipoTerminal } | null;
+  /**
+   * Enquanto um cabo é puxado: acende (halo verde) os terminais em que ele pode ser ligado e apaga os outros.
+   * Nulo devolve todos ao normal.
+   */
+  realcarTerminais(realce: ((disp: string, terminal: string, tipo: TipoTerminal) => RealceDeTerminal) | null): void;
+  /** Aumenta o anel do terminal sob o ponteiro. Nulo desfaz. */
+  destacarTerminal(alvo: { disp: string; terminal: string } | null): void;
   /** Mostra ou esconde o rótulo de um terminal (PV+, BAT−, Tomada). */
   mostrarRotulo(uid: string, terminal: string, visivel: boolean): void;
   /** Mostra o nome curto de uma peça acima dela. Nulo esconde. */
@@ -103,6 +115,12 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
   const geoAnel = new THREE.TorusGeometry(1, 0.2, 6, 24);
   const geoAro = new THREE.TorusGeometry(1.3, 0.07, 4, 24);
   const invisivel = new THREE.MeshBasicMaterial({ visible: false });
+  const geoHalo = new THREE.SphereGeometry(1, 14, 10);
+  // O halo aparece mesmo atrás de parede: é ele que mostra onde o cabo pode ser ligado.
+  const matHalo = new THREE.MeshBasicMaterial({ color: '#5df2a0', transparent: true, opacity: 0.6, depthTest: false, depthWrite: false, toneMapped: false });
+  const matApagado = new THREE.MeshBasicMaterial({ color: '#9aa3ab', transparent: true, opacity: 0.4, depthWrite: false, toneMapped: false });
+  let realceAtivo: ((disp: string, terminal: string, tipo: TipoTerminal) => RealceDeTerminal) | null = null;
+  let destacado: { disp: string; terminal: string } | null = null;
   const matAnel = (tipo: TipoTerminal): THREE.Material =>
     liso(`anel-${tipo}`, () => new THREE.MeshBasicMaterial({ color: COR_TERMINAL[tipo], toneMapped: false }));
   const matAro = (): THREE.Material => liso('aro-claro', () => new THREE.MeshBasicMaterial({ color: '#eceff1', toneMapped: false }));
@@ -148,6 +166,38 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     g.add(rotulo);
     rotulos.set(t.id, rotulo);
     return g;
+  }
+
+  /** Aplica ao terminal o realce da puxada de cabo e o destaque do ponteiro. */
+  function vestirTerminal(p: Peca, t: TerminalDoModelo): void {
+    const g = p.grupo.getObjectByName(`terminal-${t.id}`);
+    const anel = g?.getObjectByName('anel') as THREE.Mesh | undefined;
+    if (!g || !anel) return;
+    const realce = realceAtivo ? realceAtivo(p.uid, t.id, t.tipo) : 'normal';
+    const noPonteiro = destacado !== null && destacado.disp === p.uid && destacado.terminal === t.id;
+    anel.material = realce === 'apagado' ? matApagado : matAnel(t.tipo);
+    anel.scale.setScalar(t.raio * (noPonteiro ? 1.5 : realce === 'aceso' ? 1.2 : 1));
+    const aro = g.getObjectByName('aro');
+    if (aro) {
+      aro.visible = realce !== 'apagado';
+      aro.scale.copy(anel.scale);
+    }
+    let halo = g.getObjectByName('halo');
+    if (realce === 'aceso') {
+      if (!halo) {
+        halo = new THREE.Mesh(geoHalo, matHalo);
+        halo.name = 'halo';
+        halo.renderOrder = 5;
+        (halo as THREE.Mesh).raycast = () => {};
+        if (p.escondida) esconder(halo, true);
+        g.add(halo);
+      }
+      halo.scale.setScalar(t.raio * (noPonteiro ? 2.6 : 1.9));
+    } else if (halo) g.remove(halo);
+  }
+
+  function vestirTerminais(): void {
+    for (const p of pecas.values()) for (const t of p.modelo.terminais) vestirTerminal(p, t);
   }
 
   function aplicarAtivo(p: Peca): void {
@@ -311,6 +361,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       saida: new THREE.Vector3(...t.saida).applyQuaternion(q),
       tipo: t.tipo,
       rotulo: t.rotulo,
+      raio: t.raio,
     };
   }
 
@@ -392,6 +443,19 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       }
       return melhor;
     },
+    realcarTerminais(realce) {
+      realceAtivo = realce;
+      vestirTerminais();
+    },
+    destacarTerminal(alvo) {
+      const antes = destacado;
+      destacado = alvo;
+      for (const x of [antes, alvo]) {
+        const p = x ? pecas.get(x.disp) : undefined;
+        const t = p?.modelo.terminais.find((y) => y.id === x!.terminal);
+        if (p && t) vestirTerminal(p, t);
+      }
+    },
     mostrarRotulo(uid, id, visivel) {
       const rotulo = pecas.get(uid)?.rotulos.get(id);
       if (rotulo) rotulo.visible = visivel;
@@ -425,6 +489,9 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       geoAnel.dispose();
       geoAro.dispose();
       invisivel.dispose();
+      geoHalo.dispose();
+      matHalo.dispose();
+      matApagado.dispose();
     },
   };
 }

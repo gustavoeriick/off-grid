@@ -13,15 +13,17 @@ import { modeloDaProtecao } from './protecoes';
 
 /** Quanto o cabo segue a direção de saída do terminal antes de fazer a curva. */
 const SAIDA = 0.12;
-const RAIO: Record<string, number> = { solar: 0.012, bateria: 0.022, ca: 0.015 };
+/** Raio do desenho. Os da seção 8 (0,012, 0,022 e 0,015) ficavam grossos de perto. */
+const RAIO: Record<string, number> = { solar: 0.006, bateria: 0.011, ca: 0.007 };
+/** Raio do tubo invisível que recebe o clique: o cabo fino seria difícil de acertar. */
+export const RAIO_DE_CLIQUE_DO_CABO = 0.03;
 /** O porta-fusível da bateria fica a esta distância do terminal dela, ao longo do cabo. */
 const DISTANCIA_DO_FUSIVEL = 0.2;
 /**
- * Proteção desenhada no cabo, fora de quadro: ampliada até ficar mais larga que o cabo (que a especificação
- * desenha mais grosso que o real), para ser reconhecida.
+ * Proteção desenhada no cabo, fora de quadro: um pouco ampliada, e sempre mais larga que o cabo, para ser reconhecida.
  */
 function escalaNoCabo(larguraDaPeca: number, raio: number): number {
-  return Math.max(1.5, (2 * raio + 0.012) / larguraDaPeca);
+  return Math.max(1.25, (2 * raio + 0.016) / larguraDaPeca);
 }
 
 /** Comprimento de um trecho entre dois pontos, em coordenadas da casa: `(|dx| + |dy| + |dz|) × 1,1`, mínimo de 0,3 m, arredondado a 0,1 m. */
@@ -94,6 +96,8 @@ class PercursoDoTubo extends THREE.Curve<THREE.Vector3> {
 
 /** Divisões do tubo ao longo do cabo: 14 por vão da curva. */
 const DIVISOES_DO_TUBO = 56;
+/** O tubo de clique não é desenhado: basta acompanhar a curva. */
+const DIVISOES_DO_CLIQUE = 28;
 
 export interface CamadaDeCabos {
   /**
@@ -107,10 +111,19 @@ export interface CamadaDeCabos {
    * Para quem cria o cabo. Nulo se alguma ponta não está na cena.
    */
   comprimentoEntre(de: PontaCabo, para: PontaCabo): number | null;
+  /**
+   * Durante um arraste, a peça muda de lugar a cada movimento do ponteiro: com `true`, os cabos são redesenhados
+   * mas os comprimentos ficam como estão; com `false`, os comprimentos dos cabos que mudaram de percurso são informados.
+   */
+  adiarComprimentos(adiar: boolean): void;
+  /** Mede de novo os cabos dados (ou todos) pelo desenho atual, com a passagem pelo quadro, e informa os comprimentos. */
+  medir(uids?: readonly string[]): void;
   /** Grupo de um cabo: os tubos e as proteções desenhadas nele, todos com `userData.cabo`. */
   grupoDe(uid: string): THREE.Group | undefined;
-  /** Tubos dos cabos à vista (`userData.cabo`), para o raio do ponteiro. */
+  /** Tubos invisíveis de clique dos cabos à vista (`userData.cabo`), com 0,03 de raio, para o raio do ponteiro. */
   malhas(): THREE.Object3D[];
+  /** Ponto do cabo, em coordenadas da casa, a uma fração do primeiro trecho. Nulo se o cabo não está desenhado. */
+  ponto(uid: string, fracao?: number): THREE.Vector3 | null;
   destruir(): void;
 }
 
@@ -118,6 +131,7 @@ interface Desenho {
   grupo: THREE.Group;
   assinatura: string;
   escondido: boolean;
+  curvas: THREE.CatmullRomCurve3[];
 }
 
 const CIMA = new THREE.Vector3(0, 1, 0);
@@ -127,6 +141,8 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
   /** Por cabo, onde estavam as pontas e a passagem pelo quadro na última vez. */
   const percursos = new Map<string, string>();
   let projetoVisto: Projeto | null = null;
+  let adiado = false;
+  const invisivel = new THREE.MeshBasicMaterial({ visible: false });
 
   function remover(uid: string): void {
     const d = desenhos.get(uid);
@@ -150,7 +166,7 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
     peca.scale.setScalar(escala);
   }
 
-  function desenhar(c: Cabo, trechos: [Ponta, Ponta][], raio: number, cor: string, soltas: { indice: number; item: Protecao }[]): THREE.Group {
+  function desenhar(c: Cabo, trechos: [Ponta, Ponta][], raio: number, cor: string, soltas: { indice: number; item: Protecao }[]): [THREE.Group, THREE.CatmullRomCurve3[]] {
     const grupo = new THREE.Group();
     grupo.name = `cabo-${c.uid}`;
     grupo.userData.cabo = c.uid;
@@ -164,6 +180,11 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
       tubo.userData.cabo = c.uid;
       tubo.userData.proprio = true;
       grupo.add(tubo);
+      const clique = new THREE.Mesh(new THREE.TubeGeometry(curva, DIVISOES_DO_CLIQUE, RAIO_DE_CLIQUE_DO_CABO, 5, false), invisivel);
+      clique.name = 'tubo-de-clique';
+      clique.userData.cabo = c.uid;
+      clique.userData.proprio = true;
+      grupo.add(clique);
     }
     // Proteções fora de quadro, desenhadas no próprio cabo.
     const itemDe = (uid: string) => CATALOGO.get(estado.projeto.dispositivos.find((d) => d.uid === uid)?.itemId ?? '');
@@ -193,7 +214,7 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
       }
       grupo.add(peca);
     }
-    return grupo;
+    return [grupo, curvas];
   }
 
   function atualizar(): void {
@@ -220,8 +241,9 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
       const numero = (v: THREE.Vector3): string => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
       const percurso = trechos.map(([p, q]) => `${numero(p.pos)};${numero(q.pos)}`).join('/');
       const anterior = percursos.get(c.uid);
-      percursos.set(c.uid, percurso);
-      if (anterior !== undefined && anterior !== percurso) {
+      // Durante um arraste fica guardado o percurso de antes dele: o comprimento sai ao soltar.
+      if (!adiado || anterior === undefined) percursos.set(c.uid, percurso);
+      if (!adiado && anterior !== undefined && anterior !== percurso) {
         const comprimento = trechos.reduce((soma, [p, q]) => soma + comprimentoDoTrecho(p.pos, q.pos), 0);
         comprimentos.set(c.uid, Math.round(comprimento * 10) / 10);
       }
@@ -242,7 +264,8 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
       let d = desenhos.get(c.uid);
       if (!d || d.assinatura !== assinatura) {
         remover(c.uid);
-        d = { grupo: desenhar(c, trechos, raio, cor, soltas), assinatura, escondido: false };
+        const [grupo, curvas] = desenhar(c, trechos, raio, cor, soltas);
+        d = { grupo, assinatura, escondido: false, curvas };
         desenhos.set(c.uid, d);
         casa.add(d.grupo);
       }
@@ -264,20 +287,47 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
     return a && b ? comprimentoDoTrecho(a.pos, b.pos) : null;
   }
 
+  function medir(uids?: readonly string[]): void {
+    const comprimentos = new Map<string, number>();
+    for (const c of estado.projeto.cabos) {
+      if (uids && !uids.includes(c.uid)) continue;
+      const a = pecas.terminal(c.de.disp, c.de.terminal);
+      const b = pecas.terminal(c.para.disp, c.para.terminal);
+      if (!a || !b) continue;
+      const passagem = c.quadro ? pecas.passagem(c.quadro, c.uid) : null;
+      const soma = passagem
+        ? comprimentoDoTrecho(a.pos, passagem.entrada) + comprimentoDoTrecho(passagem.saida, b.pos)
+        : comprimentoDoTrecho(a.pos, b.pos);
+      comprimentos.set(c.uid, Math.round(soma * 10) / 10);
+    }
+    if (comprimentos.size > 0) acoes.definirComprimentos(comprimentos);
+  }
+
   return {
     atualizar,
     comprimentoEntre,
+    adiarComprimentos(adiar) {
+      if (adiado === adiar) return;
+      adiado = adiar;
+      if (!adiar) atualizar();
+    },
+    medir,
     grupoDe: (uid) => desenhos.get(uid)?.grupo,
     malhas() {
       const lista: THREE.Object3D[] = [];
       for (const d of desenhos.values()) {
         if (d.escondido) continue;
-        for (const o of d.grupo.children) if (o.name === 'tubo') lista.push(o);
+        for (const o of d.grupo.children) if (o.name === 'tubo-de-clique') lista.push(o);
       }
       return lista;
     },
+    ponto(uid, fracao = 0.5) {
+      const curva = desenhos.get(uid)?.curvas[0];
+      return curva ? curva.getPointAt(fracao) : null;
+    },
     destruir() {
       for (const uid of [...desenhos.keys()]) remover(uid);
+      invisivel.dispose();
     },
   };
 }

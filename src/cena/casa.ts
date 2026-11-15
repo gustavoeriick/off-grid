@@ -300,6 +300,8 @@ export interface CasaCena {
   aplicarVisao(modo: ModoVisao): void;
   /** Malhas de encaixe (`userData.superficie`) que o modo de visão atual não esconde. */
   superficies(): THREE.Mesh[];
+  /** Todas as malhas de encaixe, também as que o modo de visão esconde. */
+  todasAsSuperficies(): THREE.Mesh[];
 }
 
 export function criarCasa(): CasaCena {
@@ -312,6 +314,7 @@ export function criarCasa(): CasaCena {
   let modo: ModoVisao = 'completa';
   let medidas = '';
   let encaixes: THREE.Mesh[] | null = null;
+  let todas: THREE.Mesh[] | null = null;
   let nomes: THREE.Mesh[] = [];
 
   function aplicarVisao(novo: ModoVisao): void {
@@ -333,6 +336,17 @@ export function criarCasa(): CasaCena {
       encaixes = lista;
     }
     return encaixes;
+  }
+
+  function todasAsSuperficies(): THREE.Mesh[] {
+    if (!todas) {
+      const lista: THREE.Mesh[] = [];
+      estrutura.traverse((o) => {
+        if (o instanceof THREE.Mesh && o.userData.superficie) lista.push(o);
+      });
+      todas = lista;
+    }
+    return todas;
   }
 
   function construir(casa: CasaConfig): void {
@@ -538,10 +552,11 @@ export function criarCasa(): CasaCena {
     liberar(estrutura);
     estrutura = new THREE.Group();
     estrutura.name = 'estrutura';
+    todas = null;
     grupo.add(estrutura);
     construir(casa);
     aplicarVisao(modo);
   }
 
-  return { grupo, reconstruir, aplicarVisao, superficies };
+  return { grupo, reconstruir, aplicarVisao, superficies, todasAsSuperficies };
 }

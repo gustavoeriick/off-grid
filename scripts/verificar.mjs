@@ -521,6 +521,243 @@ async function principal() {
   const caixa = await pagina.locator('#cena canvas').boundingBox();
   conferir(caixa && caixa.width > 400 && caixa.height > 300, 'o canvas da cena deveria ocupar o centro');
 
+  // 8. Interação com o ponteiro de verdade (tarefas 2.2 a 2.4): arrastar do catálogo, mover, girar, apagar, cabos,
+  // proteções no quadro, peças que acompanham a casa e a ação "Acrescentar placa em série".
+  async function verificarInteracao() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const projeto = async () => (await estado()).projeto;
+    const peca = async (uid) => (await projeto()).dispositivos.find((d) => d.uid === uid);
+    const situacao = () => og(() => window.__offgrid.interacao());
+    const selecao = () => og(() => window.__offgrid.estado().selecao);
+    const telaDoPonto = (p) => og((q) => window.__offgrid.telaDoPonto(q), p);
+    const telaDoTerminal = (uid, terminal) => og(([u, t]) => window.__offgrid.telaDoTerminal(u, t), [uid, terminal]);
+    /** Com a orientação 0 a casa fica girada de 180° no mundo: ponto da casa para ponto do mundo. */
+    const noMundo = (p) => [-p[0], p[1], -p[2]];
+    const olharDaCasa = (pos, alvo) => mudarCamera(noMundo(pos), noMundo(alvo));
+    /** Espera a cena tratar o último movimento do ponteiro (um por quadro) e devolve a situação. */
+    const parado = async () => {
+      await esperar(300);
+      await og(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      return situacao();
+    };
+    /** Aperta em `de` e leva o ponteiro até `ate`, sem soltar. */
+    const levar = async (de, ate) => {
+      await pagina.mouse.move(de[0], de[1]);
+      await esperar(150);
+      await pagina.mouse.down();
+      await pagina.mouse.move(ate[0], ate[1], { steps: 10 });
+      return parado();
+    };
+    const soltar = async () => {
+      await pagina.mouse.up();
+      await esperar(250);
+    };
+    const doCartao = async (itemId) => {
+      const c = await og((id) => window.__offgrid.telaDoCartao(id), itemId);
+      conferir(Array.isArray(c), `o catálogo deveria ter um cartão para ${itemId}`);
+      return c;
+    };
+    const categoria = (itemId) => itemId.split('-')[0];
+
+    // Começa do cenário inicial, com a casa inteira à vista.
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await pagina.locator('[data-aba="consultor"]').click();
+    await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
+    await esperar(400);
+    let p = await projeto();
+    const placa1 = p.dispositivos.find((d) => d.uid === 'placa1');
+    conferir(placa1?.superficie === 'telhado-varanda-frente', 'a placa do cenário inicial deveria estar no telhado da varanda');
+
+    // ---- Placa do catálogo para o telhado da varanda: fantasma verde, peça criada e selecionada.
+    const noTelhado = await telaDoPonto([placa1.pos[0] + 2.5, placa1.pos[1], placa1.pos[2]]);
+    let s = await levar(await doCartao('placa-renepv-585'), noTelhado);
+    conferir(s.modo === 'catalogo' && s.valido === true, `a placa sobre o telhado da varanda deveria ficar verde: ${JSON.stringify(s)}`);
+    await captura('21-fantasma-verde-no-telhado');
+    await soltar();
+    p = await projeto();
+    const placa2 = p.dispositivos[p.dispositivos.length - 1];
+    conferir(p.dispositivos.length === 11 && categoria(placa2.itemId) === 'placa' && placa2.superficie === 'telhado-varanda-frente', 'soltar a placa no telhado da varanda deveria criar o dispositivo');
+    conferir((await selecao())?.uid === placa2.uid, 'a placa criada deveria ficar selecionada');
+    if (placa2.itemId === placa1.itemId) {
+      // Presa à grade: a distância entre as duas é um número inteiro de passos de largura mais 2 cm de folga.
+      const passo = 1.134 + 0.02;
+      const passos = Math.abs(placa2.pos[0] - placa1.pos[0]) / passo;
+      conferir(passos > 0.5 && Math.abs(passos - Math.round(passos)) < 0.01, `a placa deveria ficar na grade, com 2 cm de folga: ${passos} passos`);
+    }
+    await captura('21b-placa-criada-e-selecionada');
+
+    // ---- A mesma placa em uma parede: fantasma vermelho, nada criado.
+    s = await levar(await doCartao('placa-renepv-585'), await telaDoPonto([-1.33, p.casa.peDireito + 1.6, p.casa.profundidade / 2]));
+    conferir(s.modo === 'catalogo' && s.valido === false, `a placa sobre a parede deveria ficar vermelha: ${JSON.stringify(s)}`);
+    await captura('22-fantasma-vermelho-na-parede');
+    await soltar();
+    conferir((await projeto()).dispositivos.length === 11, 'soltar a placa em uma parede não deveria criar nada');
+    // Esc cancela o arraste.
+    await levar(await doCartao('placa-renepv-585'), noTelhado);
+    await pagina.keyboard.press('Escape');
+    conferir((await situacao()).modo === 'ocioso', 'Esc deveria cancelar o arraste do catálogo');
+    await soltar();
+    conferir((await projeto()).dispositivos.length === 11, 'o arraste cancelado com Esc não deveria criar nada');
+
+    // ---- Dentro do quartinho: inversor na parede, cabos e proteções.
+    const inversor = p.dispositivos.find((d) => d.uid === 'inversor');
+    await olharDaCasa([inversor.pos[0] + 0.4, 1.5, inversor.pos[2] + 5.4], [inversor.pos[0], 1.1, inversor.pos[2]]);
+    await esperar(300);
+    const zParede = inversor.pos[2] - 0.06;
+    s = await levar(await doCartao('inv-anenji-3kw-24v-127'), await telaDoPonto([inversor.pos[0] - 0.62, 1.75, zParede]));
+    conferir(s.valido === true, `o inversor na parede do quartinho deveria ficar verde: ${JSON.stringify(s)}`);
+    await captura('23-fantasma-do-inversor-na-parede');
+    await soltar();
+    p = await projeto();
+    const inversor2 = p.dispositivos[p.dispositivos.length - 1];
+    conferir(p.dispositivos.length === 12 && categoria(inversor2.itemId) === 'inv' && inversor2.superficie === 'parede-quartinho-fundo', 'soltar o inversor na parede do quartinho deveria criar o dispositivo');
+
+    // Passar o ponteiro sobre um terminal mostra o rótulo dele.
+    const pvPos = await telaDoTerminal('inversor', 'pvPos');
+    await pagina.mouse.move(pvPos[0], pvPos[1], { steps: 4 });
+    await parado();
+    const rotuloVisivel = await og(() => window.__offgrid.camadas.dispositivos.grupoDe('inversor').getObjectByName('terminal-pvPos').getObjectByName('rotulo').visible);
+    conferir(rotuloVisivel === true, 'passar o ponteiro sobre o terminal deveria mostrar o rótulo dele');
+
+    // Cabo entre dois terminais compatíveis: positivo da bateria no BAT+ do inversor novo.
+    const cabosAntes = p.cabos.length;
+    const deBateria = await telaDoTerminal('bateria1', 'pos');
+    const noInversor2 = await telaDoTerminal(inversor2.uid, 'batPos');
+    s = await levar(deBateria, [(deBateria[0] + noInversor2[0]) / 2 + 70, (deBateria[1] + noInversor2[1]) / 2]);
+    conferir(s.modo === 'cabo', `apertar sobre o terminal e arrastar deveria puxar um cabo: ${JSON.stringify(s)}`);
+    await captura('24-cabo-puxado-com-terminais-acesos');
+    await pagina.mouse.move(noInversor2[0], noInversor2[1], { steps: 6 });
+    s = await parado();
+    conferir(s.valido === true, `o cabo sobre o BAT+ deveria poder ser ligado: ${JSON.stringify(s)}`);
+    await soltar();
+    p = await projeto();
+    const caboNovo = p.cabos[p.cabos.length - 1];
+    conferir(
+      p.cabos.length === cabosAntes + 1 && caboNovo.de.disp === 'bateria1' && caboNovo.de.terminal === 'pos' && caboNovo.para.disp === inversor2.uid && caboNovo.para.terminal === 'batPos' && caboNovo.comprimento >= 0.3,
+      `puxar o cabo entre dois terminais de corrente contínua deveria criar o cabo: ${JSON.stringify(caboNovo)}`,
+    );
+    conferir((await selecao())?.uid === caboNovo.uid, 'o cabo criado deveria ficar selecionado');
+    await captura('24b-cabo-criado-e-selecionado');
+
+    // Corrente contínua com corrente alternada: não cria, e o motivo aparece perto do ponteiro.
+    s = await levar(pvPos, await telaDoTerminal('rede', 'tomada'));
+    conferir(s.modo === 'cabo' && s.valido === false && /alternada/.test(s.motivo ?? ''), `PV+ na tomada da rede deveria ser recusado com o motivo: ${JSON.stringify(s)}`);
+    conferir(/alternada/.test((await pagina.locator('[data-offgrid-dica]').textContent()) ?? ''), 'o motivo deveria aparecer perto do ponteiro');
+    await captura('25-cabo-recusado-cc-com-ca');
+    await soltar();
+    conferir((await projeto()).cabos.length === cabosAntes + 1, 'soltar o cabo de corrente contínua em corrente alternada não deveria criar cabo');
+
+    // Disjuntor do catálogo sobre um cabo, sem quadro na cena: fica no próprio cabo.
+    const noCabo = () => og(() => window.__offgrid.telaDoCabo('c5', 0.5));
+    s = await levar(await doCartao('prot-disjuntor-ca-16'), await noCabo());
+    conferir(s.modo === 'protecao' && s.valido === true, `o disjuntor sobre o cabo deveria poder ser instalado: ${JSON.stringify(s)}`);
+    await captura('26-disjuntor-sobre-o-cabo');
+    await soltar();
+    let c5 = (await projeto()).cabos.find((c) => c.uid === 'c5');
+    conferir(c5.protecoes.length === 1 && c5.quadro === null, `sem quadro, o disjuntor deveria ficar no cabo: ${JSON.stringify(c5)}`);
+
+    // Quadro na parede; o disjuntor seguinte vai para o trilho dele.
+    s = await levar(await doCartao('acc-quadro-8'), await telaDoPonto([inversor.pos[0] + 0.45, 1.9, zParede]));
+    conferir(s.valido === true, `o quadro na parede do quartinho deveria ficar verde: ${JSON.stringify(s)}`);
+    await soltar();
+    p = await projeto();
+    const quadro = p.dispositivos[p.dispositivos.length - 1];
+    conferir(quadro.itemId === 'acc-quadro-8' && quadro.superficie === 'parede-quartinho-fundo', 'soltar o quadro na parede deveria criar o dispositivo');
+    await levar(await doCartao('prot-disjuntor-ca-16'), await noCabo());
+    await soltar();
+    c5 = (await projeto()).cabos.find((c) => c.uid === 'c5');
+    conferir(c5.protecoes.length === 2 && c5.quadro === quadro.uid, `com quadro na cena, o cabo deveria passar por ele: ${JSON.stringify(c5)}`);
+    conferir(await og(() => window.__offgrid.camadas.dispositivos.noTrilho('c5', 0) && window.__offgrid.camadas.dispositivos.noTrilho('c5', 1)), 'os disjuntores deveriam aparecer no trilho do quadro');
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await captura('27-disjuntores-no-quadro');
+
+    // ---- No térreo: geladeira no piso; mover, girar, apagar e desfazer.
+    await pagina.getByRole('button', { name: 'Só térreo', exact: true }).click();
+    await olharDaCasa([-3, 13, -7], [0, 0, 0.8]);
+    await esperar(300);
+    s = await levar(await doCartao('ap-geladeira'), await telaDoPonto([-2.5, 0.05, 1.8]));
+    conferir(s.valido === true, `a geladeira no piso da sala deveria ficar verde: ${JSON.stringify(s)}`);
+    await captura('28-fantasma-da-geladeira-no-piso');
+    await soltar();
+    p = await projeto();
+    const geladeira = p.dispositivos[p.dispositivos.length - 1];
+    conferir(p.dispositivos.length === 14 && categoria(geladeira.itemId) === 'ap' && geladeira.superficie === 'piso-terreo', 'soltar a geladeira no piso deveria criar o dispositivo');
+
+    const ventilador = await peca('ap-ventilador');
+    const caboDoVentilador = p.cabos.find((c) => c.para.disp === 'ap-ventilador');
+    s = await levar(await og(() => window.__offgrid.telaDe('ap-ventilador')), await telaDoPonto([-0.8, 0.05, 2.2]));
+    conferir(s.modo === 'mover', `arrastar o ventilador deveria movê-lo: ${JSON.stringify(s)}`);
+    await captura('29-movendo-o-ventilador');
+    await soltar();
+    let movido = await peca('ap-ventilador');
+    conferir(movido.superficie === 'piso-terreo' && Math.hypot(movido.pos[0] - ventilador.pos[0], movido.pos[2] - ventilador.pos[2]) > 0.5, 'o ventilador deveria ter mudado de lugar no piso');
+    conferir((await selecao())?.uid === 'ap-ventilador', 'a peça movida deveria ficar selecionada');
+    const medido = await og((c) => window.__offgrid.camadas.cabos.comprimentoEntre(c.de, c.para), caboDoVentilador);
+    const comprimento = (await projeto()).cabos.find((c) => c.uid === caboDoVentilador.uid).comprimento;
+    conferir(comprimento === medido && comprimento !== caboDoVentilador.comprimento, `o cabo do ventilador deveria ter o comprimento atualizado: ${comprimento} m, medido ${medido} m`);
+
+    await pagina.keyboard.press('r');
+    conferir((await peca('ap-ventilador')).giro === 90, 'R deveria girar a peça selecionada em 90°');
+    await pagina.keyboard.press('Delete');
+    p = await projeto();
+    conferir(!p.dispositivos.some((d) => d.uid === 'ap-ventilador') && !p.cabos.some((c) => c.para.disp === 'ap-ventilador'), 'Delete deveria apagar a peça selecionada e o cabo dela');
+    await pagina.keyboard.press('Control+Z');
+    conferir((await peca('ap-ventilador'))?.giro === 90, 'Ctrl+Z deveria trazer de volta a peça apagada');
+    await pagina.keyboard.press('Control+Z');
+    await pagina.keyboard.press('Control+Z');
+    movido = await peca('ap-ventilador');
+    conferir(movido.giro === 0 && Math.abs(movido.pos[0] - ventilador.pos[0]) < 1e-6 && Math.abs(movido.pos[2] - ventilador.pos[2]) < 1e-6, 'mais dois Ctrl+Z deveriam desfazer o giro e o movimento');
+
+    // Clique seleciona; clique no vazio desfaz a seleção.
+    const naTv = await og(() => window.__offgrid.telaDe('ap-tv'));
+    await pagina.mouse.click(naTv[0], naTv[1]);
+    conferir((await selecao())?.uid === 'ap-tv', 'clicar em uma peça deveria selecioná-la');
+    await captura('29b-peca-selecionada');
+    const gramado = await pagina.locator('#cena canvas').boundingBox();
+    await pagina.mouse.click(gramado.x + 30, gramado.y + gramado.height - 30);
+    conferir((await selecao()) === null, 'clicar no vazio deveria desfazer a seleção');
+
+    // ---- As peças acompanham a casa: térrea, pelo formulário.
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
+    p = await projeto();
+    const deCima = p.dispositivos.filter((d) => d.superficie === 'piso-superior').map((d) => d.uid);
+    const yDaPlaca = p.dispositivos.find((d) => d.uid === 'placa1').pos[1];
+    conferir(deCima.length === 3, 'o cenário deveria ter três aparelhos no andar de cima');
+    await pagina.getByRole('button', { name: 'Casa', exact: true }).click();
+    await pagina.locator('[data-casa="andares"]').selectOption('1');
+    await pagina.getByRole('button', { name: 'Fechar', exact: true }).click();
+    await esperar(300);
+    p = await projeto();
+    const aVista = await og(() => window.__offgrid.superficies());
+    conferir(p.dispositivos.every((d) => aVista.includes(d.superficie)), 'na casa térrea, toda peça deveria estar em uma superfície que existe');
+    conferir(deCima.every((uid) => p.dispositivos.find((d) => d.uid === uid).superficie === 'piso-terreo'), 'as peças do andar de cima deveriam descer para o térreo');
+    conferir(p.dispositivos.find((d) => d.uid === 'placa1').pos[1] < yDaPlaca - 0.1, 'a placa deveria descer com o telhado da varanda');
+    await captura('30-casa-terrea-pecas-reassentadas');
+
+    // ---- "Acrescentar placa em série", no cenário inicial: some o erro da tensão mínima; um Ctrl+Z desfaz tudo.
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await esperar(400);
+    const regras = () => og(() => (window.__offgrid.recalcular(), window.__offgrid.estado().derivados.sugestoes.map((x) => x.regra)));
+    conferir((await regras()).includes('placas-abaixo-da-tensao'), 'o cenário inicial deveria ter o erro da tensão mínima das placas');
+    await pagina.locator('.sugestao[data-regra="placas-abaixo-da-tensao"] .acao-sugestao').click();
+    await esperar(300);
+    p = await projeto();
+    const placas = p.dispositivos.filter((d) => categoria(d.itemId) === 'placa');
+    conferir(placas.length === 2 && placas[1].superficie === 'telhado-varanda-frente', 'a ação deveria pôr mais uma placa no telhado da varanda');
+    conferir(p.cabos.length === 12 && p.cabos.some((c) => c.de.disp === 'placa1' && c.de.terminal === 'neg' && c.para.disp === placas[1].uid && c.para.terminal === 'pos'), 'a ação deveria fazer a emenda entre as duas placas');
+    conferir(!(await regras()).includes('placas-abaixo-da-tensao'), '"Acrescentar placa em série" deveria resolver o erro da tensão mínima');
+    await captura('31-placa-acrescentada-em-serie');
+    await pagina.keyboard.press('Control+Z');
+    p = await projeto();
+    conferir(p.dispositivos.filter((d) => categoria(d.itemId) === 'placa').length === 1 && p.cabos.length === 11, 'um só Ctrl+Z deveria desfazer a placa e os cabos da ação');
+
+    const quadros = await og(() => window.__offgrid.medirQuadros(20, true));
+    console.log(`interação: quadro de ${quadros.ms.toFixed(1)} ms com sombra (desenho por software), ${quadros.chamadas} chamadas, ${quadros.triangulos} triângulos`);
+  }
+  await verificarInteracao();
+
   if (erros.length) throw new Error(`Erros na página:\n${erros.join('\n')}`);
   console.log('Verificação concluída sem erros.');
 }

@@ -185,7 +185,6 @@ Nas estações, `tensaoBateria` é 24 (não é usada), `bateriaInternaWh` é a c
 | `acc-haste` | Haste de aterramento com conector | MLBU4070087836 | aterramento | |
 | `acc-multimetro` | Multímetro Minipa ET-1507B | MLB22546788 | medicao | |
 | `acc-wattimetro` | Medidor de consumo de tomada | MLB24123784 | medicao | "Serve para medir o consumo real de cada aparelho antes de dimensionar." |
-| `acc-kit-2x155-pwm` | Kit 2 placas de 155 W com PWM | MLBU1718449056 | kit | "Sem inversor e sem bateria." |
 
 ## 4. Itens sem anúncio
 
@@ -316,3 +315,6 @@ Todas de 127 V, com motor, `forma` `geladeira`. A geladeira grande é `ap-gelade
 | `ap-chuveiro` | Chuveiro elétrico | 5.500 | 5.500 | 5.500 | 19 às 20 | 127 | não | não | `chuveiro` | 0,25 × 0,25 × 0,25 |
 
 O micro-ondas, a bomba e o chuveiro estão no catálogo para o usuário ver o inversor recusar a carga.
+
+
+O kit de 2 placas de 155 W com PWM (MLBU1718449056) saiu do catálogo em 14/11/2026, a pedido do Gustavo: kits fechados não entram, para não se confundirem com o preço de um equipamento. O catálogo tem 88 itens.

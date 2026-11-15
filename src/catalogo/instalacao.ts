@@ -167,11 +167,6 @@ export const ACESSORIOS: Acessorio[] = [
     ...ref('MLB24123784'), obs: 'Serve para medir o consumo real de cada aparelho antes de dimensionar.', tipo: 'medicao',
   },
   {
-    id: 'acc-kit-2x155-pwm', nome: 'Kit 2 placas de 155 W com PWM', linha: 'simples', categoria: 'acessorio',
-    detalhe: 'Duas placas de 155 W e controlador PWM',
-    ...ref('MLBU1718449056'), obs: 'Sem inversor e sem bateria.', tipo: 'kit',
-  },
-  {
     id: 'acc-trilhos', nome: 'Kit de trilhos para 2 placas', linha: 'plano', categoria: 'acessorio',
     detalhe: '4 trilhos de 1,18 m e 4 grampos finais, para moldura de 30 ou 35 mm',
     ...ref('MLBU5083389403'), tipo: 'estrutura',

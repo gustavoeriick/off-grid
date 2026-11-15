@@ -57,7 +57,6 @@ export const ANUNCIOS: Record<string, Anuncio> = {
   MLBU4070087836: { preco: 44.97, url: 'https://www.mercadolivre.com.br/haste-para-aterramento-cobre-120mts-conector/up/MLBU4070087836' },
   MLB22546788: { preco: 168.15, url: 'https://www.mercadolivre.com.br/multimetro-digital-cat-iii-true-rms-et-1507b-minipa/p/MLB22546788' },
   MLB24123784: { preco: 178.2, url: 'https://www.mercadolivre.com.br/medidor-de-consumo-energia-eletrica-para-tomada-safiratec-bivolt-3600w-16a-para-geladeira-ar-condicionado-air-fryer/p/MLB24123784' },
-  MLBU1718449056: { preco: 999.99, url: 'https://www.mercadolivre.com.br/kit-painel-solar-placa-celula-150w-controlador-cabo-mc4/up/MLBU1718449056' },
   MLB2048668646: { preco: 2099, url: 'https://www.mercadolivre.com.br/inversor-solar-hibrido-2000w-24120v-mppt60a-felicity/p/MLB2048668646' },
   MLBU3798704772: { preco: 1880, url: 'https://www.mercadolivre.com.br/inversor-hibrido-solar-off-grid-1600-w-24120v-mppt-60a/up/MLBU3798704772' },
   MLBU3374542876: { preco: 293.87, url: 'https://www.mercadolivre.com.br/cabo-flex-fio-cobre-25mm-vermelho-750v-rolo-100m-cobrecom/up/MLBU3374542876' },

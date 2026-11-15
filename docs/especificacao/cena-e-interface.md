@@ -109,7 +109,8 @@ Terminais: esferas de 0,045 de raio, vermelhas (`cc+`, `#e53935`), cinza-escuras
 
 1. Apertar o botão sobre um cartão do catálogo começa o arraste.
 2. Sobre a cena, um fantasma da peça segue o ponteiro, encaixado na superfície sob ele. Verde em superfície válida, vermelho em inválida.
-3. Soltar em superfície válida cria o dispositivo. Soltar em outro lugar cancela.
+3. Soltar em superfície válida cria o dispositivo e o seleciona. Soltar em outro lugar ou apertar `Esc` cancela.
+4. Uma dica em texto acompanha o ponteiro e diz o que vai acontecer ao soltar, ou por que o lugar não serve. `R` gira o fantasma. Peça de piso apontada para uma parede vai para o piso ao pé dela, encostada.
 
 Proteções são arrastadas para cima de um cabo: o cabo sob o ponteiro acende e, ao soltar, a proteção é instalada nele. Tipos de cabo e acessórios não são arrastados: o cabo é escolhido ao ligar e trocado no painel do cabo; os acessórios entram só no orçamento.
 
@@ -119,6 +120,9 @@ Proteções são arrastadas para cima de um cabo: o cabo sob o ponteiro acende e
 - Arrastar um dispositivo (mais de 4 px) o move pelas superfícies válidas para ele; os cabos acompanham.
 - Teclas: `Delete` ou `Backspace` apaga o selecionado (um dispositivo leva junto os cabos dele); `R` gira 90°; `Esc` cancela o arraste ou desfaz a seleção.
 - Enquanto um dispositivo ou cabo está sendo arrastado, a órbita da câmera fica desligada.
+- Fora da puxada de cabo, o terminal responde a até 12 px do ponteiro (no máximo 0,10 m), para peças pequenas poderem ser agarradas; clicar em um terminal sem arrastar seleciona a peça.
+- A peça movida fica no último lugar válido; o fantasma vermelho mostra o lugar inválido.
+- Quando a casa muda, cada peça é reassentada na superfície dela, à mesma distância do meio (em parede, à mesma altura), cortada para caber. Se a superfície sumiu, vai para a alternativa da colocação inicial. Placa que não cabe mais deita ou muda de água.
 
 ## 8. Cabos
 
@@ -128,7 +132,7 @@ Proteções são arrastadas para cima de um cabo: o cabo sob o ponteiro acende e
 
 **Comprimento.** `(|dx| + |dy| + |dz|) × 1,1` entre os dois terminais, em coordenadas da casa, com mínimo de 0,3 m e arredondado a 0,1 m. É recalculado sempre que uma ponta se move.
 
-**Desenho.** Tubo sobre uma curva suave pelos pontos: terminal A; A mais 0,12 na direção de saída do terminal; ponto médio rebaixado em `mín(0,6; distância × 0,12)`; B mais 0,12 na saída; terminal B. Raio de 0,012 (solar), 0,022 (bateria) ou 0,015 (CA).
+**Desenho.** Tubo sobre uma curva suave pelos pontos: terminal A; A mais 0,12 na direção de saída do terminal; ponto médio rebaixado em `mín(0,6; distância × 0,12)`; B mais 0,12 na saída; terminal B. Raio de 0,006 (solar), 0,011 (bateria) ou 0,007 (CA), com um tubo invisível de 0,03 para o clique.
 
 **Cores.** Vermelho se as duas pontas são `cc+`; cinza-escuro (`#37474f`) se as duas são `cc-`; laranja (`#fb8c00`) se liga `cc+` com `cc-`; cinza-claro (`#90a4ae`) em `ca`.
 

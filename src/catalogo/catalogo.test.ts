@@ -29,7 +29,7 @@ const centavos = (reais: number) => Math.round(reais * 100);
 
 describe('catálogo: regras gerais', () => {
   it('tem a quantidade de itens da especificação', () => {
-    expect(itens).toHaveLength(89);
+    expect(itens).toHaveLength(88);
   });
 
   it('não repete id', () => {
