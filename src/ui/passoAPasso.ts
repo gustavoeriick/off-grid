@@ -35,15 +35,20 @@ const LIMITE_DO_TESTE_MS = 24 * MS_HORA;
 const HORA_DO_TESTE = 18;
 
 interface ResultadoDoTeste {
-  /** `esvaziou`: a bateria acabou antes das 24 h. `passou`: aguentou as 24 h. */
-  tipo: 'esvaziou' | 'passou';
+  /** `esvaziou`: a bateria acabou antes das 24 h. `passou`: aguentou as 24 h. `nao-funcionou`: os aparelhos não chegaram a funcionar. */
+  tipo: 'esvaziou' | 'passou' | 'nao-funcionou';
   texto: string;
   aparelhos: string[];
   somaW: number;
 }
 
 /** `rodando` enquanto o relógio corre; `resultado` quando termina e o tempo fica parado. */
-let teste: { fase: 'rodando'; inicioMsUtc: number } | { fase: 'resultado'; resultado: ResultadoDoTeste } | null = null;
+let teste:
+  | { fase: 'rodando'; inicioMsUtc: number; intervencoes: number }
+  | { fase: 'resultado'; resultado: ResultadoDoTeste }
+  | null = null;
+/** Por que o último teste foi cancelado, para o painel dizer. Some quando outro teste começa. */
+let avisoDoTeste: string | null = null;
 
 /** Verdadeiro enquanto o teste de autonomia roda: a faixa "A bateria acabou às…" sobre a cena não aparece (o resultado vai para o painel). */
 export function emTesteDeAutonomia(): boolean {
@@ -72,7 +77,9 @@ function iniciarTeste(): void {
   if (estado.simulacao.quedaDeLuz.ativa) acoes.alternarQuedaDeLuz();
   acoes.definirTempo(inicio);
   acoes.recarregarBateria();
-  teste = { fase: 'rodando', inicioMsUtc: inicio };
+  avisoDoTeste = null;
+  // Daqui em diante, qualquer salto do relógio ou "Bateria cheia" cancela o teste.
+  teste = { fase: 'rodando', inicioMsUtc: inicio, intervencoes: estado.simulacao.intervencoes };
   acoes.alternarQuedaDeLuz();
   acoes.definirVelocidade(60);
   desenhar();
@@ -84,10 +91,11 @@ function encerrarContagem(): void {
   if (estado.simulacao.quedaDeLuz.ativa) acoes.alternarQuedaDeLuz();
 }
 
-function cancelarTeste(): void {
+function cancelarTeste(motivo?: string): void {
   if (!teste) return;
   const rodando = teste.fase === 'rodando';
   teste = null;
+  avisoDoTeste = motivo ?? null;
   if (rodando) encerrarContagem();
   desenhar();
 }
@@ -101,7 +109,8 @@ function aparelhosLigados(): { nomes: string[]; somaW: number } {
     const item = d ? CATALOGO.get(d.itemId) : undefined;
     if (!d || !d.ligado || item?.categoria !== 'aparelho') continue;
     nomes.push(item.nome);
-    somaW += (item as Aparelho).potenciaW;
+    // A média é o que a simulação gasta (na geladeira, o motor liga e desliga).
+    somaW += (item as Aparelho).mediaW;
   }
   return { nomes, somaW };
 }
@@ -111,20 +120,39 @@ function acompanharTeste(): void {
   if (teste?.fase !== 'rodando') return;
   const sim = estado.simulacao;
   const inicio = teste.inicioMsUtc;
-  // O usuário mexeu na contagem ou no relógio: o teste deixou de valer.
-  if (!sim.quedaDeLuz.ativa || estado.tempo.msUtc < inicio) return cancelarTeste();
+  // O usuário mexeu na contagem, no relógio ou na bateria: o teste deixou de valer.
+  if (!sim.quedaDeLuz.ativa || estado.tempo.msUtc < inicio || sim.intervencoes !== teste.intervencoes) {
+    return cancelarTeste('O teste foi cancelado porque o relógio, a data ou a bateria foram mexidos no meio dele. Teste de novo.');
+  }
   // Um passo deixou de estar feito (a análise já está atualizada): o teste não vale mais.
   if (indiceAtual() >= 0) return cancelarTeste();
   const { nomes, somaW } = aparelhosLigados();
   let resultado: ResultadoDoTeste | null = null;
+  const s = sim.saida;
   if (sim.quedaDeLuz.apagouMsUtc !== null) {
+    // Os minutos são cortados nos dois horários, para a duração bater com o que a tela mostra.
+    const minuto = (ms: number): number => Math.floor(ms / 60_000) * 60_000;
     const apagou = sim.quedaDeLuz.apagouMsUtc;
     resultado = {
       tipo: 'esvaziou',
-      // O inversor corta antes de a bateria zerar: o mostrador para na carga mínima da química dela.
+      // Os 50 % (no chumbo) são a conta do simulador, não uma proteção garantida do inversor.
       texto:
-        `A bateria segurou ${duracaoTexto(apagou - inicio)}: das ${horaTexto(inicio)} às ${horaTexto(apagou)}. ` +
-        `O inversor desligou com a bateria em ${Math.round(sim.estadoSim.soc * 100)} %: abaixo disso ela estraga.`,
+        `A bateria segurou ${duracaoTexto(minuto(apagou) - minuto(inicio))}: das ${horaTexto(inicio)} às ${horaTexto(apagou)}. ` +
+        `O simulador para a conta com a bateria em ${Math.round(sim.estadoSim.soc * 100)} %, o limite saudável deste tipo de bateria: descarregar mais que isso encurta a vida dela. ` +
+        'Na vida real, confira no manual em que tensão o seu inversor desliga; muitos só desligam com a bateria quase vazia.',
+      aparelhos: nomes,
+      somaW,
+    };
+  } else if (s.cargaPedidaW > 0 && s.cargaAtendidaW <= 0 && !sim.estadoSim.cortado) {
+    // Os aparelhos pedem energia e não recebem, sem a bateria ter esvaziado: proteção da bateria ou sobrecarga do inversor.
+    const motivo = s.avisos.includes('bms')
+      ? 'a proteção da bateria cortou, porque os aparelhos pedem mais corrente do que ela pode dar'
+      : s.avisos.includes('sobrecarga')
+        ? 'os aparelhos pedem mais potência do que o inversor aguenta'
+        : 'o sistema não conseguiu alimentar os aparelhos';
+    resultado = {
+      tipo: 'nao-funcionou',
+      texto: `Os aparelhos não funcionaram: ${motivo}. Veja o aviso nos mostradores e as sugestões do consultor, troque o aparelho ou a peça e teste de novo.`,
       aparelhos: nomes,
       somaW,
     };
@@ -132,9 +160,15 @@ function acompanharTeste(): void {
     const pontos = sim.historico.filter((p) => p.msUtc >= inicio);
     const baixo = pontos.reduce<(typeof pontos)[number] | null>((m, p) => (m === null || p.soc < m.soc ? p : m), null);
     const pct = Math.round((baixo?.soc ?? sim.estadoSim.soc) * 100);
+    const fim = Math.round(sim.estadoSim.soc * 100);
+    // Só diz que a placa repôs tudo quando a bateria termina as 24 horas cheia de novo.
+    const conclusao =
+      fim >= 99
+        ? 'De dia a placa repôs tudo o que foi gasto à noite.'
+        : `Ao fim das 24 horas ela estava em ${num(fim)} %: a placa não repôs tudo o que foi gasto. Nesse ritmo a bateria perde carga a cada dia, até faltar. Mais placa ou menos consumo fecham a conta.`;
     resultado = {
       tipo: 'passou',
-      texto: `A bateria passou de 24 horas. O ponto mais baixo foi ${num(pct)} %, às ${baixo ? horaTexto(baixo.msUtc) : horaTexto(estado.tempo.msUtc)}; de dia a placa repôs o que foi gasto à noite.`,
+      texto: `A bateria passou de 24 horas. O ponto mais baixo foi ${num(pct)} %, às ${baixo ? horaTexto(baixo.msUtc) : horaTexto(estado.tempo.msUtc)}. ${conclusao}`,
       aparelhos: nomes,
       somaW,
     };
@@ -264,13 +298,19 @@ function resumoDoTutorial(r: Roteiro): Node[] {
   if (teste?.fase === 'rodando') {
     const soc = Math.round(estado.simulacao.estadoSim.soc * 100);
     const cancelar = h('button', { type: 'button', class: 'passo-botao', 'data-acao': 'cancelar-teste' }, 'Cancelar o teste');
-    cancelar.addEventListener('click', cancelarTeste);
+    cancelar.addEventListener('click', () => cancelarTeste());
     return [
       cabeca,
       h('h4', { class: 'passo-titulo' }, 'Testando a bateria…'),
       h('p', { class: 'passo-texto', 'data-teste': 'andamento' }, `Sem rede, a partir das ${horaTexto(teste.inicioMsUtc)}. Agora são ${horaTexto(estado.tempo.msUtc)} e a bateria está com ${num(soc)} %.`),
       h('p', { class: 'passo-dica' }, 'No teste, os aparelhos ligados ficam funcionando o tempo todo.'),
-      h('p', { class: 'passo-dica' }, 'O relógio corre a 60 min/s e para quando a bateria esvazia ou passam 24 horas simuladas.'),
+      h(
+        'p',
+        { class: 'passo-dica' },
+        estado.tempo.velocidade > 0
+          ? 'O relógio corre e para quando a bateria esvazia ou passam 24 horas simuladas. Mexer na data, na hora ou em "Bateria cheia" cancela o teste.'
+          : 'O relógio está em pausa. Escolha uma velocidade na barra de baixo para o teste continuar.',
+      ),
       h('div', { class: 'passo-botoes' }, cancelar, botaoSair),
     ];
   }
@@ -281,7 +321,7 @@ function resumoDoTutorial(r: Roteiro): Node[] {
     deNovo.addEventListener('click', iniciarTeste);
     const ligados =
       resultado.aparelhos.length > 0
-        ? `Aparelhos ligados: ${resultado.aparelhos.join(', ')}, somando ${num(resultado.somaW)} W.`
+        ? `Aparelhos ligados: ${resultado.aparelhos.join(', ')}, somando ${num(resultado.somaW)} W de consumo médio.`
         : 'Nenhum aparelho estava ligado na saída do inversor.';
     return [
       cabeca,
@@ -291,7 +331,7 @@ function resumoDoTutorial(r: Roteiro): Node[] {
       h(
         'p',
         { class: 'passo-texto' },
-        'Quer ver como outro aparelho muda o resultado? Desligue o atual, arraste outro do catálogo, ligue o plugue dele na saída do inversor e teste de novo. Geladeira e micro-ondas pedem mais do que o inversor de 500 W aguenta: o consultor mostra o motivo.',
+        'Quer ver como outro aparelho muda o resultado? Desligue o atual, arraste outro do catálogo, ligue o plugue dele na saída do inversor e teste de novo. Micro-ondas e chuveiro pedem mais do que o inversor de 500 W aguenta: o consultor mostra o motivo.',
       ),
       h('div', { class: 'passo-botoes' }, deNovo, botaoSair),
     ];
@@ -304,16 +344,17 @@ function resumoDoTutorial(r: Roteiro): Node[] {
       : `A bateria sustenta os aparelhos por cerca de ${num(e.autonomiaHoras, 1)} h sem sol e sem rede (autonomia).`;
   const testar = h('button', { type: 'button', class: 'passo-botao', 'data-acao': 'testar-bateria' }, 'Testar a bateria');
   testar.addEventListener('click', iniciarTeste);
-  return [
+  return semNulos([
     cabeca,
     h('h4', { class: 'passo-titulo' }, 'Montagem concluída'),
+    avisoDoTeste ? h('p', { class: 'passo-dica', role: 'status', 'data-teste': 'cancelado' }, avisoDoTeste) : null,
     h('p', { class: 'passo-texto' }, autonomia),
     h('p', { class: 'passo-texto' }, `Orçamento total: ${brl(estado.derivados.orcamento.total)}. Os preços mudam: confira os anúncios antes de comprar.`),
     h('p', { class: 'passo-texto' }, `O teste põe o relógio às ${horaTexto(dezoitoHorasDoDia())} deste dia, enche a bateria, tira a rede e acelera o tempo até a bateria esvaziar ou passarem 24 horas.`),
     h('p', { class: 'passo-texto' }, 'No teste, os aparelhos ligados ficam funcionando o tempo todo.'),
     h('p', { class: 'passo-dica' }, 'O simulador ajuda a aprender e a planejar. Antes de comprar e instalar de verdade, mostre o plano a um eletricista habilitado.'),
     h('div', { class: 'passo-botoes' }, testar, botaoSair),
-  ];
+  ]);
 }
 
 function resumo(r: Roteiro): Node[] {
@@ -426,7 +467,9 @@ function avaliar(): void {
   if (emTutorial() && !noTutorial()) return comecarRoteiroDoTutorial();
   // O projeto deixou de ser o do tutorial por outro caminho (abrir um arquivo, desfazer): o painel fecha.
   if (noTutorial() && !emTutorial()) {
+    if (teste?.fase === 'rodando') encerrarContagem();
     teste = null;
+    avisoDoTeste = null;
     roteiro = null;
     pulados.clear();
     gravar();

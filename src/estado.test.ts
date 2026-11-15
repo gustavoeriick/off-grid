@@ -302,3 +302,37 @@ describe('grampo de parede', () => {
     expect(estado.projeto.dispositivos.some((d) => d.uid === b)).toBe(true);
   });
 });
+
+// Achados da revisão da fase 7.
+describe('tutorial: a casa não se perde', () => {
+  beforeEach(() => {
+    if (emTutorial()) acoes.sairDoTutorial();
+    acoes.novoProjeto();
+    recalcularAgora();
+  });
+
+  it('abrir na casa um arquivo exportado de dentro do tutorial guarda a casa; sair a devolve', () => {
+    acoes.entrarNoTutorial();
+    const arquivo = acoes.exportarProjeto();
+    acoes.sairDoTutorial();
+    acoes.adicionarDispositivo('acc-quadro-8', { pos: [0, 1.3, 0], quat: [0, 0, 0, 1], superficie: 'parede-quartinho-fundo', giro: 0 });
+    const casa = JSON.stringify(estado.projeto);
+    acoes.carregarProjeto(JSON.parse(arquivo));
+    expect(emTutorial()).toBe(true);
+    acoes.sairDoTutorial();
+    expect(JSON.stringify(estado.projeto)).toBe(casa);
+  });
+
+  it('entrar no tutorial para o relógio; salto do relógio e "Bateria cheia" contam como intervenção', () => {
+    acoes.definirVelocidade(60);
+    acoes.entrarNoTutorial();
+    expect(estado.tempo.velocidade).toBe(0);
+    const antes = estado.simulacao.intervencoes;
+    acoes.avancarTempo(30);
+    expect(estado.simulacao.intervencoes).toBe(antes);
+    acoes.definirTempo(estado.tempo.msUtc + 3_600_000);
+    acoes.recarregarBateria();
+    expect(estado.simulacao.intervencoes).toBe(antes + 2);
+    acoes.sairDoTutorial();
+  });
+});

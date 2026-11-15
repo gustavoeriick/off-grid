@@ -67,6 +67,8 @@ export interface Simulacao {
   saida: SaidaPasso;
   /** Últimas 48 horas simuladas. */
   historico: PontoHistorico[];
+  /** Cresce a cada salto do relógio e a cada "Bateria cheia": quem mede algo ao longo do tempo sabe que foi interrompido. */
+  intervencoes: number;
 }
 
 /** Situação das medições do clima real para o dia simulado. */
@@ -305,6 +307,7 @@ estado.simulacao = {
   estadoSim: estadoInicial(),
   saida: passo(estado.projeto, estado.derivados.analise, estadoInicial(), INSTANTE_INICIAL, 0, false),
   historico: [],
+  intervencoes: 0,
 };
 
 /** Registra uma função chamada a cada mudança do tipo dado. Devolve a função que cancela o registro. */
@@ -446,6 +449,17 @@ function agendarGravacao(): void {
 
 /** Cópia em memória do projeto da casa enquanto o tutorial está aberto, para quando o navegador não deixa gravar. */
 let casaGuardada: string | null = null;
+
+/** Guarda o projeto atual (a casa) à parte, antes de o projeto do tutorial tomar o lugar dele. */
+function guardarCasa(): void {
+  const texto = JSON.stringify(estado.projeto);
+  try {
+    armazenamento()?.setItem(CHAVE_CASA, texto);
+  } catch (erro) {
+    console.warn('Não foi possível guardar o projeto da casa antes do tutorial.', erro);
+  }
+  casaGuardada = texto;
+}
 
 const passado: string[] = [];
 const futuro: string[] = [];
@@ -906,6 +920,8 @@ export const acoes = {
     sanear(novo);
     // Se o cálculo não roda com este projeto, o erro aparece aqui, antes de trocar o que está na tela.
     calcularDerivados(novo, estado.tempo.msUtc);
+    // Arquivo exportado de dentro do tutorial, aberto na casa: a casa fica guardada, como em `entrarNoTutorial`.
+    if (novo.casa.soQuartinho === true && !emTutorial()) guardarCasa();
     guardarNoHistorico();
     zerarSimulacao();
     trocarProjeto(novo);
@@ -923,16 +939,12 @@ export const acoes = {
    * Dentro do tutorial, recomeça o tutorial sem mexer na casa guardada.
    */
   entrarNoTutorial(): void {
-    if (!emTutorial()) {
-      try {
-        armazenamento()?.setItem(CHAVE_CASA, JSON.stringify(estado.projeto));
-      } catch (erro) {
-        console.warn('Não foi possível guardar o projeto da casa antes do tutorial.', erro);
-      }
-      casaGuardada = JSON.stringify(estado.projeto);
-    }
+    if (!emTutorial()) guardarCasa();
     passado.length = 0;
     futuro.length = 0;
+    // O relógio para: sol e bateria não andam enquanto a pessoa monta.
+    estado.tempo.velocidade = 0;
+    avisar('tempo');
     zerarSimulacao();
     acoes.definirDestaques([]);
     trocarProjeto(cenarioTutorial());
@@ -956,6 +968,8 @@ export const acoes = {
     }
     casaGuardada = null;
     try {
+      // Grava a casa na chave normal antes de apagar a guarda: fechar a página logo depois não perde a casa.
+      armazenamento()?.setItem(CHAVE, JSON.stringify(casa));
       armazenamento()?.removeItem(CHAVE_CASA);
     } catch {
       // Sem permissão: a chave fica, e a próxima entrada no tutorial a troca.
@@ -1055,6 +1069,7 @@ export const acoes = {
   definirTempo(msUtc: number): void {
     const diaAntes = diaLocalDe(estado.projeto, estado.tempo.msUtc);
     estado.tempo.msUtc = msUtc;
+    estado.simulacao.intervencoes += 1;
     avisar('tempo');
     conferirClimaReal();
     atualizarMostradores();
@@ -1104,6 +1119,7 @@ export const acoes = {
 
   /** Volta a bateria para 100% e religa o inversor. */
   recarregarBateria(): void {
+    estado.simulacao.intervencoes += 1;
     estado.simulacao.estadoSim = estadoInicial();
     estado.simulacao.quedaDeLuz.apagouMsUtc = null;
     atualizarMostradores();

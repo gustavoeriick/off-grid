@@ -99,10 +99,13 @@ O teste, feito com as ações que já existem:
 
 1. Põe os aparelhos ligados na saída do inversor em uso "o dia inteiro" (fora do horário típico eles não consumiriam, e o resultado sairia falso), põe o relógio às 18:00 do dia que está na tela, enche a bateria, começa a contagem sem rede (`alternarQuedaDeLuz`) e acelera para 60 min/s.
 2. Termina quando a bateria esvazia ou quando passam 24 horas simuladas. Ao terminar, pausa o tempo e encerra a contagem.
-3. Mostra o resultado no painel:
-   - Esvaziou: "A bateria segurou {5 h 40 min}: das 18:00 às {23:40}. O inversor desligou com a bateria em {50} %: abaixo disso ela estraga." e, embaixo, quais aparelhos estavam ligados e quantos watts somavam.
-   - Passou de 24 horas: "A bateria passou de 24 horas. O ponto mais baixo foi {62} %, às {05:50}; de dia a placa repôs o que foi gasto à noite."
-4. Botões: "Testar de novo", "Sair do tutorial". Um texto convida a trocar o aparelho: desligar o atual, arrastar outro, ligar o plugue na saída do inversor e testar de novo. Avisa que geladeira e micro-ondas passam do que o inversor de 500 W aguenta, e que o consultor mostra o motivo.
+3. Mostra o resultado no painel, com os aparelhos ligados e a soma do consumo médio deles (`mediaW`, o que a simulação gasta):
+   - Esvaziou: "A bateria segurou {8 h 42 min}: das 18:00 às {02:42}. O simulador para a conta com a bateria em {50} %, o limite saudável deste tipo de bateria: descarregar mais que isso encurta a vida dela. Na vida real, confira no manual em que tensão o seu inversor desliga; muitos só desligam com a bateria quase vazia." A duração é a diferença dos dois horários, com os minutos cortados.
+   - Passou de 24 horas: "A bateria passou de 24 horas. O ponto mais baixo foi {78} %, às {05:50}." e a conclusão pela carga do fim: com 99 % ou mais, "De dia a placa repôs tudo o que foi gasto à noite."; abaixo disso, "Ao fim das 24 horas ela estava em {83} %: a placa não repôs tudo o que foi gasto. Nesse ritmo a bateria perde carga a cada dia, até faltar. Mais placa ou menos consumo fecham a conta."
+   - Os aparelhos não funcionaram (pedem energia e não recebem, sem a bateria ter esvaziado): "Os aparelhos não funcionaram: {a proteção da bateria cortou, porque os aparelhos pedem mais corrente do que ela pode dar}. Veja o aviso nos mostradores e as sugestões do consultor, troque o aparelho ou a peça e teste de novo."
+4. Botões: "Testar de novo", "Sair do tutorial". Um texto convida a trocar o aparelho: desligar o atual, arrastar outro, ligar o plugue na saída do inversor e testar de novo. Avisa que micro-ondas e chuveiro passam do que o inversor de 500 W aguenta, e que o consultor mostra o motivo. (A geladeira do catálogo cabe no inversor de 500 W.)
+
+O teste é cancelado, com um aviso no painel, se o relógio ou a data saltarem ou se "Bateria cheia" for usada no meio dele: `estado.simulacao.intervencoes` cresce nesses casos, e o teste compara com o valor do começo.
 
 Durante o teste do tutorial, a faixa sobre a cena não usa o texto "sem luz": o resultado aparece só no painel. O mostrador "Rede", sem tomada da rede no projeto, continua dizendo "não ligada".
 
@@ -118,3 +121,10 @@ O roteiro `scripts/verificar.mjs` ganha um trecho que, com o mouse:
 4. Sai do tutorial e confere que a casa voltou igual.
 
 Capturas: tutorial aberto, um passo com realce de superfície, um com realce de terminal, o resumo e os dois resultados do teste.
+
+## 7. Guarda da casa (achados da revisão)
+
+- Abrir, estando na casa, um arquivo exportado de dentro do tutorial guarda a casa antes, como `entrarNoTutorial`.
+- `sairDoTutorial` grava a casa na chave normal antes de apagar a chave de guarda, para a casa não se perder se a página fechar logo depois.
+- `entrarNoTutorial` para o relógio.
+- Lacuna conhecida do consultor: o cabo positivo da bateria ao controlador de carga não é cobrado de ter fusível próprio. O passo 6 avisa disso em texto.

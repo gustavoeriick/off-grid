@@ -370,7 +370,7 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       titulo: 'Ligue a bateria ao inversor',
       texto:
         'Puxe um cabo do positivo (+) da bateria até o BAT+ do inversor e outro do negativo (−) até o BAT−: clique em um terminal e arraste até o outro. Positivo com positivo, negativo com negativo; invertido, o inversor queima.',
-      dica: 'Na vida real, use ferramenta isolada e nunca deixe metal encostar nos dois polos da bateria: ela entrega centenas de ampères em um curto.',
+      dica: 'Na vida real, confira a polaridade com o multímetro antes de apertar o último terminal, use ferramenta isolada e nunca deixe metal encostar nos dois polos da bateria: ela entrega centenas de ampères em um curto.',
       categoria: 'cabo',
       feito: (p, _d, c) => cabosDoBanco(p, c, ehInversorDeVerdade, { pos: 'batPos', neg: 'batNeg' }).length > 0,
       onde: (p, c) => {
@@ -384,7 +384,7 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       titulo: 'Ponha o fusível no cabo positivo',
       texto:
         'O fusível é o ponto fraco de propósito: ele queima quando passa corrente demais, antes de o cabo esquentar e pegar fogo. Fica no cabo positivo, o mais perto possível da bateria. Arraste o fusível do catálogo e solte em cima do cabo positivo.',
-      dica: 'Na vida real, o fusível é instalado antes de o cabo ser ligado ao inversor. Ele precisa ser menor do que o cabo aguenta; se não for, o consultor avisa.',
+      dica: 'Na vida real, o fusível é instalado antes de o cabo ser ligado ao inversor. Ele precisa ser menor do que o cabo aguenta; se não for, o consultor avisa. Este anúncio vem sem o porta-fusível, que é comprado à parte.',
       itemId: 'prot-fusivel-anl-100',
       feito: (p, _d, c) =>
         cabosDoBanco(p, c, ehInversorDeVerdade, { pos: 'batPos', neg: 'batNeg' }).some(
@@ -397,7 +397,7 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       titulo: 'Instale o controlador de carga e ligue na bateria',
       texto:
         'A placa não pode ser ligada direto na bateria: sem controle, ela sobrecarrega a bateria e a estraga. O controlador de carga fica entre as duas e corta a carga na hora certa. Arraste-o para a parede do fundo e ligue o BAT+ dele no + da bateria e o BAT− no −.',
-      dica: 'O controlador é ligado primeiro na bateria e só depois na placa: é pela bateria que ele descobre se o sistema é de 12 ou de 24 V.',
+      dica: 'O controlador é ligado primeiro na bateria e só depois na placa: é pela bateria que ele descobre se o sistema é de 12 ou de 24 V. Na vida real, este cabo positivo também leva um fusível próprio, perto da bateria, do valor que o manual do controlador indicar: todo cabo que sai do polo da bateria precisa de proteção. O simulador ainda não cobra esse fusível.',
       itemId: 'ctl-pwm-30a',
       feito: (p, _d, c) => cabosDoBanco(p, c, controladorPwm, { pos: 'batPos', neg: 'batNeg' }).length > 0,
       onde: (p, c) => {
