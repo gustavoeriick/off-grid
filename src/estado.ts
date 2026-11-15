@@ -9,13 +9,15 @@ import { cenarioPlanoNoPapel } from './nucleo/cenarios';
 import { analisarCircuito } from './nucleo/circuito';
 import { ajustarParedesInternas } from './nucleo/comodos';
 import { analisarConsultor, modulosDaProtecao } from './nucleo/consultor';
+import { estadoInicial, passoSimulacao } from './nucleo/eletrica';
 import { estimar } from './nucleo/estimativas';
+import { irradianciaNasPlacas, localPorId } from './nucleo/irradiancia';
 import { converterProjeto } from './nucleo/migracao';
 import { calcularOrcamento } from './nucleo/orcamento';
 import { podeLigar, terminaisDe } from './nucleo/terminais';
 import type {
-  Acao, AmbientePlacas, AnaliseCircuito, Cabo, CasaConfig, Clima, Comodo, Estimativas, Orcamento,
-  ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, Sugestao, Varanda, Vec3,
+  Acao, AmbientePlacas, AnaliseCircuito, Cabo, CasaConfig, Clima, Comodo, EstadoSim, Estimativas, Orcamento,
+  ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, SaidaPasso, Sugestao, Varanda, Vec3,
 } from './nucleo/tipos';
 
 export type ModoVisao = 'completa' | 'sem-telhado' | 'terreo';
@@ -36,6 +38,34 @@ export interface Derivados {
   orcamento: Orcamento;
 }
 
+/** Um ponto do gráfico da simulação, a cada 10 minutos simulados. */
+export interface PontoHistorico {
+  msUtc: number;
+  /** Carga da bateria, de 0 a 1. */
+  soc: number;
+  /** Geração aproveitada, em W. */
+  pvW: number;
+  /** Consumo atendido, em W. */
+  cargaW: number;
+  /** Verdadeiro durante a queda de luz. */
+  semRede: boolean;
+}
+
+export interface Simulacao {
+  quedaDeLuz: {
+    ativa: boolean;
+    /** Instante em que a queda começou. */
+    inicioMsUtc: number | null;
+    /** Instante em que a bateria esvaziou durante a queda, se esvaziou. */
+    apagouMsUtc: number | null;
+  };
+  estadoSim: EstadoSim;
+  /** Resultado do último passo, para os mostradores. */
+  saida: SaidaPasso;
+  /** Últimas 48 horas simuladas. */
+  historico: PontoHistorico[];
+}
+
 export interface EstadoApp {
   projeto: Projeto;
   tempo: {
@@ -49,6 +79,7 @@ export interface EstadoApp {
   /** Modo "Editar casa": quartinho, varandas, paredes internas e cômodos respondem ao ponteiro; os equipamentos não. */
   edicaoCasa: { ativa: boolean; andar: 0 | 1 };
   derivados: Derivados;
+  simulacao: Simulacao;
 }
 
 /**
@@ -56,9 +87,9 @@ export interface EstadoApp {
  * 'casa' (medidas, orientação, varandas, paredes internas, cômodos, quartinho), 'dispositivos' e 'cabos'.
  * 'derivados' avisa quando análise, estimativas, sugestões e orçamento foram recalculados.
  */
-export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados';
+export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao';
 
-const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados'];
+const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao'];
 const ouvintes = Object.fromEntries(EVENTOS.map((e) => [e, new Set<() => void>()])) as Record<Evento, Set<() => void>>;
 
 /** 21/06/2026 ao meio-dia no Rio (UTC − 3). */
@@ -138,6 +169,32 @@ function projetoInicial(): Projeto {
   return cenarioPlanoNoPapel();
 }
 
+// ---------------------------------------------------------------- Simulação no tempo (seção 11 da especificação da cena)
+
+const PASSO_MAXIMO_MIN = 5;
+const INTERVALO_HISTORICO_MS = 10 * 60_000;
+const JANELA_HISTORICO_MS = 48 * 3_600_000;
+
+/** Hora local decimal, de 0 a 24, no fuso do local do projeto. */
+export function horaLocalDe(projeto: Projeto, msUtc: number): number {
+  const fuso = localPorId(projeto.localId)?.fuso ?? 0;
+  const ms = (((msUtc + fuso * 3_600_000) % 86_400_000) + 86_400_000) % 86_400_000;
+  return ms / 3_600_000;
+}
+
+/** Um passo do núcleo, de `dtHoras`, com as condições do instante `msUtc`. */
+function passo(projeto: Projeto, analise: AnaliseCircuito, sim: EstadoSim, msUtc: number, dtHoras: number, semRede: boolean): SaidaPasso {
+  projetoDoAmbiente = projeto;
+  const local = localPorId(projeto.localId);
+  const placas = local ? irradianciaNasPlacas(projeto, CATALOGO, local, msUtc, ambiente) : new Map();
+  return passoSimulacao(projeto, CATALOGO, analise, sim, {
+    dtHoras,
+    redeDisponivel: !semRede,
+    horaLocal: horaLocalDe(projeto, msUtc),
+    placas,
+  });
+}
+
 const projetoDeAbertura = projetoInicial();
 
 export const estado: EstadoApp = {
@@ -147,6 +204,14 @@ export const estado: EstadoApp = {
   selecao: null,
   edicaoCasa: { ativa: false, andar: 0 },
   derivados: calcularDerivados(projetoDeAbertura, INSTANTE_INICIAL),
+  simulacao: undefined as unknown as Simulacao,
+};
+
+estado.simulacao = {
+  quedaDeLuz: { ativa: false, inicioMsUtc: null, apagouMsUtc: null },
+  estadoSim: estadoInicial(),
+  saida: passo(estado.projeto, estado.derivados.analise, estadoInicial(), INSTANTE_INICIAL, 0, false),
+  historico: [],
 };
 
 /** Registra uma função chamada a cada mudança do tipo dado. Devolve a função que cancela o registro. */
@@ -173,6 +238,24 @@ export function recalcularAgora(): void {
   esperaDerivados = null;
   estado.derivados = calcularDerivados(estado.projeto, estado.tempo.msUtc);
   avisar('derivados');
+  atualizarMostradores();
+}
+
+/** Passo de duração zero: atualiza os mostradores sem gastar bateria. */
+function atualizarMostradores(): void {
+  const sim = estado.simulacao;
+  sim.saida = passo(estado.projeto, estado.derivados.analise, sim.estadoSim, estado.tempo.msUtc, 0, sim.quedaDeLuz.ativa);
+  avisar('simulacao');
+}
+
+function registrarNoHistorico(msUtc: number, saida: SaidaPasso): void {
+  const sim = estado.simulacao;
+  const ultimo = sim.historico[sim.historico.length - 1];
+  if (ultimo && msUtc < ultimo.msUtc) sim.historico = [];
+  else if (ultimo && msUtc - ultimo.msUtc < INTERVALO_HISTORICO_MS) return;
+  sim.historico.push({ msUtc, soc: saida.estado.soc, pvW: saida.pvW, cargaW: saida.cargaAtendidaW, semRede: sim.quedaDeLuz.ativa });
+  const limite = msUtc - JANELA_HISTORICO_MS;
+  while (sim.historico.length > 0 && sim.historico[0]!.msUtc < limite) sim.historico.shift();
 }
 
 function agendarGravacao(): void {
@@ -638,9 +721,55 @@ export const acoes = {
     avisar('edicao');
   },
 
+  /** Salta para um instante, sem simular o intervalo: a bateria fica como estava. */
   definirTempo(msUtc: number): void {
     estado.tempo.msUtc = msUtc;
     avisar('tempo');
+    atualizarMostradores();
+  },
+
+  /**
+   * Avança o tempo simulando geração, consumo e bateria, em passos de até 5 minutos avaliados no meio do passo.
+   * É o que o relógio chama a cada quadro, com a velocidade escolhida.
+   */
+  avancarTempo(minutos: number): void {
+    if (!(minutos > 0)) return;
+    const sim = estado.simulacao;
+    const analise = estado.derivados.analise;
+    let resta = minutos;
+    let agora = estado.tempo.msUtc;
+    while (resta > 1e-9) {
+      const dtMin = Math.min(PASSO_MAXIMO_MIN, resta);
+      const meio = agora + (dtMin * 60_000) / 2;
+      const saida = passo(estado.projeto, analise, sim.estadoSim, meio, dtMin / 60, sim.quedaDeLuz.ativa);
+      agora += dtMin * 60_000;
+      resta -= dtMin;
+      sim.estadoSim = saida.estado;
+      sim.saida = saida;
+      if (sim.quedaDeLuz.ativa && sim.quedaDeLuz.apagouMsUtc === null && saida.avisos.includes('bateria-vazia')) {
+        sim.quedaDeLuz.apagouMsUtc = agora;
+      }
+      registrarNoHistorico(agora, saida);
+    }
+    estado.tempo.msUtc = agora;
+    avisar('tempo');
+    avisar('simulacao');
+  },
+
+  /** Liga ou desliga a queda de luz. Ao ligar, guarda o instante de início. */
+  alternarQuedaDeLuz(): void {
+    const q = estado.simulacao.quedaDeLuz;
+    estado.simulacao.quedaDeLuz = q.ativa
+      ? { ativa: false, inicioMsUtc: null, apagouMsUtc: null }
+      : { ativa: true, inicioMsUtc: estado.tempo.msUtc, apagouMsUtc: null };
+    atualizarMostradores();
+  },
+
+  /** Volta a bateria para 100% e religa o inversor. */
+  recarregarBateria(): void {
+    estado.simulacao.estadoSim = estadoInicial();
+    estado.simulacao.quedaDeLuz.apagouMsUtc = null;
+    atualizarMostradores();
   },
 
   /** Minutos simulados por segundo real: 0, 1, 10 ou 60. */
