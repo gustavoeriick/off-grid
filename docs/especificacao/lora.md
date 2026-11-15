@@ -240,6 +240,30 @@ O repetidor não amplifica o sinal: ele recebe a mensagem inteira e a transmite 
 
 **Limite do que a sugestão sabe:** ela procura terreno alto com boa ligação para os dois lados. Não sabe se o lugar tem acesso, dono, energia ou autorização. É um ponto de partida para olhar no mapa e visitar.
 
+### 4.10 Repetidor solar (tarefa L3.3)
+
+Decisão do Gustavo em 15/11/2026: o consumo do rádio já vem preenchido com a faixa estimada, marcada como estimativa, e o resultado sai como faixa. Função `dimensionarRepetidorSolar`, em `src/lora/nucleo/solar.ts`. É o único ponto em que o ambiente de LoRa importa de `src/nucleo`.
+
+| Dado | Valor | Fonte |
+|---|---|---|
+| Consumo médio do rádio como repetidor | de 5 a 40 mA | Guia de nó solar do d-central, para o RAK4631: 5 a 20 mA com pouco tráfego e 15 a 40 mA com tráfego moderado. O próprio guia marca como estimativa e manda medir; não há medição publicada |
+| Tensão nominal da bateria do rádio | 3,7 V | A que o mesmo guia usa para converter mA em Wh |
+| Dias seguidos sem sol | 3 | Escolha do projeto para o valor inicial; a pessoa ajusta |
+| Sol do pior mês | 3,46 kWh/m²/dia (junho, Rio de Janeiro) | `LOCAIS` do simulador solar (climatologia da NASA POWER); a pessoa ajusta |
+| Perdas da placa | 7% | `PERDAS_PLACA` do simulador solar |
+| Rendimento da carga e descarga máxima da bateria de lítio | 97,5% e 90% | `PARAMETROS_QUIMICA.lifepo4` do simulador solar |
+
+```
+Wh por dia   = (mA / 1000) × 3,7 × 24
+Placa (W)    = Wh por dia ÷ (sol do pior mês × (1 − 0,07) × 0,975)
+Bateria (Wh) = Wh por dia × dias sem sol ÷ 0,9
+Bateria (mAh) = Bateria (Wh) ÷ 3,7 × 1000
+```
+
+A conta é feita para o consumo mínimo e para o máximo. Ela supõe a placa deitada, sem sombra, e repõe em um dia do pior mês o que o rádio gasta em um dia; não deixa sobra para recarregar a bateria depois de dias nublados. Por isso a tela diz que os números são o mínimo e que placa e bateria de verdade levam folga.
+
+Os ajustes ficam no projeto (`ProjetoLora.repetidorSolar`), valem para todos os repetidores dele e têm limites: consumo de 0,1 a 500 mA, de 0 a 30 dias sem sol e sol de 0,5 a 8 kWh/m²/dia. A seção aparece no painel do ponto do tipo repetidor.
+
 ## 5. Relevo (`src/lora/dados`)
 
 - **Fonte:** blocos "Terrarium" do conjunto público Terrain Tiles, na AWS: `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`. Conferido em 15/11/2026: responde com `Access-Control-Allow-Origin: *`.
@@ -338,6 +362,8 @@ Saída de `node scripts/referencia/lora-referencia.mjs`. Tolerância de 0,01 nas
 **Conta do enlace,** Long Fast, 22 dBm, 0 dBi, sem cabo: 20 km no ar livre: chega −95,70 dBm, folga 35,30 dB. 40 km: chega −101,72 dBm, folga 29,28 dB. Morro de 100 m no meio de 20 km, antenas de 3 dBi e 1 dB de cabo no total: chega −124,24 dBm, folga 6,76 dB: "fecha no limite".
 
 **Limite pela densidade espectral:** 125 kHz: 24,20 dBm. 250 kHz: 27,21 dBm. 500 kHz: 30,00 dBm.
+
+**Repetidor solar,** com os valores padrão: 5 mA gastam 0,444 Wh por dia e pedem placa de 0,14 W e bateria de 1,48 Wh (400 mAh). 40 mA gastam 3,552 Wh por dia e pedem placa de 1,13 W e bateria de 11,84 Wh (3.200 mAh).
 
 **Relevo:** pixel (128; 0; 0): 0 m. (130; 110; 128): 622,50 m. (127; 255; 0): −1 m. No zoom 11: (0; 0) fica no bloco 1024/1024, pixel (0; 0). (−10; −50) fica no bloco 739/1081, pixel (142,2; 46,1). (45; 90) fica no bloco 1536/736, pixel (0; 183,5).
 

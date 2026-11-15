@@ -19,7 +19,7 @@ const COEF_VMP = -0.003;
 /** Queda da tensão de circuito aberto, por °C. */
 const COEF_VOC = -0.0027;
 /** Sujeira, envelhecimento e diferença entre placas. */
-const PERDAS_PLACA = 0.07;
+export const PERDAS_PLACA = 0.07;
 /** Célula mais fria considerada no Rio, em °C. */
 const T_FRIO = 10;
 /** Célula mais quente considerada, em °C. */
@@ -106,7 +106,7 @@ export function saidaArranjo(fileiras: EstadoPlaca[][], solar: EntradaSolar, ten
 
 // ---------------------------------------------------------------- Banco de baterias
 
-const PARAMETROS_QUIMICA: Record<Quimica, { socMin: number; rend: number; fatorRef: number }> = {
+export const PARAMETROS_QUIMICA: Record<Quimica, { socMin: number; rend: number; fatorRef: number }> = {
   lifepo4: { socMin: 0.1, rend: 0.975, fatorRef: 1.0667 },
   chumbo: { socMin: 0.5, rend: 0.894, fatorRef: 1 },
   automotiva: { socMin: 0.7, rend: 0.866, fatorRef: 1 },

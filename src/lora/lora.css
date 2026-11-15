@@ -997,3 +997,30 @@ button.lora-rota[aria-pressed='true'] {
 .lora-explica button {
   margin-top: 4px;
 }
+
+/* ---------------------------------------------------------------- Repetidor solar (L3.3) */
+.lora-solar {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--borda);
+  border-left: 4px solid #e0a100;
+  border-radius: 6px;
+  background: #fffdf5;
+}
+
+.lora-solar h3 {
+  margin: 0 0 4px;
+}
+
+.lora-solar-resultado {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid var(--borda);
+  font-size: 13.5px;
+}
+
+.lora-solar-resultado strong {
+  font-variant-numeric: tabular-nums;
+}

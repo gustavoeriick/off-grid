@@ -71,6 +71,8 @@ export interface ProjetoLora {
   pontos: PontoLora[];
   /** Pares de pontos ligados. */
   enlaces: { de: string; para: string }[];
+  /** Ajustes da conta de placa e bateria do repetidor solar. Sem o campo, valem os padrões de `solar.ts`. */
+  repetidorSolar?: { consumoMinMa: number; consumoMaxMa: number; diasSemSol: number; solKwhM2Dia: number };
 }
 
 /** Geometria de um ponto do corte: o que o gráfico desenha. */

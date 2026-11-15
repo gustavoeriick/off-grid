@@ -3,6 +3,7 @@
 // Os painéis se redesenham quando o projeto, a seleção ou o cálculo mudam. O painel do ponto e a configuração
 // são montados uma vez e só têm os valores atualizados, para o campo que está sendo digitado não perder o foco.
 
+import { montarRepetidorSolar } from './painel-solar';
 import { acoesLora, assinarLora, estadoLora } from '../estado';
 import { altitudeDoPonto, assinarCalculo, modoDoProjeto, rotasEntreCasas, situacaoDaAltitude, situacaoDoEnlace, type SituacaoDoEnlace } from '../calculo';
 import { avisosDaRegra, MODOS, REGIOES, SALTOS_MAXIMO } from '../nucleo';
@@ -223,6 +224,7 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
     h('strong', null, 'O que é um repetidor'),
     h('ul', null, ...TEXTO_DO_REPETIDOR.map((frase) => h('li', null, frase))),
   );
+  const solar = montarRepetidorSolar();
   const apagar = h('button', { type: 'button', class: 'lora-perigo', title: 'Apaga o ponto e os enlaces ligados a ele. Dá para desfazer com Ctrl+Z.' }, 'Apagar ponto');
   apagar.addEventListener('click', () => acoesLora.removerPonto(id));
 
@@ -234,6 +236,7 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
     h('div', { class: 'lora-campo' }, h('label', null, termo('Tipo', `Casa: um rádio em uma casa. ${GLOSSARIO.repetidor}`), tipo)),
     ...linhas,
     oQueERepetidor,
+    solar.elemento,
     posicao,
     altitude,
     rotas,
@@ -258,6 +261,8 @@ function montarPainelDoPonto(id: string): PainelDoPonto {
     const lista = avisosDaRegra(ponto, modoDoProjeto(estadoLora.projeto));
     avisos.replaceChildren(...lista.map((a) => h('p', { class: 'lora-aviso', role: 'note' }, a)));
     oQueERepetidor.hidden = ponto.tipo !== 'repetidor';
+    solar.elemento.hidden = ponto.tipo !== 'repetidor';
+    solar.atualizar();
     const linha = linhaDasRotas('este ponto', (r) => r.pontos.includes(id));
     rotas.replaceChildren(...(linha ? [linha] : []));
   };

@@ -7,3 +7,4 @@ export * from './propagacao';
 export * from './regras';
 export * from './enlace';
 export * from './rede';
+export * from './solar';

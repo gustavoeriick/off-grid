@@ -2842,6 +2842,36 @@ async function principal() {
     conferir(['rádio igual aos outros', 'lugar alto', 'não amplifica', 'recebe a mensagem inteira e transmite de novo', 'os dois lados'].every((t) => texto.includes(t)), `o painel do repetidor deveria explicar o que ele é: "${texto}"`);
     conferir((await pagina.locator('#lora-direita .lora-nas-rotas').textContent()).includes('Casa do morro → Repetidor 1 → Casa do vale'), 'o painel do ponto deveria dizer de que rota ele participa');
     await captura('116-lora-painel-do-repetidor');
+
+    // Repetidor solar (seção 4.10): a faixa padrão, um ajuste pelo campo e a volta com desfazer.
+    conferir(await pagina.locator('#lora-solar').isVisible(), 'o painel do repetidor deveria mostrar a seção do repetidor solar');
+    texto = await pagina.locator('#lora-solar-resultado').textContent();
+    conferir(
+      ['de 0,44 a 3,6 Wh por dia', 'de 0,14 a 1,1 W', 'de 1,5 a 11,8 Wh', 'de 400 a 3.200 mAh', '3 dias sem sol'].every((t) => texto.includes(t)),
+      `a faixa padrão do repetidor solar deveria aparecer: "${texto}"`,
+    );
+    conferir((await pagina.locator('#lora-solar').textContent()).includes('estimativa'), 'a seção deveria dizer que o consumo é uma estimativa');
+    await pagina.locator('#lora-solar').scrollIntoViewIfNeeded();
+    await captura('120-lora-repetidor-solar');
+    const campoMin = pagina.locator('#lora-solar [data-solar="consumoMinMa"]');
+    const campoMax = pagina.locator('#lora-solar [data-solar="consumoMaxMa"]');
+    await campoMin.fill('20');
+    await campoMin.press('Tab');
+    await campoMax.fill('20');
+    await campoMax.press('Tab');
+    texto = await pagina.locator('#lora-solar-resultado').textContent();
+    conferir(texto.includes('1,8 Wh por dia') && !texto.includes('de 0,44'), `com 20 mA nos dois campos o resultado deveria ser um valor só: "${texto}"`);
+    conferir((await lora()).projeto.repetidorSolar?.consumoMinMa === 20, 'o ajuste do repetidor solar deveria ficar no projeto');
+    await pagina.evaluate(() => {
+      window.__lora.acoes.desfazer();
+      window.__lora.acoes.desfazer();
+    });
+    conferir((await lora()).projeto.repetidorSolar === undefined, 'desfazer deveria voltar aos ajustes padrão do repetidor solar');
+    // Uma casa não mostra a seção.
+    await cliqueNoPonto((await lora()).projeto.pontos.find((p) => p.tipo === 'casa').id);
+    conferir(await pagina.locator('#lora-solar').count() === 0 || await pagina.locator('#lora-solar').isHidden(), 'uma casa não deveria mostrar a seção do repetidor solar');
+    await cliqueNoPonto(rep.id);
+
     await pagina.locator('#lora-novo-repetidor').click();
     texto = await pagina.locator('#lora-dica').textContent();
     conferir(texto.includes('não amplifica') && texto.includes('lugar alto') && texto.includes('dois lados'), `a dica de "Novo repetidor" deveria explicar o repetidor: "${texto}"`);

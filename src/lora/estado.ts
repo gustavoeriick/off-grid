@@ -3,6 +3,7 @@
 // Os pontos do mapa ficam só no navegador: nada aqui envia o projeto para fora.
 
 import { criarBiblioteca, nomeLimpo, type ProjetoGravado } from '../biblioteca';
+import { AJUSTES_PADRAO_DO_REPETIDOR_SOLAR, type AjustesDoRepetidorSolar } from './nucleo/solar';
 import type { PontoLora, ProjetoLora, Regiao } from './nucleo/tipos';
 
 export type SelecaoLora = { tipo: 'ponto'; id: string } | { tipo: 'enlace'; de: string; para: string } | null;
@@ -22,6 +23,18 @@ export function projetoVazio(nome: string): ProjetoLora {
 
 const finito = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 const entre = (n: number, min: number, max: number): number => Math.min(max, Math.max(min, n));
+
+/** Ajustes do repetidor solar dentro dos limites: consumo de 0,1 a 500 mA, de 0 a 30 dias sem sol, sol de 0,5 a 8 kWh/m²/dia. */
+function conferirSolar(dados: Partial<AjustesDoRepetidorSolar>): AjustesDoRepetidorSolar {
+  const p = AJUSTES_PADRAO_DO_REPETIDOR_SOLAR;
+  const valor = (n: unknown, padrao: number, min: number, max: number): number => entre(finito(n) ? n : padrao, min, max);
+  return {
+    consumoMinMa: valor(dados.consumoMinMa, p.consumoMinMa, 0.1, 500),
+    consumoMaxMa: valor(dados.consumoMaxMa, p.consumoMaxMa, 0.1, 500),
+    diasSemSol: valor(dados.diasSemSol, p.diasSemSol, 0, 30),
+    solKwhM2Dia: valor(dados.solKwhM2Dia, p.solKwhM2Dia, 0.5, 8),
+  };
+}
 
 /** Confere e arruma um projeto lido de fora. Lança erro se não for um projeto de rádio. */
 export function conferirProjeto(dados: unknown): ProjetoLora {
@@ -63,6 +76,7 @@ export function conferirProjeto(dados: unknown): ProjetoLora {
     limiteDeSaltos: Math.round(entre(finito(d.limiteDeSaltos) ? d.limiteDeSaltos : 3, 1, 7)),
     pontos,
     enlaces,
+    ...(d.repetidorSolar && typeof d.repetidorSolar === 'object' ? { repetidorSolar: conferirSolar(d.repetidorSolar) } : {}),
   };
 }
 
@@ -77,6 +91,11 @@ function projetoDeAbertura(): ProjetoLora {
     }
   }
   return projetoVazio('Minha rede');
+}
+
+/** Os ajustes do repetidor solar do projeto da tela, ou os padrões. */
+export function ajustesDoRepetidorSolar(): AjustesDoRepetidorSolar {
+  return estadoLora.projeto.repetidorSolar ?? AJUSTES_PADRAO_DO_REPETIDOR_SOLAR;
 }
 
 export const estadoLora: { projeto: ProjetoLora; selecao: SelecaoLora } = { projeto: projetoDeAbertura(), selecao: null };
@@ -228,6 +247,13 @@ export const acoesLora = {
   configurar(dados: Partial<Pick<ProjetoLora, 'modo' | 'margemDoAmbienteDb' | 'limiteDeSaltos'>> & { regiao?: Regiao }): void {
     mudar((p) => {
       Object.assign(p, conferirProjeto({ ...p, ...dados }));
+    });
+  },
+
+  /** Ajustes da conta do repetidor solar: consumo, dias sem sol e sol do pior mês. Valem para o projeto inteiro. */
+  ajustarRepetidorSolar(dados: Partial<AjustesDoRepetidorSolar>): void {
+    mudar((p) => {
+      p.repetidorSolar = conferirSolar({ ...ajustesDoRepetidorSolar(), ...dados });
     });
   },
 
