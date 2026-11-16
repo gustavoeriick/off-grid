@@ -114,8 +114,11 @@ export interface OffgridGlobal {
    * Vazio com o visor apagado; nulo se a peça não tem visor.
    */
   textoDoVisor?: (uid: string) => string | null;
-  /** Auxiliar de verificação: selos de queimado na cena (`uid` da peça ou do cabo, ou `{cabo}:{indice}` da proteção), partículas de efeito vivas e visores ampliados à mostra. */
-  operacaoNaCena?: () => { selos: string[]; particulas: number; visoresFlutuando: string[] };
+  /**
+   * Auxiliar de verificação: selos de queimado na cena (`uid` da peça ou do cabo, ou `{cabo}:{indice}` da proteção), partículas
+   * de efeito vivas, visores ampliados à mostra e o lugar de cada um na janela, em pixels, com a ponta do fio sobre a peça.
+   */
+  operacaoNaCena?: () => ReturnType<CamadaDeOperacao['resumo']>;
   /**
    * Auxiliar de verificação: se o aparelho recebe energia agora (ligado, no horário de uso e atendido pelo sistema ou
    * pela tomada da rede), se o que acende nele está aceso e se a hélice gira. Nulo se a peça não é um aparelho na cena.

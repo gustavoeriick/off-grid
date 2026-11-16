@@ -5,7 +5,9 @@
 //   O desenho do estado (alavanca, fusível) é de `protecoes.ts`, aplicado pelas camadas de cabos e de dispositivos.
 // - Botão de ligar: um botão redondo, sempre de frente, no canto de cima de cada inversor e de cada aparelho.
 // - Visores: números ao vivo no controlador, no inversor e na bateria. O mesmo desenho aparece na face da peça
-//   (onde o modelo tem visor) e, quando esse fica pequeno demais na tela, ampliado logo acima dela.
+//   (onde o modelo tem visor) e, quando esse fica pequeno demais na tela, ampliado ao lado ou acima dela, ligado a ela
+//   por um fio fino. O ampliado é desenhado por cima das peças e dos cabos, não cai sobre a peça dele nem sobre outro
+//   visor (o lugar sai de `lugarDosVisores.ts`) e some quando uma parede, um piso ou um telhado esconde a peça.
 // - Queimado: selo "QUEIMADO" sobre a peça, o cabo ou a proteção, enquanto durar; fumaça, faísca e estalo no evento.
 //
 // A camada só lê o estado. Quem chama as ações é a interação com o ponteiro (`interacao.ts`).
@@ -20,6 +22,7 @@ import { emUso, usoDe } from '../nucleo/uso';
 import type { CamadaDeCabos } from './cabos';
 import type { CamadaDeDispositivos } from './dispositivos';
 import { criarEfeitos } from './efeitos';
+import { escolherLugares, type Estorvo, type PedidoDeLugar, pontoMaisPerto, type Retangulo, sobreposicao } from './lugarDosVisores';
 import { esconder } from './malha';
 import { caixaDaChave } from './protecoes';
 import { type ConteudoDoVisor, conteudoDoVisor, desenharVisor, textoDoConteudo, VISOR_ALTURA_PX, VISOR_LARGURA_PX } from './visores';
@@ -48,6 +51,17 @@ export interface BotaoNaTela {
   distancia: number;
 }
 
+/** Para a verificação: onde está um visor ampliado, em pixels da janela, e onde o fio dele toca a peça. */
+export interface LugarNaJanela {
+  uid: string;
+  x: number;
+  y: number;
+  largura: number;
+  altura: number;
+  /** Ponta do fio, sobre a peça. */
+  ponta: [x: number, y: number];
+}
+
 export interface CamadaDeOperacao {
   /**
    * Chamada a cada volta do laço da cena: põe a camada em dia com o estado, ajusta o tamanho do que é medido em pixels
@@ -69,14 +83,24 @@ export interface CamadaDeOperacao {
   /** Texto do visor de uma peça: as linhas separadas por " | ". Vazio com o visor apagado; nulo se a peça não tem visor. */
   textoDoVisor(uid: string): string | null;
   /** Para a verificação: selos de queimado na cena e partículas de efeito vivas. */
-  resumo(): { selos: string[]; particulas: number; visoresFlutuando: string[] };
+  resumo(): { selos: string[]; particulas: number; visoresFlutuando: string[]; lugaresDosVisores: LugarNaJanela[] };
   destruir(): void;
 }
 
 /** O visor é lido de novo, no máximo, a cada tanto: o de verdade também não pisca a cada instante. */
 const INTERVALO_DOS_VISORES_MS = 120;
-/** Visor ampliado acima da peça: largura no mundo, limites na tela e a distância da câmera a partir da qual some. */
+/** Visor ampliado: largura no mundo, limites na tela e a distância da câmera a partir da qual some. */
 const VISOR_FLUTUANTE = { largura: 0.26, minimoPx: 140, maximoPx: 210, alcance: 16 } as const;
+/** Fio que liga o visor ampliado à peça dele: espessura e diâmetro da ponta, na tela. */
+const FIO = { espessuraPx: 4, pontaPx: 9, minimoPx: 5 } as const;
+/** Tempo que o visor ampliado leva para ir de um lugar a outro, quando muda de lugar. */
+const MUDANCA_DE_LUGAR_MS = 180;
+/** Quanto o visor ampliado deve evitar cobrir cada coisa (custo de `lugarDosVisores.ts`). */
+const PESO = { pecaComVisor: 25, aparelho: 10, botao: 30, protecao: 30, painel: 60 } as const;
+/** Meio lado, na tela, da área que uma proteção ocupa para o visor ampliado a evitar. */
+const MEIA_PROTECAO_PX = 14;
+/** De quanto em quanto tempo são lidos os painéis da página que ficam sobre a cena. */
+const INTERVALO_DOS_PAINEIS_MS = 400;
 /** Com o visor da face da peça com esta largura na tela, ou mais, o ampliado não aparece. */
 const VISOR_LEGIVEL_PX = 120;
 /** Botão de ligar: diâmetro no mundo e limites na tela. */
@@ -98,6 +122,19 @@ interface Visor {
   face: THREE.Mesh | null;
   larguraDaFace: number;
   flutuante: THREE.Sprite;
+  /** Fio do visor ampliado até a peça, e a ponta dele sobre a peça. */
+  fio: THREE.Mesh;
+  ponta: THREE.Sprite;
+  /** Lugar do visor ampliado no último quadro: candidato escolhido e retângulo na tela. Nulo se não estava à mostra. */
+  candidato: number | null;
+  ret: Retangulo | null;
+  pontaNaTela: [number, number];
+  /** Centro do visor ampliado em relação ao meio do topo da caixa da peça na tela, como foi desenhado. */
+  desvio: [number, number];
+  /** Mudança de lugar em curso: quanto falta do caminho, em pixels, e quando começou. */
+  mudanca: { dx: number; dy: number; inicio: number } | null;
+  /** Última conferência de parede na frente: de onde a câmera olhava, onde a peça estava e o resultado. */
+  vista: { chave: string; livre: boolean };
   conteudo: ConteudoDoVisor | null;
   /** Texto e estado do último desenho: o desenho só é refeito quando isto muda. */
   desenhado: string;
@@ -214,6 +251,40 @@ function texturaDoSelo(): THREE.CanvasTexture {
   return t;
 }
 
+/** Fio do visor ampliado: traço escuro no meio, com borda clara dos dois lados. */
+function texturaDoFio(): THREE.CanvasTexture {
+  const cv = document.createElement('canvas');
+  cv.width = 4;
+  cv.height = 8;
+  const g = cv.getContext('2d')!;
+  g.fillStyle = 'rgba(255,255,255,0.9)';
+  g.fillRect(0, 0, 4, 8);
+  g.fillStyle = '#10202e';
+  g.fillRect(0, 2, 4, 4);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Ponta do fio, sobre a peça: disco escuro de aro claro. */
+function texturaDaPonta(): THREE.CanvasTexture {
+  const lado = 32;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = lado;
+  const g = cv.getContext('2d')!;
+  g.beginPath();
+  g.arc(lado / 2, lado / 2, lado / 2 - 1, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  g.fill();
+  g.beginPath();
+  g.arc(lado / 2, lado / 2, lado / 2 - 6, 0, Math.PI * 2);
+  g.fillStyle = '#10202e';
+  g.fill();
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
   const camada = new THREE.Group();
   camada.name = 'operacao';
@@ -233,11 +304,18 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
   // O selo aparece mesmo atrás de parede ou de telhado: uma peça queimada precisa ser achada de longe.
   const matSelo = new THREE.SpriteMaterial({ map: desenhoDoSelo, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
   const PROPORCAO_DO_SELO = 272 / 72;
+  // Fio do visor ampliado: traço escuro com borda clara, para aparecer sobre peça escura e sobre parede clara.
+  const desenhoDoFio = texturaDoFio();
+  const matFio = new THREE.MeshBasicMaterial({ map: desenhoDoFio, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
+  const desenhoDaPonta = texturaDaPonta();
+  const matPonta = new THREE.SpriteMaterial({ map: desenhoDaPonta, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
 
   const visores = new Map<string, Visor>();
   const botoes = new Map<string, Botao>();
   let selos: Selo[] = [];
   let chaves: Chave[] | null = null;
+  /** Cresce a cada vez que as peças, os cabos, a casa ou o modo de visão mudam: invalida o que foi medido antes. */
+  let versaoDaEstrutura = 0;
 
   /** A estrutura (que peças têm visor, botão e selo) precisa ser conferida com o projeto. */
   let estruturaSuja = true;
@@ -293,26 +371,34 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       face.raycast = semRaio;
       grupo.add(face);
     }
-    // O mesmo desenho, ampliado e sempre de frente, logo acima da peça: é o que se lê da distância de trabalho.
-    const flutuante = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura, transparent: true, depthWrite: false, toneMapped: false }));
+    // O mesmo desenho, ampliado e sempre de frente: é o que se lê da distância de trabalho. É desenhado sem teste de
+    // profundidade, por cima da peça dele, dos cabos e das outras peças; o lugar na tela é posto a cada quadro por
+    // `arrumarVisores`, que também o esconde quando uma parede, um piso ou um telhado tapa a peça.
+    const flutuante = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
     flutuante.name = 'visor-ampliado';
-    const [, H, D] = peca.modelo.dimensoes;
-    if (peca.item.categoria === 'bateria') {
-      // Na bateria, sobre a frente dela: em cima ficam os polos, os cabos e o fusível, que o visor não pode tapar.
-      flutuante.center.set(0.5, 1);
-      flutuante.position.set(0, H / 2 - 0.015, D / 2 + 0.03);
-    } else {
-      flutuante.center.set(0.5, 0);
-      flutuante.position.set(0, peca.modelo.volume.max.y + 0.06, D / 2 + 0.03);
-    }
     flutuante.renderOrder = 8;
     flutuante.raycast = semRaio;
-    grupo.add(flutuante);
+    flutuante.visible = false;
+    const fio = new THREE.Mesh(geoFace, matFio);
+    fio.name = 'fio-do-visor';
+    fio.renderOrder = 7;
+    fio.raycast = semRaio;
+    fio.frustumCulled = false;
+    fio.visible = false;
+    const ponta = new THREE.Sprite(matPonta);
+    ponta.name = 'ponta-do-fio';
+    ponta.renderOrder = 7;
+    ponta.raycast = semRaio;
+    ponta.visible = false;
+    grupo.add(fio, ponta, flutuante);
     if (c.dispositivos.escondida(d.uid)) {
       if (face) esconder(face, true);
-      esconder(flutuante, true);
+      for (const o of [flutuante, fio, ponta]) esconder(o, true);
     }
-    return { uid: d.uid, itemId: d.itemId, grupo, pincel, textura, face, larguraDaFace: lugar?.largura ?? 0, flutuante, conteudo: null, desenhado: '' };
+    return {
+      uid: d.uid, itemId: d.itemId, grupo, pincel, textura, face, larguraDaFace: lugar?.largura ?? 0, flutuante, fio, ponta,
+      candidato: null, ret: null, pontaNaTela: [0, 0], desvio: [0, 0], mudanca: null, vista: { chave: '', livre: true }, conteudo: null, desenhado: '',
+    };
   }
 
   function removerVisor(v: Visor): void {
@@ -320,7 +406,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       v.face.parent?.remove(v.face);
       (v.face.material as THREE.Material).dispose();
     }
-    v.flutuante.parent?.remove(v.flutuante);
+    for (const o of [v.flutuante, v.fio, v.ponta]) o.parent?.remove(o);
     v.flutuante.material.dispose();
     v.textura.dispose();
     visores.delete(v.uid);
@@ -435,6 +521,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
   /** Confere com o projeto quais peças têm visor, botão e selo. As camadas de dispositivos e de cabos já estão em dia. */
   function conferirEstrutura(): void {
     estruturaSuja = false;
+    versaoDaEstrutura++;
     chaves = null;
     const comVisor = new Set<string>();
     const comBotao = new Set<string>();
@@ -483,30 +570,260 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
     if (visoresSujos) lerVisores();
   }
 
-  // ---------------------------------------------------------------- Tamanhos na tela, a cada quadro
+  // ---------------------------------------------------------------- Tamanhos e lugares na tela, a cada quadro
 
   const normal = new THREE.Vector3();
   const paraACamera = new THREE.Vector3();
+  const canto = new THREE.Vector3();
+  const quatDoGrupo = new THREE.Quaternion();
+  const giroNaTela = new THREE.Quaternion();
+  const EIXO_DA_VISTA = new THREE.Vector3(0, 0, 1);
+  const raioDeVista = new THREE.Raycaster();
+  const alvoDaVista = new THREE.Vector3();
+  let listaDeTapumes: THREE.Mesh[] = [];
+  let tapumesDaVersao = -1;
+  let paineis: Retangulo[] = [];
+  let paineisLidosEm = -Infinity;
 
-  function ajustar(): void {
-    for (const v of visores.values()) {
-      const distancia = v.flutuante.getWorldPosition(noMundo).distanceTo(c.camera.position);
-      const porPixel = metrosPorPixel(distancia);
-      let legivelNaFace = false;
-      if (v.face) {
-        // O visor da face basta quando está de frente para a câmera e largo o bastante na tela.
-        v.face.getWorldPosition(noMundo);
-        paraACamera.copy(c.camera.position).sub(noMundo).normalize();
-        normal.set(0, 0, 1).transformDirection(v.face.matrixWorld);
-        const deFrente = normal.dot(paraACamera);
-        legivelNaFace = deFrente > 0.35 && (v.larguraDaFace * deFrente) / porPixel >= VISOR_LEGIVEL_PX;
-      }
-      v.flutuante.visible = !legivelNaFace && distancia <= VISOR_FLUTUANTE.alcance;
-      if (!v.flutuante.visible) continue;
-      // Apagado, o visor ampliado fica menor: diz que a peça está sem energia sem tomar o lugar dos que têm números.
-      const largura = THREE.MathUtils.clamp(VISOR_FLUTUANTE.largura / porPixel, VISOR_FLUTUANTE.minimoPx, VISOR_FLUTUANTE.maximoPx) * porPixel * (v.conteudo?.aceso === false ? 0.65 : 1);
-      v.flutuante.scale.set(largura, (largura * VISOR_ALTURA_PX) / VISOR_LARGURA_PX, 1);
+  interface CaixaNaTela {
+    ret: Retangulo;
+    /** Distância do meio da peça ao plano da câmera. */
+    profundidade: number;
+  }
+
+  /** Ponto do mundo em pixels da cena (origem no canto de cima, à esquerda). Nulo se está atrás da câmera. */
+  function pontoNaCena(ponto: THREE.Vector3, L: number, A: number): [number, number] | null {
+    canto.copy(ponto).applyMatrix4(c.camera.matrixWorldInverse);
+    if (canto.z > -c.camera.near) return null;
+    canto.applyMatrix4(c.camera.projectionMatrix);
+    return [((canto.x + 1) / 2) * L, ((1 - canto.y) / 2) * A];
+  }
+
+  /** Caixa de uma peça na tela, em pixels da cena. Nulo se algum canto dela está atrás da câmera. */
+  function caixaNaTela(grupo: THREE.Object3D, volume: THREE.Box3, L: number, A: number): CaixaNaTela | null {
+    grupo.updateWorldMatrix(true, false);
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    let profundidade = 0;
+    for (let i = 0; i < 8; i++) {
+      canto
+        .set(i & 1 ? volume.max.x : volume.min.x, i & 2 ? volume.max.y : volume.min.y, i & 4 ? volume.max.z : volume.min.z)
+        .applyMatrix4(grupo.matrixWorld)
+        .applyMatrix4(c.camera.matrixWorldInverse);
+      if (canto.z > -c.camera.near) return null;
+      profundidade -= canto.z / 8;
+      canto.applyMatrix4(c.camera.projectionMatrix);
+      const x = ((canto.x + 1) / 2) * L;
+      const y = ((1 - canto.y) / 2) * A;
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
     }
+    return { ret: { x: x0, y: y0, largura: x1 - x0, altura: y1 - y0 }, profundidade };
+  }
+
+  /** Põe um objeto, filho do grupo de uma peça, em um ponto da tela, à profundidade dada (em coordenadas da tela, de −1 a 1). */
+  function porNaTela(o: THREE.Object3D, x: number, y: number, z: number, L: number, A: number): void {
+    o.position.set((x / L) * 2 - 1, 1 - (y / A) * 2, z).unproject(c.camera);
+    o.parent?.worldToLocal(o.position);
+  }
+
+  /**
+   * O que da casa tapa a vista de uma peça: paredes, pisos, lajes, portas, a prateleira e o plano de cada água de
+   * telhado, só o que o modo de visão deixa à mostra. As telhas (malha instanciada) ficam de fora: o plano da água vale por elas.
+   */
+  function tapumes(): THREE.Mesh[] {
+    if (tapumesDaVersao === versaoDaEstrutura) return listaDeTapumes;
+    tapumesDaVersao = versaoDaEstrutura;
+    listaDeTapumes = [];
+    c.casa.getObjectByName('estrutura')?.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || o instanceof THREE.InstancedMesh || o.userData.escondido || o.userData.soSombra) return;
+      if (o.userData.sombra === true || o.userData.superficie) listaDeTapumes.push(o);
+    });
+    return listaDeTapumes;
+  }
+
+  /**
+   * Verdadeiro se nada da casa fica entre a câmera e a peça: é quando o visor ampliado dela aparece. Olha o meio da
+   * peça, o meio da frente e o meio do topo; basta um deles livre. Peças e cabos não contam: o visor é desenhado por
+   * cima deles.
+   */
+  function pecaAVista(v: Visor, volume: THREE.Box3): boolean {
+    const m = v.grupo.matrixWorld.elements;
+    const p = c.camera.position;
+    const chave = `${versaoDaEstrutura}|${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}|${m[12]!.toFixed(3)},${m[13]!.toFixed(3)},${m[14]!.toFixed(3)}`;
+    if (v.vista.chave === chave) return v.vista.livre;
+    const naFrente = tapumes();
+    const cx = (volume.min.x + volume.max.x) / 2;
+    const cy = (volume.min.y + volume.max.y) / 2;
+    const cz = (volume.min.z + volume.max.z) / 2;
+    let livre = false;
+    for (let i = 0; i < 3 && !livre; i++) {
+      if (i === 0) alvoDaVista.set(cx, cy, cz);
+      else if (i === 1) alvoDaVista.set(cx, cy, volume.max.z + 0.03);
+      else alvoDaVista.set(cx, volume.max.y + 0.03, cz);
+      alvoDaVista.applyMatrix4(v.grupo.matrixWorld);
+      const distancia = alvoDaVista.distanceTo(p);
+      raioDeVista.set(p, alvoDaVista.sub(p).normalize());
+      raioDeVista.far = Math.max(0, distancia - 0.02);
+      livre = raioDeVista.intersectObjects(naFrente, false).length === 0;
+    }
+    v.vista = { chave, livre };
+    return livre;
+  }
+
+  /** Painéis da página que ficam por cima da cena (a ajuda da câmera, o cartão do passo a passo), em pixels da cena. */
+  function paineisSobreACena(agora: number, L: number, A: number): Retangulo[] {
+    if (Math.abs(agora - paineisLidosEm) < INTERVALO_DOS_PAINEIS_MS) return paineis;
+    paineisLidosEm = agora;
+    paineis = [];
+    const moldura = c.canvas.parentElement;
+    const pai = moldura?.parentElement;
+    if (!moldura || !pai) return paineis;
+    const r = c.canvas.getBoundingClientRect();
+    const tela = { x: 0, y: 0, largura: L, altura: A };
+    for (const el of Array.from(pai.children)) {
+      if (el === moldura || !(el instanceof HTMLElement) || el.hidden) continue;
+      const q = el.getBoundingClientRect();
+      if (q.width < 1 || q.height < 1) continue;
+      const ret = { x: q.left - r.left, y: q.top - r.top, largura: q.width, altura: q.height };
+      if (sobreposicao(ret, tela) > 0) paineis.push(ret);
+    }
+    return paineis;
+  }
+
+  function esconderAmpliado(v: Visor): void {
+    v.flutuante.visible = false;
+    v.fio.visible = false;
+    v.ponta.visible = false;
+    v.candidato = null;
+    v.ret = null;
+    v.mudanca = null;
+  }
+
+  /**
+   * Visores ampliados: quais aparecem, de que tamanho e em que lugar da tela. O lugar é escolhido em pixels
+   * (`lugarDosVisores.ts`) e levado para o mundo à profundidade da peça. Devolve verdadeiro enquanto algum visor está
+   * a caminho de um lugar novo (a cena precisa de quadros).
+   */
+  function arrumarVisores(agora: number, L: number, A: number): boolean {
+    const tela = { x: 0, y: 0, largura: L, altura: A };
+    const pedidos: PedidoDeLugar[] = [];
+    const estorvos: Estorvo[] = [];
+    const medidos = new Map<string, { v: Visor; caixa: CaixaNaTela; porPixel: number }>();
+    for (const v of visores.values()) {
+      let mostrar = false;
+      const peca = c.dispositivos.pecaNaCena(v.uid);
+      const caixa = peca && !c.dispositivos.escondida(v.uid) ? caixaNaTela(v.grupo, peca.modelo.volume, L, A) : null;
+      if (peca && caixa && sobreposicao(caixa.ret, tela) > 0) {
+        estorvos.push({ ret: caixa.ret, peso: PESO.pecaComVisor, tipo: 'coberto', dono: v.uid });
+        let legivelNaFace = false;
+        if (v.face) {
+          // O visor da face basta quando está de frente para a câmera e largo o bastante na tela.
+          v.face.getWorldPosition(noMundo);
+          paraACamera.copy(c.camera.position).sub(noMundo);
+          const distancia = paraACamera.length();
+          paraACamera.normalize();
+          normal.set(0, 0, 1).transformDirection(v.face.matrixWorld);
+          const deFrente = normal.dot(paraACamera);
+          legivelNaFace = deFrente > 0.35 && (v.larguraDaFace * deFrente) / metrosPorPixel(distancia) >= VISOR_LEGIVEL_PX;
+        }
+        mostrar = !legivelNaFace && caixa.profundidade <= VISOR_FLUTUANTE.alcance && pecaAVista(v, peca.modelo.volume);
+        if (mostrar) {
+          const porPixel = metrosPorPixel(caixa.profundidade);
+          // Apagado, o visor ampliado fica menor: diz que a peça está sem energia sem tomar o lugar dos que têm números.
+          const largura = THREE.MathUtils.clamp(VISOR_FLUTUANTE.largura / porPixel, VISOR_FLUTUANTE.minimoPx, VISOR_FLUTUANTE.maximoPx) * (v.conteudo?.aceso === false ? 0.65 : 1);
+          pedidos.push({ id: v.uid, peca: caixa.ret, largura, altura: (largura * VISOR_ALTURA_PX) / VISOR_LARGURA_PX, anterior: v.candidato });
+          medidos.set(v.uid, { v, caixa, porPixel });
+        }
+      }
+      if (!mostrar) esconderAmpliado(v);
+    }
+    if (pedidos.length === 0) return false;
+
+    // O que o visor evita cobrir: os aparelhos, os botões de ligar e as proteções; e os painéis da página, que o cobririam.
+    for (const d of estado.projeto.dispositivos) {
+      if (visores.has(d.uid) || c.dispositivos.escondida(d.uid)) continue;
+      const peca = c.dispositivos.pecaNaCena(d.uid);
+      const grupo = c.dispositivos.grupoDe(d.uid);
+      if (!grupo || peca?.item.categoria !== 'aparelho') continue;
+      const caixa = caixaNaTela(grupo, peca.modelo.volume, L, A);
+      if (caixa && sobreposicao(caixa.ret, tela) > 0) estorvos.push({ ret: caixa.ret, peso: PESO.aparelho, tipo: 'coberto' });
+    }
+    for (const b of botoes.values()) {
+      if (c.dispositivos.escondida(b.uid)) continue;
+      const p = pontoNaCena(b.sprite.getWorldPosition(noMundo), L, A);
+      if (p) estorvos.push({ ret: { x: p[0] - b.raioPx, y: p[1] - b.raioPx, largura: 2 * b.raioPx, altura: 2 * b.raioPx }, peso: PESO.botao, tipo: 'coberto' });
+    }
+    for (const ch of listaDeChaves()) {
+      const p = pontoNaCena(ch.peca.getWorldPosition(noMundo), L, A);
+      if (p) estorvos.push({ ret: { x: p[0] - MEIA_PROTECAO_PX, y: p[1] - MEIA_PROTECAO_PX, largura: 2 * MEIA_PROTECAO_PX, altura: 2 * MEIA_PROTECAO_PX }, peso: PESO.protecao, tipo: 'coberto' });
+    }
+    for (const ret of paineisSobreACena(agora, L, A)) estorvos.push({ ret, peso: PESO.painel, tipo: 'cobre' });
+
+    const lugares = escolherLugares(pedidos, estorvos, { largura: L, altura: A });
+    let mudando = false;
+    for (const pedido of pedidos) {
+      const { v, caixa, porPixel } = medidos.get(pedido.id)!;
+      const lugar = lugares.get(pedido.id);
+      if (!lugar) {
+        esconderAmpliado(v);
+        continue;
+      }
+      const { largura, altura } = pedido;
+      // O lugar é guardado em relação ao meio do topo da caixa da peça: é o que acompanha a peça quando a câmera se move.
+      const refX = pedido.peca.x + pedido.peca.largura / 2;
+      const refY = pedido.peca.y;
+      let dx = lugar.ret.x + largura / 2 - refX;
+      let dy = lugar.ret.y + altura / 2 - refY;
+      // Mudou de lugar: desliza do lugar em que estava até o novo, em vez de saltar.
+      if (v.candidato !== null && v.candidato !== lugar.candidato) v.mudanca = { dx: v.desvio[0] - dx, dy: v.desvio[1] - dy, inicio: agora };
+      v.candidato = lugar.candidato;
+      if (v.mudanca) {
+        const t = (agora - v.mudanca.inicio) / MUDANCA_DE_LUGAR_MS;
+        if (t < 0 || t >= 1) v.mudanca = null;
+        else {
+          const falta = (1 - t) ** 3;
+          dx += v.mudanca.dx * falta;
+          dy += v.mudanca.dy * falta;
+          mudando = true;
+        }
+      }
+      v.desvio = [dx, dy];
+      const cx = refX + dx;
+      const cy = refY + dy;
+      const ret = { x: cx - largura / 2, y: cy - altura / 2, largura, altura };
+      v.ret = ret;
+      // Tudo no plano que passa pelo meio da peça, de frente para a câmera: ali um pixel mede `porPixel` metros.
+      const z = canto.set(0, 0, -caixa.profundidade).applyMatrix4(c.camera.projectionMatrix).z;
+      porNaTela(v.flutuante, cx, cy, z, L, A);
+      v.flutuante.scale.set(largura * porPixel, altura * porPixel, 1);
+      v.flutuante.visible = true;
+      // O fio vai da borda do visor a um ponto bem dentro da caixa da peça, o mais perto do visor.
+      const [qx, qy] = pontoMaisPerto(pedido.peca, cx, cy, 0.3);
+      const [sx, sy] = pontoMaisPerto(ret, qx, qy);
+      v.pontaNaTela = [qx, qy];
+      const comprimento = Math.hypot(qx - sx, qy - sy);
+      const comFio = comprimento >= FIO.minimoPx;
+      v.fio.visible = comFio;
+      v.ponta.visible = comFio;
+      if (!comFio) continue;
+      porNaTela(v.fio, (qx + sx) / 2, (qy + sy) / 2, z, L, A);
+      v.fio.scale.set(comprimento * porPixel, FIO.espessuraPx * porPixel, 1);
+      // De frente para a câmera e deitado ao longo do fio (na tela, o y cresce para baixo).
+      giroNaTela.setFromAxisAngle(EIXO_DA_VISTA, Math.atan2(sy - qy, qx - sx));
+      v.fio.quaternion.copy(v.grupo.getWorldQuaternion(quatDoGrupo).invert()).multiply(c.camera.quaternion).multiply(giroNaTela);
+      porNaTela(v.ponta, qx, qy, z, L, A);
+      v.ponta.scale.setScalar(FIO.pontaPx * porPixel);
+    }
+    return mudando;
+  }
+
+  function ajustar(agora: number): boolean {
+    c.camera.updateMatrixWorld();
     for (const b of botoes.values()) {
       const porPixel = metrosPorPixel(b.sprite.getWorldPosition(noMundo).distanceTo(c.camera.position));
       const px = THREE.MathUtils.clamp(BOTAO.diametro / porPixel, BOTAO.minimoPx, BOTAO.maximoPx);
@@ -518,6 +835,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       const altura = THREE.MathUtils.clamp(SELO.altura / porPixel, SELO.minimoPx, SELO.maximoPx) * porPixel * s.fator;
       s.sprite.scale.set(altura * PROPORCAO_DO_SELO, altura, 1);
     }
+    return arrumarVisores(agora, Math.max(1, c.canvas.clientWidth), Math.max(1, c.canvas.clientHeight));
   }
 
   // ---------------------------------------------------------------- Efeitos dos eventos
@@ -711,8 +1029,8 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
         aMostrar = [];
         for (const e of eventos) mostrarEvento(e, agora);
       }
-      ajustar();
-      return efeitos.animar(agora);
+      const mudandoDeLugar = ajustar(agora);
+      return efeitos.animar(agora) || mudandoDeLugar;
     },
     chaveNoRaio,
     botaoEm,
@@ -737,11 +1055,21 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
     },
     resumo() {
       emDia();
-      ajustar();
+      // Para quem pergunta, os visores já chegaram ao lugar: a mudança de lugar em curso, ou a que começa agora, é dada por terminada.
+      const agora = performance.now();
+      if (ajustar(agora)) {
+        for (const v of visores.values()) v.mudanca = null;
+        ajustar(agora);
+      }
+      c.pedirQuadroLeve();
+      const r = c.canvas.getBoundingClientRect();
       return {
         selos: selos.map((s) => s.id),
         particulas: efeitos.vivas(),
         visoresFlutuando: [...visores.values()].filter((v) => v.flutuante.visible).map((v) => v.uid),
+        lugaresDosVisores: [...visores.values()]
+          .filter((v) => v.flutuante.visible && v.ret)
+          .map((v) => ({ uid: v.uid, x: r.left + v.ret!.x, y: r.top + v.ret!.y, largura: v.ret!.largura, altura: v.ret!.altura, ponta: [r.left + v.pontaNaTela[0], r.top + v.pontaNaTela[1]] as [number, number] })),
       };
     },
     destruir() {
@@ -757,6 +1085,10 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       for (const m of Object.values(materiaisDoBotao)) m.dispose();
       desenhoDoSelo.dispose();
       matSelo.dispose();
+      desenhoDoFio.dispose();
+      matFio.dispose();
+      desenhoDaPonta.dispose();
+      matPonta.dispose();
     },
   };
 }
