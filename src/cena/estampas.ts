@@ -143,6 +143,16 @@ export function visor(g: Pincel, x: number, y: number, l: number, a: number, gra
   texto(g, pequeno, x + l / 2, y + a * 0.82, a * 0.2, tinta, 'center', '600', l * 0.92);
 }
 
+/**
+ * Lugar do visor na estampa da peça: só a moldura e o vidro apagado. Os números ao vivo são desenhados por cima,
+ * em uma textura de cada peça (`visores.ts`), que cobre este retângulo.
+ */
+export function visorApagado(g: Pincel, x: number, y: number, l: number, a: number): void {
+  retangulo(g, x - 3, y - 3, l + 6, a + 6, 5, '#0a0c0e');
+  g.fillStyle = '#1a211f';
+  g.fillRect(x, y, l, a);
+}
+
 // ---------------------------------------------------------------- Rótulos
 
 /**

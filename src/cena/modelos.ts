@@ -12,7 +12,7 @@ import type { DefTerminal } from '../nucleo/tipos';
 import { construirAparelho } from './aparelhos';
 import { borneDeBaixo, borneDeTopo, type Marcar, mc4, poloDeChumbo } from './conectores';
 import { dimensoesDe } from './encaixe';
-import { estampa, logotipo, retangulo, texto, tomadaBR, visor } from './estampas';
+import { estampa, logotipo, retangulo, texto, tomadaBR, visorApagado } from './estampas';
 import { Molde, type V3 } from './molde';
 
 export interface TerminalDoModelo extends DefTerminal {
@@ -32,7 +32,19 @@ export interface Modelo {
   /** Caixa que envolve o desenho inteiro, com os móveis, em coordenadas da peça. */
   volume: THREE.Box3;
   triangulos: number;
+  /** Onde fica o visor de cristal líquido na face da frente da peça. Nulo na peça que não tem visor. */
+  visor: LugarDoVisor | null;
 }
+
+/** Retângulo do visor na peça, virado para +Z: centro, em coordenadas da peça, e medidas. */
+export interface LugarDoVisor {
+  centro: V3;
+  largura: number;
+  altura: number;
+}
+
+/** Registra o lugar do visor da peça. Os números ao vivo são desenhados ali pela camada de operação. */
+type MarcarVisor = (centro: V3, largura: number, altura: number) => void;
 
 /** Limite da especificação, por peça. */
 export const MAX_TRIANGULOS = 3000;
@@ -145,7 +157,7 @@ function placa(item: Placa, m: Molde, T: Marcar): void {
 
 // ---------------------------------------------------------------- Inversor híbrido de parede
 
-function inversorDeParede(item: Inversor, m: Molde, T: Marcar): void {
+function inversorDeParede(item: Inversor, m: Molde, T: Marcar, V: MarcarVisor): void {
   const [W, H, D] = item.dimensoes;
   const branco = variante(item.id, 2) === 0 ? '#eff0ee' : '#e3e5e6';
   const escuro = '#39424c';
@@ -184,7 +196,7 @@ function inversorDeParede(item: Inversor, m: Molde, T: Marcar): void {
       texto(g, 'INVERSOR SOLAR', 110, 40, 30, '#2f3740', 'left');
       texto(g, `HÍBRIDO  ${kw}  ${item.tensaoBateria} V`, 110, 76, 24, '#5d6770', 'left', '600');
       retangulo(g, 16, 120, w - 32, 290, 16, '#101214');
-      visor(g, 44, 146, 270, 150, `${item.saidaV} V`, `BAT ${item.tensaoBateria}.0 V   PV 0 W`);
+      visorApagado(g, 44, 146, 270, 150);
       for (const [i, rotulo] of ['ESC', '▲', '▼', 'ENTER'].entries()) {
         retangulo(g, 44 + i * 70, 330, 58, 46, 10, '#2a2f35');
         texto(g, rotulo, 73 + i * 70, 354, rotulo.length > 1 ? 15 : 22, '#cfd5da');
@@ -193,6 +205,7 @@ function inversorDeParede(item: Inversor, m: Molde, T: Marcar): void {
     }, { transparente: true, acesa: 0.35 }),
     0, yp, D / 2 + 0.0024, lp, hp, 'pz',
   );
+  V([lp * ((44 + 135) / 512 - 0.5), yp + hp * (0.5 - (146 + 75) / 440), D / 2 + 0.0034], (lp * 276) / 512, (hp * 156) / 440);
   const luzes = ['#39d353', '#ffb300', '#5a2a2a'];
   for (let i = 0; i < 3; i++) {
     m.esfera(i < 2 ? 'luz' : 'plastico', luzes[i]!, lp * (370 / 512 - 0.5), yp + hp * (0.5 - (170 + i * 56) / 440), D / 2 + 0.003, 0.005, [1, 1, 0.5], 8);
@@ -214,7 +227,7 @@ function inversorDeParede(item: Inversor, m: Molde, T: Marcar): void {
 
 // ---------------------------------------------------------------- Controlador de carga
 
-function controlador(item: Controlador, m: Molde, T: Marcar): void {
+function controlador(item: Controlador, m: Molde, T: Marcar, V: MarcarVisor): void {
   const [W, H, D] = item.dimensoes;
   const mppt = item.solar.tipo === 'mppt';
   const zFundo = -D / 2;
@@ -240,7 +253,7 @@ function controlador(item: Controlador, m: Molde, T: Marcar): void {
         logotipo(g, 52, 50, 28, '#e08a1c');
         texto(g, `MPPT  ${amp}`, 96, 36, 30, '#e9edf0', 'left');
         texto(g, `${item.tensoesBateria.join(' / ')} V`, 96, 70, 20, '#aeb7bf', 'left', '600');
-        visor(g, 150, 110, 212, 120, `${item.tensoesBateria[0]}.6 V`, 'PV 0 W   0.0 A');
+        visorApagado(g, 150, 110, 212, 120);
         for (const x of [70, 440]) {
           g.fillStyle = '#39424c';
           g.beginPath();
@@ -252,6 +265,8 @@ function controlador(item: Controlador, m: Molde, T: Marcar): void {
       }, { transparente: true, acesa: 0.35 }),
       0, yc + hc * 0.1, zf + 0.0006, W * 0.8, W * 0.8 * (300 / 512), 'pz',
     );
+    const he = W * 0.8 * (300 / 512);
+    V([0, yc + hc * 0.1 + he * (0.5 - 170 / 300), zf + 0.0016], (W * 0.8 * 218) / 512, (he * 126) / 300);
   } else {
     m.estampa(
       estampa(`painel-ctl-${item.id}`, 384, 160, (g, w, h) => {
@@ -283,7 +298,7 @@ function controlador(item: Controlador, m: Molde, T: Marcar): void {
 
 // ---------------------------------------------------------------- Baterias
 
-function bateriaDeLitio(item: Bateria, m: Molde, T: Marcar): void {
+function bateriaDeLitio(item: Bateria, m: Molde, T: Marcar, V: MarcarVisor): void {
   const [W, H, D] = item.dimensoes;
   const rack = item.tensao === 48;
   const corpo = rack ? '#2c3035' : variante(item.id, 2) === 0 ? '#4d6883' : '#222528';
@@ -310,14 +325,12 @@ function bateriaDeLitio(item: Bateria, m: Molde, T: Marcar): void {
       texto(g, 'BATERIA DE LÍTIO', 100, h * 0.38, h * 0.085, '#5d6770', 'left', '600');
       texto(g, `${item.tensao} V   ${item.ah} Ah`, 30, h * 0.68, h * 0.2, '#1c2630', 'left');
       texto(g, `${numero(item.ciclos)} ciclos`, 30, h * 0.88, h * 0.08, '#5d6770', 'left', '600');
-      // Visor pequeno de carga: cinco barras.
-      const vx = w * 0.66;
-      retangulo(g, vx, h * 0.5, w * 0.29, h * 0.38, 8, '#0b0d0f');
-      for (let i = 0; i < 5; i++) retangulo(g, vx + 12 + i * (w * 0.29 - 24) / 5, h * 0.56, (w * 0.29 - 24) / 5 - 5, h * 0.16, 2, '#39d353');
-      texto(g, '100%', vx + w * 0.145, h * 0.8, h * 0.085, '#39d353');
+      // Visor pequeno de carga: a porcentagem ao vivo é desenhada por cima.
+      visorApagado(g, w * 0.66 + 3, h * 0.5 + 3, w * 0.29 - 6, h * 0.38 - 6);
     }, { transparente: true, acesa: 0.3 }),
     0, -H * 0.02, D / 2 + 0.0006, le, he, 'pz',
   );
+  V([le * (0.66 + 0.145 - 0.5), -H * 0.02 + he * (0.5 - 0.69), D / 2 + 0.0016], le * 0.29, he * 0.38);
   const x = W / 2 - 0.07;
   borneDeTopo(m, -x, H / 2, 0, 'cc+');
   borneDeTopo(m, x, H / 2, 0, 'cc-');
@@ -439,7 +452,7 @@ function inversorDePiso(item: Inversor, m: Molde, T: Marcar): void {
 
 // ---------------------------------------------------------------- Estação portátil
 
-function estacaoPortatil(item: Inversor, m: Molde, T: Marcar): void {
+function estacaoPortatil(item: Inversor, m: Molde, T: Marcar, V: MarcarVisor): void {
   const [W, H, D] = item.dimensoes;
   const hb = H * 0.8;
   const yb = -H / 2 + hb / 2;
@@ -467,7 +480,7 @@ function estacaoPortatil(item: Inversor, m: Molde, T: Marcar): void {
       logotipo(g, 44, h * 0.14, 20, '#e08a1c');
       texto(g, 'ESTAÇÃO PORTÁTIL', 76, h * 0.1, h * 0.07, '#cfd5da', 'left', 'bold', w * 0.44);
       texto(g, `${numero(item.bateriaInternaWh ?? 0)} Wh`, 76, h * 0.185, h * 0.06, '#8f99a3', 'left', '600', w * 0.44);
-      visor(g, w * 0.62, h * 0.07, w * 0.33, h * 0.3, '87%', `SAÍDA ${item.saidaV} V~`, '#d6f3ff');
+      visorApagado(g, w * 0.62, h * 0.07, w * 0.33, h * 0.3);
       // USB.
       for (let i = 0; i < 4; i++) retangulo(g, 30 + i * 62, h * 0.27, 48, h * 0.075, 5, i < 2 ? '#3d7fd9' : '#30353b');
       texto(g, 'USB', 30, h * 0.42, h * 0.055, '#8f99a3', 'left', '600');
@@ -489,6 +502,7 @@ function estacaoPortatil(item: Inversor, m: Molde, T: Marcar): void {
     }, { transparente: true, acesa: 0.3 }),
     0, yb, D / 2 + 0.0008, lp, hp, 'pz',
   );
+  V([lp * (0.62 + 0.165 - 0.5), yb + hp * (0.5 - 0.22), D / 2 + 0.0018], lp * 0.33 + (lp * 6) / 512, hp * 0.3 + (lp * 6) / 512);
   const xEntrada = lp * (uEntrada - 0.5);
   const xSaida = lp * (uSaida - 0.5);
   const yTomadas = yb + hp * (0.5 - vBaixo);
@@ -622,17 +636,17 @@ function grampoDeParede(dim: Dimensoes, m: Molde): void {
 
 // ---------------------------------------------------------------- Catálogo de modelos
 
-function construir(item: Item, dim: Dimensoes, m: Molde, T: Marcar): void {
+function construir(item: Item, dim: Dimensoes, m: Molde, T: Marcar, V: MarcarVisor): void {
   switch (item.categoria) {
     case 'placa':
       return placa(item, m, T);
     case 'inversor':
-      if (item.bateriaInternaWh !== undefined) return estacaoPortatil(item, m, T);
-      return item.montagem === 'parede' ? inversorDeParede(item, m, T) : inversorDePiso(item, m, T);
+      if (item.bateriaInternaWh !== undefined) return estacaoPortatil(item, m, T, V);
+      return item.montagem === 'parede' ? inversorDeParede(item, m, T, V) : inversorDePiso(item, m, T);
     case 'controlador':
-      return controlador(item, m, T);
+      return controlador(item, m, T, V);
     case 'bateria':
-      return item.quimica === 'lifepo4' ? bateriaDeLitio(item, m, T) : bateriaDeChumbo(item, m, T);
+      return item.quimica === 'lifepo4' ? bateriaDeLitio(item, m, T, V) : bateriaDeChumbo(item, m, T);
     case 'rede':
       return tomadaDaRede(dim, m, T);
     case 'aparelho':
@@ -657,11 +671,14 @@ export function modeloDe(item: Item): Modelo | null {
   const defs = terminaisDe(item);
   const terminais: TerminalDoModelo[] = [];
   const molde = new Molde();
+  let visor: LugarDoVisor | null = null;
   construir(item, dim, molde, (id, pos, saida, raio = 0.028) => {
     const def = defs.find((d) => d.id === id);
     if (!def) throw new Error(`O modelo de "${item.id}" marcou o terminal "${id}", que o item não tem.`);
     const s = new THREE.Vector3(saida[0], saida[1], saida[2]).normalize();
     terminais.push({ ...def, pos, saida: [s.x, s.y, s.z], raio });
+  }, (centro, largura, altura) => {
+    visor = { centro, largura, altura };
   });
   const faltam = defs.filter((d) => !terminais.some((t) => t.id === d.id));
   if (faltam.length) throw new Error(`O modelo de "${item.id}" não posicionou os terminais: ${faltam.map((d) => d.id).join(', ')}`);
@@ -672,7 +689,7 @@ export function modeloDe(item: Item): Modelo | null {
   const volume = new THREE.Box3().setFromObject(grupo);
   volume.union(new THREE.Box3(new THREE.Vector3(-dim[0] / 2, -dim[1] / 2, -dim[2] / 2), new THREE.Vector3(dim[0] / 2, dim[1] / 2, dim[2] / 2)));
   if (molde.triangulos > MAX_TRIANGULOS) console.warn(`O modelo de "${item.id}" tem ${molde.triangulos} triângulos; o limite é ${MAX_TRIANGULOS}.`);
-  const modelo: Modelo = { grupo, terminais, dimensoes: dim, volume, triangulos: molde.triangulos };
+  const modelo: Modelo = { grupo, terminais, dimensoes: dim, volume, triangulos: molde.triangulos, visor };
   modelos.set(item.id, modelo);
   return modelo;
 }

@@ -9,14 +9,15 @@ import * as THREE from 'three';
 import { CATALOGO } from '../catalogo';
 import type { Item } from '../catalogo/tipos';
 import { estado } from '../estado';
+import { estadoDaProtecao } from '../nucleo/operacao';
 import type { Dispositivo, TipoTerminal } from '../nucleo/tipos';
 import { COR_TERMINAL } from './conectores';
-import { criarRotulo, liso } from './estampas';
+import { criarRotulo, estampa, liso } from './estampas';
 import { ehGrampo } from './encaixe';
 import { esconder } from './malha';
 import { type Modelo, modeloDe, type TerminalDoModelo, TRILHO } from './modelos';
 import { Molde } from './molde';
-import { modeloDaProtecao, PROFUNDIDADE_DA_PROTECAO } from './protecoes';
+import { aplicarEstadoDaProtecao, modeloDaProtecao, PROFUNDIDADE_DA_PROTECAO } from './protecoes';
 import { ocupacaoDoQuadro, type OcupacaoDoQuadro } from './quadro';
 import { criarSuporte } from './suporte';
 import { placaNoChao } from './terreno';
@@ -60,6 +61,10 @@ export interface CamadaDeDispositivos {
   passagem(uidQuadro: string, uidCabo: string): PassagemPeloQuadro | null;
   /** Verdadeiro se a proteção de índice dado do cabo está desenhada no trilho de um quadro. */
   noTrilho(uidCabo: string, indice: number): boolean;
+  /** A proteção de índice dado do cabo desenhada no trilho de um quadro à vista. Nulo se não está em um trilho, ou se o quadro está escondido. */
+  protecaoNoTrilho(uidCabo: string, indice: number): THREE.Object3D | null;
+  /** Item do catálogo e modelo da peça que está na cena. */
+  pecaNaCena(uid: string): { item: Item; modelo: Modelo } | null;
   /** Caixas invisíveis de clique das peças à vista (`userData.dispositivo`). */
   caixasDeClique(): THREE.Object3D[];
   /** Esferas invisíveis de clique dos terminais das peças à vista (`userData.terminal`). */
@@ -112,6 +117,11 @@ interface Peca {
   /** Placa no terreno: o suporte inclinado e a inclinação com que ele foi feito. */
   suporte: THREE.Group | null;
   inclinacaoDoSuporte: number | null;
+  /** Peça queimada (operar.md, seção 7): o desenho escurecido e as manchas de fuligem sobre ele. */
+  queimada: boolean;
+  fuligem: THREE.Group | null;
+  /** Proteções desenhadas no trilho do quadro, por `{cabo}|{indice}`. */
+  protecoes: Map<string, THREE.Object3D>;
 }
 
 const EIXO_Z = new THREE.Vector3(0, 0, 1);
@@ -241,14 +251,97 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     const peca: Peca = {
       uid: d.uid, item, modelo, grupo, pos: '', superficie: null, ligado: d.ligado, escondida: false, rotulos,
       helice: grupo.getObjectByName('helice') ?? null, ativo: d.ligado, trilho: null, assinaturaDoTrilho: '', ocupacao: null,
-      suporte: null, inclinacaoDoSuporte: null,
+      suporte: null, inclinacaoDoSuporte: null, queimada: false, fuligem: null, protecoes: new Map(),
     };
     aplicarAtivo(peca);
     casa.add(grupo);
     return peca;
   }
 
+  // ---------------------------------------------------------------- Peça queimada
+
+  /** Versão carbonizada de cada material das peças, feita na primeira vez em que uma peça com ele queima. */
+  const queimados = new Map<THREE.Material, THREE.Material>();
+  const geoFuligem = new THREE.PlaneGeometry(1, 1);
+  const semRaio = (): void => {};
+
+  function materialQueimado(original: THREE.Material): THREE.Material {
+    let m = queimados.get(original);
+    if (!m) {
+      m = original.clone();
+      const comCor = m as THREE.MeshStandardMaterial;
+      // A cor multiplica a dos vértices e a da textura: tudo escurece para um marrom de carvão.
+      if (comCor.color) comCor.color.multiply(new THREE.Color('#4b423c'));
+      if (comCor.emissive) comCor.emissiveIntensity = 0;
+      if (typeof comCor.roughness === 'number') comCor.roughness = Math.max(comCor.roughness, 0.85);
+      queimados.set(original, m);
+    }
+    return m;
+  }
+
+  /** Mancha de fuligem: borrão preto de borda irregular, mais forte no meio. */
+  function matFuligem(): THREE.Material {
+    return estampa('fuligem', 128, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      for (let i = 0; i < 26; i++) {
+        // Borrões em volta do centro, em posições fixas (sem sorteio).
+        const a = i * 2.399963;
+        const d = (w * 0.3 * ((i * 37) % 100)) / 100;
+        const x = w / 2 + Math.cos(a) * d;
+        const y = h / 2 + Math.sin(a) * d * 0.9;
+        const r = w * (0.1 + 0.12 * (((i * 53) % 100) / 100));
+        const grad = g.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0, 'rgba(8,6,5,0.5)');
+        grad.addColorStop(1, 'rgba(8,6,5,0)');
+        g.fillStyle = grad;
+        g.fillRect(x - r, y - r, 2 * r, 2 * r);
+      }
+    }, { transparente: true, rugosidade: 1 });
+  }
+
+  /**
+   * Marca permanente de peça queimada: o desenho inteiro escurece e ganha manchas de fuligem na frente e em cima.
+   * O selo "QUEIMADO" e a fumaça são da camada de operação (`operar.ts`).
+   */
+  function aplicarQueimado(p: Peca, queimada: boolean): void {
+    if (p.queimada === queimada) return;
+    p.queimada = queimada;
+    p.grupo.getObjectByName('modelo')?.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || Array.isArray(o.material)) return;
+      if (queimada) {
+        if (!o.userData.materialSao) o.userData.materialSao = o.material;
+        o.material = materialQueimado(o.userData.materialSao as THREE.Material);
+      } else if (o.userData.materialSao) {
+        o.material = o.userData.materialSao as THREE.Material;
+        delete o.userData.materialSao;
+      }
+    });
+    if (p.fuligem) {
+      p.grupo.remove(p.fuligem);
+      p.fuligem = null;
+    }
+    if (!queimada) return;
+    const [W, H, D] = p.modelo.dimensoes;
+    const fuligem = new THREE.Group();
+    fuligem.name = 'fuligem';
+    const mancha = (x: number, y: number, z: number, l: number, a: number, deCima: boolean): void => {
+      const m = new THREE.Mesh(geoFuligem, matFuligem());
+      m.position.set(x, y, z);
+      if (deCima) m.rotation.x = -Math.PI / 2;
+      m.scale.set(l, a, 1);
+      m.renderOrder = 3;
+      m.raycast = semRaio;
+      fuligem.add(m);
+    };
+    mancha(W * 0.08, H * 0.12, D / 2 + 0.006, Math.max(W, 0.1) * 1.05, Math.max(H, 0.1) * 0.95, false);
+    mancha(-W * 0.06, H / 2 + 0.006, 0, Math.max(W, 0.1) * 0.95, Math.max(D, 0.08) * 1.1, true);
+    p.grupo.add(fuligem);
+    p.fuligem = fuligem;
+    if (p.escondida) esconder(fuligem, true);
+  }
+
   function removerTrilho(p: Peca): void {
+    p.protecoes.clear();
     if (!p.trilho) return;
     p.grupo.remove(p.trilho);
     // Os fios são só deste quadro; as proteções são cópias de moldes divididos.
@@ -295,7 +388,16 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     const ocupacao = ocupacaoDoQuadro(estado.projeto, CATALOGO, p.uid, modulos);
     p.ocupacao = ocupacao;
     const assinatura = JSON.stringify([ocupacao.pecas.map((x) => [x.cabo, x.indice, x.item.id, x.x]), [...ocupacao.cabos]]);
-    if (assinatura === p.assinaturaDoTrilho) return;
+    if (assinatura !== p.assinaturaDoTrilho) montarTrilho(p, ocupacao, assinatura);
+    // A chave de cada proteção (operar.md, seção 2): a alavanca muda de posição sem refazer o trilho.
+    for (const peca of ocupacao.pecas) {
+      const cabo = estado.projeto.cabos.find((c) => c.uid === peca.cabo);
+      const desenho = p.protecoes.get(`${peca.cabo}|${peca.indice}`);
+      if (cabo && desenho) aplicarEstadoDaProtecao(desenho, peca.item, estadoDaProtecao(cabo, peca.indice));
+    }
+  }
+
+  function montarTrilho(p: Peca, ocupacao: OcupacaoDoQuadro, assinatura: string): void {
     p.assinaturaDoTrilho = assinatura;
     removerTrilho(p);
     const [, H, D] = p.modelo.dimensoes;
@@ -313,6 +415,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
         o.userData.protecao = peca.indice;
       });
       trilho.add(g);
+      p.protecoes.set(`${peca.cabo}|${peca.indice}`, g);
       fundoDaPeca.set(peca.cabo, TRILHO.y - modelo.altura / 2);
     }
     // Fios da face de baixo da caixa até o borne de baixo das peças do cabo.
@@ -360,6 +463,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
         aplicarAtivo(p);
       }
       p.superficie = d.superficie;
+      aplicarQueimado(p, d.queimado !== undefined);
       refazerTrilho(p);
       refazerSuporte(p, d);
       const escondida = escondidas.get(d.superficie ?? '') ?? false;
@@ -427,6 +531,14 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     return false;
   }
 
+  function protecaoNoTrilho(uidCabo: string, indice: number): THREE.Object3D | null {
+    for (const p of pecas.values()) {
+      const desenho = p.escondida ? undefined : p.protecoes.get(`${uidCabo}|${indice}`);
+      if (desenho) return desenho;
+    }
+    return null;
+  }
+
   function mostrarNome(uid: string | null): void {
     const p = uid === null ? undefined : pecas.get(uid);
     if (nome) {
@@ -453,6 +565,11 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     terminal,
     passagem,
     noTrilho,
+    protecaoNoTrilho,
+    pecaNaCena(uid) {
+      const p = pecas.get(uid);
+      return p ? { item: p.item, modelo: p.modelo } : null;
+    },
     caixasDeClique() {
       const lista: THREE.Object3D[] = [];
       for (const p of pecas.values()) if (!p.escondida) lista.push(p.grupo.getObjectByName('caixa-de-clique')!);
@@ -540,6 +657,9 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       geoHalo.dispose();
       matHalo.dispose();
       matApagado.dispose();
+      geoFuligem.dispose();
+      for (const m of queimados.values()) m.dispose();
+      queimados.clear();
     },
   };
 }

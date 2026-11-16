@@ -1,5 +1,6 @@
 // Cena 3D. Tarefas 1.10 a 1.12, 1.15 e 2.1 a 2.4. Especificação: docs/especificacao/cena-e-interface.md, seções 2 a 8, 13 e 14,
 // e docs/especificacao/fase-2.md, seções 2 e 3. Modo tutorial (tarefa 7.3): docs/especificacao/tutorial.md, seção 3.
+// Operar o sistema (tarefa 8.3): docs/especificacao/operar.md, seções 2, 7 e 8 (chaves, visores, peça queimada).
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -21,6 +22,7 @@ import { liberar, type TipoSuperficie } from './malha';
 import { liberarMateriais } from './materiais';
 import { liberarModelos } from './modelos';
 import { criarCamadaDeObstaculos } from './obstaculos';
+import { type CamadaDeOperacao, criarCamadaDeOperacao } from './operar';
 import { liberarTintas } from './molde';
 import { criarChao, criarRosaDosVentos } from './mundo';
 import { liberarProtecoes } from './protecoes';
@@ -100,6 +102,20 @@ export interface OffgridGlobal {
   soltarCabos?: () => number;
   /** Auxiliar de verificação: as medidas da cena (faces, caixas das peças, telhados) que a conta do trajeto dos cabos recebe. */
   mundoDosCabos?: () => import('./trajeto').Mundo;
+  /**
+   * Posição na janela, em pixels, da proteção de índice dado de um cabo (no cabo ou no trilho de um quadro): um clique
+   * ali abre ou fecha a chave dela. Nulo se a proteção não está desenhada ou está escondida pelo modo de visão.
+   */
+  telaDaProtecao?: (caboUid: string, indice: number) => [x: number, y: number] | null;
+  /** Posição na janela do botão de ligar de um inversor ou de um aparelho. Nulo se a peça não tem botão (as demais, e a queimada). */
+  telaDoBotao?: (uid: string) => [x: number, y: number] | null;
+  /**
+   * Texto que o visor de um controlador, de um inversor ou de uma bateria mostra agora: as linhas separadas por " | ".
+   * Vazio com o visor apagado; nulo se a peça não tem visor.
+   */
+  textoDoVisor?: (uid: string) => string | null;
+  /** Auxiliar de verificação: selos de queimado na cena (`uid` da peça ou do cabo, ou `{cabo}:{indice}` da proteção), partículas de efeito vivas e visores ampliados à mostra. */
+  operacaoNaCena?: () => { selos: string[]; particulas: number; visoresFlutuando: string[] };
 }
 
 declare global {
@@ -422,10 +438,15 @@ export function criarCena(container: HTMLElement): Cena {
   let pulsoPendente = false;
   /** Realce do passo a passo. É criado depois da interação, mais abaixo; o laço começa antes. */
   let destaques: ReturnType<typeof criarCamadaDeDestaques> | null = null;
+  /** Visores, botões de ligar, selos de queimado e efeitos. Também é criada mais abaixo. */
+  let operacao: CamadaDeOperacao | null = null;
   const laco = (agora: number): void => {
     quadro = requestAnimationFrame(laco);
     // O realce do passo a passo pulsa: enquanto ele está na tela, saem quadros mesmo com a cena parada.
-    const pulsando = destaques?.animar(agora) ?? false;
+    // O mesmo vale para a fumaça e a faísca de um evento da operação, que correm no tempo de verdade.
+    const realcando = destaques?.animar(agora) ?? false;
+    const operando = operacao?.animar(agora) ?? false;
+    const pulsando = realcando || operando;
     if (!sujo) {
       seguidos = 0;
       lentos = 0;
@@ -500,6 +521,8 @@ export function criarCena(container: HTMLElement): Cena {
   };
   const focar = (e: MouseEvent): void => {
     if (estado.edicaoCasa.ativa || e.target !== renderizador.domElement) return;
+    // Dois cliques seguidos em uma chave ou em um botão de ligar são duas manobras, e não um pedido de aproximar a câmera.
+    if (interacao.manobraEm(e.clientX, e.clientY)) return;
     const r = renderizador.domElement.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return;
     camera.updateMatrixWorld();
@@ -521,6 +544,9 @@ export function criarCena(container: HTMLElement): Cena {
   renderizador.domElement.addEventListener('dblclick', focar);
   window.addEventListener('offgrid:vista-inicial', vistaInicial);
 
+  const camadaDeOperacao = criarCamadaDeOperacao({ casa: casa.grupo, camera, canvas: renderizador.domElement, dispositivos, cabos, pedirQuadroLeve });
+  operacao = camadaDeOperacao;
+
   const interacao = criarInteracao({
     container,
     canvas: renderizador.domElement,
@@ -531,6 +557,7 @@ export function criarCena(container: HTMLElement): Cena {
     dispositivos,
     cabos,
     lugares,
+    operacao: camadaDeOperacao,
     pedirQuadro,
     pedirQuadroLeve,
     naTela,
@@ -599,6 +626,10 @@ export function criarCena(container: HTMLElement): Cena {
     arrumarCabos: () => arrumador.arrumar(),
     soltarCabos: () => arrumador.soltar(),
     mundoDosCabos: () => arrumador.medir(),
+    telaDaProtecao: (caboUid, indice) => camadaDeOperacao.telaDaProtecao(caboUid, indice),
+    telaDoBotao: (uid) => camadaDeOperacao.telaDoBotao(uid),
+    textoDoVisor: (uid) => camadaDeOperacao.textoDoVisor(uid),
+    operacaoNaCena: () => camadaDeOperacao.resumo(),
     recalcular: recalcularAgora,
     ambiente: () => sombra.ambiente,
     resumoDaSombra: () => sombra.resumo(),
@@ -643,6 +674,7 @@ export function criarCena(container: HTMLElement): Cena {
       registrarAmbiente(null);
       camadaDeDestaques.destruir();
       interacao.destruir();
+      camadaDeOperacao.destruir();
       edicao.destruir();
       cancelAnimationFrame(quadro);
       window.removeEventListener('offgrid:vista-inicial', vistaInicial);

@@ -1,6 +1,9 @@
 // Interação com o ponteiro: arrastar do catálogo, selecionar, mover, girar, apagar e puxar cabos.
 // Especificação: docs/especificacao/cena-e-interface.md, seções 6 a 8, e fase-2.md, seção 3. Tarefas 2.2 a 2.4.
 //
+// Fase 8 (docs/especificacao/operar.md, seção 8): um clique em uma proteção abre ou fecha a chave dela, e um clique no
+// botão de ligar de um inversor ou de um aparelho liga ou desliga. Tarefa 8.3.
+//
 // A cena não muda o projeto direto: tudo aqui termina em uma ação de `src/estado.ts`.
 // Eventos que a interface emite na `window`:
 //   offgrid:arrastar-item      { itemId, clientX, clientY }   apertou um cartão do catálogo
@@ -13,11 +16,13 @@ import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOGO } from '../catalogo';
 import type { Item, Protecao } from '../catalogo/tipos';
 import { acoes, assinar, type Encaixe, estado, motivoParaNaoLigar } from '../estado';
+import { estadoDaProtecao } from '../nucleo/operacao';
 import type { Acao, PontaCabo, TipoTerminal } from '../nucleo/tipos';
 import { type CamadaDeCabos, corDoCabo } from './cabos';
 import { type CamadaDeDispositivos, RAIO_DE_CLIQUE } from './dispositivos';
 import { ehGrampo, superficieAceita } from './encaixe';
 import type { Candidato, Lugares, Toque } from './lugares';
+import type { CamadaDeOperacao } from './operar';
 import { acrescentarBateria, acrescentarPlaca } from './maisPecas';
 import type { TipoSuperficie } from './malha';
 import { modeloDe } from './modelos';
@@ -33,6 +38,8 @@ export interface PartesDaCena {
   dispositivos: CamadaDeDispositivos;
   cabos: CamadaDeCabos;
   lugares: Lugares;
+  /** Chaves das proteções e botões de ligar (operar.md, seção 8). */
+  operacao: CamadaDeOperacao;
   /** Quadro novo com a sombra refeita (uma peça mudou de lugar). */
   pedirQuadro(): void;
   /** Quadro novo sem refazer a sombra (fantasma, destaque, rótulo). */
@@ -45,13 +52,19 @@ export interface Interacao {
   situacao(): { modo: string; valido: boolean | null; motivo: string | null; cabo?: string };
   /** `id` das superfícies sobre as quais uma peça está sendo arrastada (do catálogo ou movida): a apontada e a do encaixe. Vazio fora de um arraste. */
   superficiesDoArraste(): string[];
+  /** Verdadeiro se há uma chave de proteção ou um botão de ligar sob o ponto da janela: o clique ali é uma manobra. */
+  manobraEm(x: number, y: number): boolean;
   destruir(): void;
 }
 
 type Alvo =
   | { tipo: 'terminal'; disp: string; terminal: string; tipoDoTerminal: TipoTerminal }
   | { tipo: 'dispositivo'; uid: string }
-  | { tipo: 'cabo'; uid: string };
+  | { tipo: 'cabo'; uid: string }
+  /** Proteção com chave: o clique abre ou fecha (fusível ou disjuntor). */
+  | { tipo: 'chave'; cabo: string; indice: number }
+  /** Botão de ligar de um inversor ou de um aparelho. */
+  | { tipo: 'botao'; uid: string };
 
 /** Placa levada ao terreno: giro em torno da vertical e inclinação do suporte. Nulo usa o padrão (face para o norte, latitude do local). */
 interface NoChao {
@@ -143,8 +156,12 @@ export function criarInteracao(c: PartesDaCena): Interacao {
 
   // ---------------------------------------------------------------- Raio do ponteiro
 
+  /** Ponto da janela para onde o raio aponta. */
+  let mira: [number, number] = [0, 0];
+
   /** Aponta o raio para a posição da janela. Falso se ela está fora da cena. */
   function mirar(x: number, y: number): boolean {
+    mira = [x, y];
     const r = c.canvas.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return false;
     ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
@@ -198,12 +215,35 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     return d ? CATALOGO.get(d.itemId) : undefined;
   }
 
-  /** O que está sob o ponteiro: terminal, depois a peça ou o cabo que estiver mais perto da câmera. */
+  /** A peça é um quadro de energia: as proteções do trilho ficam dentro da caixa de clique dele. */
+  function ehQuadro(uid: string): boolean {
+    const item = itemDaPeca(uid);
+    return item?.categoria === 'acessorio' && (item.modulos ?? 0) > 0;
+  }
+
+  /**
+   * Chave de proteção ou botão de ligar sob o ponteiro, à vista: sem parede na frente e sem outra peça na frente
+   * (o quadro não conta: as proteções do trilho ficam dentro dele).
+   */
+  function manobraSob(peca: THREE.Intersection | null): (Alvo & { tipo: 'chave' | 'botao' }) | null {
+    const superficie = distanciaDaSuperficie();
+    const livre = (distancia: number, folga: number): boolean =>
+      superficie >= distancia - folga && (!peca || peca.distance >= distancia - folga || ehQuadro(peca.object.userData.dispositivo as string));
+    const botao = c.operacao.botaoEm(mira[0], mira[1]);
+    if (botao && livre(botao.distancia, 0.1)) return { tipo: 'botao', uid: botao.uid };
+    const chave = c.operacao.chaveNoRaio(raio.ray);
+    if (chave && livre(chave.distancia, 0.06)) return { tipo: 'chave', cabo: chave.cabo, indice: chave.indice };
+    return null;
+  }
+
+  /** O que está sob o ponteiro: terminal, depois a chave ou o botão de ligar, depois a peça ou o cabo que estiver mais perto da câmera. */
   function alvoSob(): Alvo | null {
     const terminal = terminalSob(false);
     if (terminal) return terminal;
     const peca = raio.intersectObjects(c.dispositivos.caixasDeClique(), false)[0];
     const pecaAVista = peca && distanciaDaSuperficie() >= peca.distance - 0.02 ? peca : null;
+    const manobra = manobraSob(pecaAVista ?? null);
+    if (manobra) return manobra;
     const cabo = caboSob();
     // O grampo fica dentro do tubo de clique do cabo que ele prende: apontado, vale o grampo.
     const grampo = pecaAVista !== null && ehGrampo(itemDaPeca(pecaAVista.object.userData.dispositivo as string));
@@ -384,8 +424,10 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     const alvo = alvoSob();
     mostrarTerminal(alvo?.tipo === 'terminal' ? alvo : null);
     mostrarNomeDaPeca(alvo?.tipo === 'dispositivo' ? alvo.uid : null);
-    c.canvas.style.cursor = alvo?.tipo === 'terminal' ? 'crosshair' : alvo?.tipo === 'dispositivo' ? 'grab' : alvo?.tipo === 'cabo' ? 'pointer' : '';
-    if (alvo?.tipo === 'terminal') mostrarDica('Arraste até outro terminal para puxar um cabo. Ou clique aqui e depois no outro terminal: assim dá para mexer a câmera no caminho.', x, y);
+    c.canvas.style.cursor = alvo?.tipo === 'terminal' ? 'crosshair' : alvo?.tipo === 'dispositivo' ? 'grab' : alvo ? 'pointer' : '';
+    if (alvo?.tipo === 'chave') mostrarDica(c.operacao.dicaDaChave(alvo.cabo, alvo.indice), x, y);
+    else if (alvo?.tipo === 'botao') mostrarDica(c.operacao.dicaDoBotao(alvo.uid), x, y);
+    else if (alvo?.tipo === 'terminal') mostrarDica('Arraste até outro terminal para puxar um cabo. Ou clique aqui e depois no outro terminal: assim dá para mexer a câmera no caminho.', x, y);
     else if (alvo?.tipo === 'cabo') {
       const cabo = estado.projeto.cabos.find((k) => k.uid === alvo.uid);
       const tipo = cabo ? CATALOGO.get(cabo.caboId) : undefined;
@@ -647,6 +689,30 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     c.pedirQuadroLeve();
   }
 
+  // ---------------------------------------------------------------- Chaves e botões de ligar
+
+  /**
+   * Clique em uma proteção: abre ou fecha a chave dela, sem mexer na seleção. A queimada não manobra: o cabo fica
+   * selecionado, para o painel mostrar o conserto, e a resposta diz isso.
+   */
+  function manobrarChave(uidCabo: string, indice: number): string | null {
+    const cabo = estado.projeto.cabos.find((k) => k.uid === uidCabo);
+    const item = cabo ? CATALOGO.get(cabo.protecoes[indice] ?? '') : undefined;
+    if (!cabo || item?.categoria !== 'protecao') return null;
+    if (estadoDaProtecao(cabo, indice) === 'queimada') {
+      acoes.selecionar({ tipo: 'cabo', uid: uidCabo });
+      return item.tipo === 'fusivel' ? 'Fusível queimado: troque por um novo no painel do cabo.' : 'Disjuntor queimado: conserte no painel do cabo.';
+    }
+    acoes.alternarProtecao(uidCabo, indice);
+    return null;
+  }
+
+  /** Clique no botão de ligar de um inversor ou de um aparelho. No inversor em falha, o clique desliga (e limpa a falha). */
+  function apertarBotao(uid: string): void {
+    const d = estado.projeto.dispositivos.find((k) => k.uid === uid);
+    if (d) acoes.definirLigado(uid, !d.ligado);
+  }
+
   // ---------------------------------------------------------------- Fim de um arraste
 
   function encerrar(): void {
@@ -682,7 +748,9 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     /** Recusa a dizer depois de o arraste acabar (o fim do arraste apaga a dica). */
     let recusa: string | null = null;
     if (m.tipo === 'apertado') {
-      if (m.alvo?.tipo === 'dispositivo') acoes.selecionar({ tipo: 'dispositivo', uid: m.alvo.uid });
+      if (m.alvo?.tipo === 'chave') recusa = manobrarChave(m.alvo.cabo, m.alvo.indice);
+      else if (m.alvo?.tipo === 'botao') apertarBotao(m.alvo.uid);
+      else if (m.alvo?.tipo === 'dispositivo') acoes.selecionar({ tipo: 'dispositivo', uid: m.alvo.uid });
       else if (m.alvo?.tipo === 'cabo') acoes.selecionar({ tipo: 'cabo', uid: m.alvo.uid });
       else if (estado.selecao && !estado.edicaoCasa.ativa) acoes.selecionar(null);
     } else if (m.tipo === 'catalogo') {
@@ -1004,6 +1072,11 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       const m = modo;
       if (m.tipo !== 'catalogo' && m.tipo !== 'mover') return [];
       return [apontada, m.candidato?.encaixe.superficie ?? null].filter((id): id is string => id !== null);
+    },
+    manobraEm(x, y) {
+      if (modo.tipo !== 'ocioso' || estado.edicaoCasa.ativa || !sobreACena(x, y) || !mirar(x, y)) return false;
+      const alvo = alvoSob();
+      return alvo?.tipo === 'chave' || alvo?.tipo === 'botao';
     },
     destruir() {
       cancelarAssinaturas.forEach((f) => f());

@@ -11,7 +11,8 @@ import { ehGrampo } from './encaixe';
 import { liso } from './estampas';
 import { esconder } from './malha';
 import { GRAMPO } from './modelos';
-import { modeloDaProtecao } from './protecoes';
+import { estadoDaProtecao } from '../nucleo/operacao';
+import { aplicarEstadoDaProtecao, modeloDaProtecao } from './protecoes';
 
 /** Quanto o cabo segue a direção de saída do terminal antes de fazer a curva. */
 const SAIDA = 0.12;
@@ -162,6 +163,12 @@ export interface CamadaDeCabos {
   maisProximo(ponto: THREE.Vector3): string | null;
   /** Posição, na lista de grampos do cabo, em que um grampo novo em `ponto` menos alonga o caminho. */
   indiceDoGrampo(uid: string, ponto: THREE.Vector3): number;
+  /** A proteção de índice dado desenhada no próprio cabo (fora de quadro). Nulo se não está desenhada aqui. */
+  protecao(uid: string, indice: number): THREE.Object3D | null;
+  /** Verdadeiro se o cabo está escondido pelo modo de visão, ou não está desenhado. */
+  escondido(uid: string): boolean;
+  /** Ponto do cabo, em coordenadas da casa, a uma fração do caminho inteiro (todos os trechos). Nulo se o cabo não está desenhado. */
+  pontoNoCaminho(uid: string, fracao: number): THREE.Vector3 | null;
   destruir(): void;
 }
 
@@ -170,7 +177,13 @@ interface Desenho {
   assinatura: string;
   escondido: boolean;
   curvas: THREE.Curve<THREE.Vector3>[];
+  /** Proteções desenhadas no cabo, por índice em `cabo.protecoes`. */
+  protecoes: Map<number, { item: Protecao; peca: THREE.Object3D }>;
 }
+
+/** Cabo queimado por curto: capa carbonizada, com o cobre aparecendo em alguns pontos. */
+const COR_DO_CABO_QUEIMADO = '#1a1512';
+const COR_DO_COBRE_EXPOSTO = '#9a5a2c';
 
 /** Grampo de parede por onde o cabo passa. */
 interface GrampoNoCabo {
@@ -464,12 +477,16 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
     return [pedacos[0]!, 0];
   }
 
-  function desenhar(c: Cabo, percurso: Percurso, cor: string, soltas: { indice: number; item: Protecao }[]): [THREE.Group, THREE.Curve<THREE.Vector3>[]] {
+  function desenhar(c: Cabo, percurso: Percurso, cor: string, soltas: { indice: number; item: Protecao }[]): Omit<Desenho, 'assinatura' | 'escondido'> {
     const raio = percurso.raio;
     const grupo = new THREE.Group();
     grupo.name = `cabo-${c.uid}`;
     grupo.userData.cabo = c.uid;
-    const material = liso(`cabo-${cor}`, () => new THREE.MeshStandardMaterial({ color: cor, roughness: 0.62, metalness: 0 }));
+    const queimado = c.queimado !== undefined;
+    const material = queimado
+      ? liso('cabo-queimado', () => new THREE.MeshStandardMaterial({ color: COR_DO_CABO_QUEIMADO, roughness: 0.96, metalness: 0 }))
+      : liso(`cabo-${cor}`, () => new THREE.MeshStandardMaterial({ color: cor, roughness: 0.62, metalness: 0 }));
+    const protecoes = new Map<number, { item: Protecao; peca: THREE.Object3D }>();
     // Trecho sem tamanho (grampo em cima do terminal) não tem o que desenhar.
     const pedacos = percurso.trechos.filter((t) => t.a.pos.distanceToSquared(t.b.pos) > 1e-8).flatMap((t) => pedacosDe(t));
     const curvas = pedacos.map((p) => p.curva);
@@ -505,6 +522,24 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
       junta.castShadow = true;
       junta.userData.cabo = c.uid;
       grupo.add(junta);
+    }
+    if (queimado) {
+      // A capa derreteu: bolhas de plástico queimado ao longo do cabo e, entre elas, o cobre à mostra.
+      const cobre = liso('cabo-cobre-exposto', () => new THREE.MeshStandardMaterial({ color: COR_DO_COBRE_EXPOSTO, roughness: 0.5, metalness: 0.6 }));
+      const comprimento = curvas.reduce((s, x) => s + x.getLength(), 0);
+      const n = Math.min(14, Math.max(3, Math.round(comprimento / 0.22)));
+      for (let i = 0; i < n; i++) {
+        const [pedaco, u] = noCaminho(pedacos, ((i + 0.5) / n) * comprimento);
+        const bolha = new THREE.Mesh(geoJunta, i % 3 === 1 ? cobre : material);
+        bolha.name = 'bolha';
+        bolha.position.copy(pedaco.curva.getPointAt(u));
+        // Tamanhos desiguais, sem sorteio: o desenho é o mesmo a cada vez.
+        const s = raio * (i % 3 === 1 ? 1.06 : 1.35 + 0.35 * ((i * 7) % 5) / 4);
+        bolha.scale.set(s * (i % 3 === 1 ? 1.6 : 1), s, s);
+        bolha.castShadow = true;
+        bolha.userData.cabo = c.uid;
+        grupo.add(bolha);
+      }
     }
     // Proteções fora de quadro, desenhadas no próprio cabo.
     const itemDe = (uid: string) => CATALOGO.get(estado.projeto.dispositivos.find((d) => d.uid === uid)?.itemId ?? '');
@@ -546,8 +581,9 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
         vaga++;
       }
       grupo.add(peca);
+      protecoes.set(indice, { item, peca });
     }
-    return [grupo, curvas];
+    return { grupo, curvas, protecoes };
   }
 
   function atualizar(): void {
@@ -584,15 +620,17 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
         raio, cor,
         trechos.map((t) => `${t.reto ? 'r' : t.esticado ? 'e' : 's'}${numero(t.a.pos)};${numero(t.a.saida)};${numero(t.b.pos)};${numero(t.b.saida)};${(t.linha ?? []).length}`).join('/'),
         soltas.map((s) => `${s.indice}:${s.item.id}`).join(','),
+        c.queimado ? 'queimado' : '',
       ].join('|');
       let d = desenhos.get(c.uid);
       if (!d || d.assinatura !== assinatura) {
         remover(c.uid);
-        const [grupo, curvas] = desenhar(c, caminho, cor, soltas);
-        d = { grupo, assinatura, escondido: false, curvas };
+        d = { ...desenhar(c, caminho, cor, soltas), assinatura, escondido: false };
         desenhos.set(c.uid, d);
         casa.add(d.grupo);
       }
+      // A chave de cada proteção (operar.md, seção 2): alavanca, fusível colocado, tirado ou queimado. Não refaz o cabo.
+      for (const [indice, { item, peca }] of d.protecoes) aplicarEstadoDaProtecao(peca, item, estadoDaProtecao(c, indice));
       // O cabo some quando as duas pontas estão em peças escondidas pelo modo de visão.
       const escondido = pecas.escondida(c.de.disp) && pecas.escondida(c.para.disp);
       if (escondido !== d.escondido) {
@@ -691,6 +729,20 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
         }
       }
       return melhor;
+    },
+    protecao: (uid, indice) => desenhos.get(uid)?.protecoes.get(indice)?.peca ?? null,
+    escondido: (uid) => desenhos.get(uid)?.escondido ?? true,
+    pontoNoCaminho(uid, fracao) {
+      const curvas = desenhos.get(uid)?.curvas;
+      if (!curvas || curvas.length === 0) return null;
+      const comprimentos = curvas.map((x) => x.getLength());
+      let resto = THREE.MathUtils.clamp(fracao, 0, 1) * comprimentos.reduce((s, l) => s + l, 0);
+      for (let i = 0; i < curvas.length; i++) {
+        const l = comprimentos[i]!;
+        if (resto <= l || i === curvas.length - 1) return curvas[i]!.getPointAt(l > 1e-9 ? Math.min(1, resto / l) : 0);
+        resto -= l;
+      }
+      return null;
     },
     destruir() {
       for (const uid of [...desenhos.keys()]) remover(uid);
