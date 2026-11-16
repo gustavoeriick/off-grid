@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOGO } from '../catalogo';
-import type { Catalogo, Item, Protecao } from '../catalogo/tipos';
+import type { Aparelho, Catalogo, Item, Protecao } from '../catalogo/tipos';
 import { cenarioPlanoCorrigido, CASA_INICIAL } from './cenarios';
 import { analisarCircuito } from './circuito';
 import { estadoInicial, estadoPlaca, infoBanco, passoSimulacao, RENDIMENTO_MPPT } from './eletrica';
 import {
-  analiseSoDoControlador, aplicarConsequencias, aplicarManobras, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao,
+  analiseDeOperacao, analiseSoDoControlador, aparelhoComEnergia, aplicarConsequencias, aplicarManobras, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao,
   bateriaPresente, caboInterrompido, consertar, correntesDeOperacao, estadoDaProtecao, inversaoNaMontagem, inversorOperando,
   passoDeOperacao, planoDeDesenergizar, polosTrocados, projetoVivo, sequenciaDeDesenergizar, sequenciaDeEnergizar,
   type Consequencia,
@@ -1082,5 +1082,107 @@ describe('revisão da fase 8: baterias em paralelo com uma invertida', () => {
       [['b1.pos', 'inv.batPos'], ['b1.neg', 'b2.pos'], ['b2.neg', 'inv.batNeg']],
     );
     expect(doCurto(serie)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------- Aparelho com energia
+
+describe('aparelhoComEnergia: o aparelho só funciona ligado, no horário de uso e com energia chegando', () => {
+  const VENTILADOR = CATALOGO.get('ap-ventilador') as Aparelho; // uso das 10 às 22 h
+  const LAMPADA = CATALOGO.get('ap-lampada') as Aparelho; // uso das 18 às 24 h
+
+  /** As condições do instante, como o estado as monta: análise viva, análise da simulação e um passo de duração zero. */
+  function energia(projeto: Projeto, uid: string, opcoes: { horaLocal?: number | null; redeDisponivel?: boolean; sim?: EstadoSim } = {}): boolean {
+    const horaLocal = opcoes.horaLocal === undefined ? 12 : opcoes.horaLocal;
+    const redeDisponivel = opcoes.redeDisponivel ?? true;
+    const viva = analisarCircuito(projetoVivo(projeto, CATALOGO), CATALOGO);
+    const inv = projeto.dispositivos.find((d) => CATALOGO.get(d.itemId)?.categoria === 'inversor');
+    const saida = passoDeOperacao(projeto, CATALOGO, viva, opcoes.sim ?? estadoInicial(), {
+      dtHoras: 0, redeDisponivel, horaLocal, placas: ESCURO, inversorLigado: inv ? inversorOperando(inv) : true,
+    });
+    const d = projeto.dispositivos.find((x) => x.uid === uid)!;
+    return aparelhoComEnergia(d, CATALOGO.get(d.itemId) as Aparelho, {
+      daSimulacao: analiseDeOperacao(projeto, CATALOGO, viva), viva, saida, horaLocal, redeDisponivel,
+    });
+  }
+
+  /** O tutorial e, à parte, uma lâmpada ligada direto em uma tomada da rede (c8). */
+  function comLampadaNaRede(): Projeto {
+    return montar(
+      { p1: 'placa-resun-100', b1: 'bat-moura-12mn105', inv: 'inv-aiker-500-12v-110', ctl: 'ctl-pwm-30a', vent: 'ap-ventilador', tom: 'rede-tomada', lamp: 'ap-lampada' },
+      [
+        ['b1.pos', 'inv.batPos', [FUSIVEL]], ['b1.neg', 'inv.batNeg'],
+        ['ctl.batPos', 'b1.pos', [FUSIVEL]], ['ctl.batNeg', 'b1.neg'],
+        ['p1.pos', 'ctl.pvPos', [], 'cabo-solar-6'], ['p1.neg', 'ctl.pvNeg', [], 'cabo-solar-6'],
+        ['inv.caSaida', 'vent.plug', [], 'cabo-ca-2p5'],
+        ['tom.tomada', 'lamp.plug', [DISJ_CA], 'cabo-ca-2p5'],
+      ],
+    );
+  }
+
+  it('ligado, no horário e atendido pelo inversor: tem energia', () => {
+    expect(energia(tutorial(), 'vent')).toBe(true);
+  });
+
+  it('botão desligado: sem energia', () => {
+    expect(energia(com(tutorial(), (x) => { x.dispositivos.find((d) => d.uid === 'vent')!.ligado = false; }), 'vent')).toBe(false);
+  });
+
+  it('fora do horário de uso: sem energia; sem hora (teste de autonomia), funciona o tempo todo', () => {
+    expect(energia(tutorial(), 'vent', { horaLocal: 9.99 })).toBe(false);
+    expect(energia(tutorial(), 'vent', { horaLocal: 10 })).toBe(true);
+    expect(energia(tutorial(), 'vent', { horaLocal: 22 })).toBe(false);
+    expect(energia(tutorial(), 'vent', { horaLocal: null })).toBe(true);
+  });
+
+  it('horário próprio do aparelho vale no lugar do horário do catálogo', () => {
+    const p = com(tutorial(), (x) => { x.dispositivos.find((d) => d.uid === 'vent')!.uso = { inicio: 2, fim: 4 }; });
+    expect(energia(p, 'vent', { horaLocal: 3 })).toBe(true);
+    expect(energia(p, 'vent', { horaLocal: 12 })).toBe(false);
+    expect(VENTILADOR.usoPadrao).toEqual({ inicio: 10, fim: 22 });
+  });
+
+  it('inversor desligado, em falha ou queimado: sem energia, mesmo com o botão do aparelho ligado', () => {
+    const inv = (mudar: (d: Projeto['dispositivos'][number]) => void): Projeto => com(tutorial(), (x) => mudar(x.dispositivos.find((d) => d.uid === 'inv')!));
+    expect(energia(inv((d) => { d.ligado = false; }), 'vent')).toBe(false);
+    expect(energia(inv((d) => { d.falha = 'sobrecarga'; }), 'vent')).toBe(false);
+    expect(energia(inv((d) => { d.queimado = dano; }), 'vent')).toBe(false);
+  });
+
+  it('proteção da bateria do inversor aberta: sem energia (também com o controlador carregando a bateria)', () => {
+    expect(energia(com(tutorial(), (x) => estados(x, 'c1', 'aberta')), 'vent')).toBe(false);
+  });
+
+  it('proteção aberta no cabo do próprio aparelho: sem energia', () => {
+    const p = tutorial();
+    p.cabos.find((c) => c.uid === 'c7')!.protecoes = [DISJ_CA];
+    expect(energia(p, 'vent')).toBe(true);
+    expect(energia(com(p, (x) => estados(x, 'c7', 'aberta')), 'vent')).toBe(false);
+  });
+
+  it('bateria vazia: sem energia', () => {
+    expect(energia(tutorial(), 'vent', { sim: { soc: 0, cortado: true, emRede: false } })).toBe(false);
+  });
+
+  it('aparelho queimado: sem energia', () => {
+    expect(energia(com(tutorial(), (x) => { x.dispositivos.find((d) => d.uid === 'vent')!.queimado = dano; }), 'vent')).toBe(false);
+  });
+
+  it('na tomada da rede: tem energia com a rede; a queda de luz apaga; o que está no inversor continua', () => {
+    const p = comLampadaNaRede();
+    expect(LAMPADA.usoPadrao).toEqual({ inicio: 18, fim: 24 });
+    expect(energia(p, 'lamp', { horaLocal: 20 })).toBe(true);
+    expect(energia(p, 'lamp', { horaLocal: 20, redeDisponivel: false })).toBe(false);
+    expect(energia(p, 'vent', { horaLocal: 20, redeDisponivel: false })).toBe(true);
+    // Fora do horário, botão desligado e disjuntor do cabo aberto também apagam o que está na rede.
+    expect(energia(p, 'lamp', { horaLocal: 12 })).toBe(false);
+    expect(energia(com(p, (x) => { x.dispositivos.find((d) => d.uid === 'lamp')!.ligado = false; }), 'lamp', { horaLocal: 20 })).toBe(false);
+    expect(energia(com(p, (x) => estados(x, 'c8', 'aberta')), 'lamp', { horaLocal: 20 })).toBe(false);
+  });
+
+  it('na tomada da rede, o inversor desligado não apaga o aparelho', () => {
+    const p = com(comLampadaNaRede(), (x) => { x.dispositivos.find((d) => d.uid === 'inv')!.ligado = false; });
+    expect(energia(p, 'lamp', { horaLocal: 20 })).toBe(true);
+    expect(energia(p, 'vent', { horaLocal: 20 })).toBe(false);
   });
 });

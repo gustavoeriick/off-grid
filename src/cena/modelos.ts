@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import type { Acessorio, Bateria, Controlador, Dimensoes, Inversor, Item, Placa } from '../catalogo/tipos';
 import { terminaisDe } from '../nucleo/terminais';
 import type { DefTerminal } from '../nucleo/tipos';
-import { construirAparelho } from './aparelhos';
+import { construirAparelho, FORA_DO_VOLUME } from './aparelhos';
 import { borneDeBaixo, borneDeTopo, type Marcar, mc4, poloDeChumbo } from './conectores';
 import { dimensoesDe } from './encaixe';
 import { estampa, logotipo, retangulo, texto, tomadaBR, visorApagado } from './estampas';
@@ -686,7 +686,14 @@ export function modeloDe(item: Item): Modelo | null {
   terminais.sort((a, b) => defs.findIndex((d) => d.id === a.id) - defs.findIndex((d) => d.id === b.id));
   const grupo = molde.montar();
   grupo.name = `modelo-${item.id}`;
+  // A caixa que envolve o desenho não conta o que é só efeito (a água do chuveiro): essas partes saem para a medida.
+  const efeitos: [THREE.Object3D, THREE.Object3D][] = [];
+  grupo.traverse((o) => {
+    if (o.name === FORA_DO_VOLUME && o.parent) efeitos.push([o, o.parent]);
+  });
+  for (const [o] of efeitos) o.removeFromParent();
   const volume = new THREE.Box3().setFromObject(grupo);
+  for (const [o, pai] of efeitos) pai.add(o);
   volume.union(new THREE.Box3(new THREE.Vector3(-dim[0] / 2, -dim[1] / 2, -dim[2] / 2), new THREE.Vector3(dim[0] / 2, dim[1] / 2, dim[2] / 2)));
   if (molde.triangulos > MAX_TRIANGULOS) console.warn(`O modelo de "${item.id}" tem ${molde.triangulos} triângulos; o limite é ${MAX_TRIANGULOS}.`);
   const modelo: Modelo = { grupo, terminais, dimensoes: dim, volume, triangulos: molde.triangulos, visor };

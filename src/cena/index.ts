@@ -12,7 +12,7 @@ import { type CamadaDeCabos, criarCamadaDeCabos } from './cabos';
 import { criarCasa } from './casa';
 import { colocarIniciais } from './colocacao';
 import { criarCamadaDeDestaques, type DestaqueNaCena } from './destaques';
-import { type CamadaDeDispositivos, criarCamadaDeDispositivos } from './dispositivos';
+import { type CamadaDeDispositivos, criarCamadaDeDispositivos, type VidaDoAparelho } from './dispositivos';
 import { criarEdicao } from './edicao';
 import { encaixar, encaixarNoToque } from './encaixe';
 import { liberarEstampas } from './estampas';
@@ -33,7 +33,7 @@ import { ID_TERRENO } from './terreno';
 
 export { comprimentoDoTrecho, corDoCabo } from './cabos';
 export type { CamadaDeCabos } from './cabos';
-export type { CamadaDeDispositivos, PassagemPeloQuadro, TerminalNaCasa } from './dispositivos';
+export type { CamadaDeDispositivos, PassagemPeloQuadro, TerminalNaCasa, VidaDoAparelho } from './dispositivos';
 export { alturaDeApoio, dimensoesDe, encaixar, encaixarNoToque, normalizarGiro, superficieAceita } from './encaixe';
 export { CAMADA_SO_SOMBRA } from './malha';
 export type { DestaqueNaCena } from './destaques';
@@ -116,6 +116,11 @@ export interface OffgridGlobal {
   textoDoVisor?: (uid: string) => string | null;
   /** Auxiliar de verificação: selos de queimado na cena (`uid` da peça ou do cabo, ou `{cabo}:{indice}` da proteção), partículas de efeito vivas e visores ampliados à mostra. */
   operacaoNaCena?: () => { selos: string[]; particulas: number; visoresFlutuando: string[] };
+  /**
+   * Auxiliar de verificação: se o aparelho recebe energia agora (ligado, no horário de uso e atendido pelo sistema ou
+   * pela tomada da rede), se o que acende nele está aceso e se a hélice gira. Nulo se a peça não é um aparelho na cena.
+   */
+  vidaDoAparelho?: (uid: string) => VidaDoAparelho | null;
 }
 
 declare global {
@@ -446,7 +451,11 @@ export function criarCena(container: HTMLElement): Cena {
     // O mesmo vale para a fumaça e a faísca de um evento da operação, que correm no tempo de verdade.
     const realcando = destaques?.animar(agora) ?? false;
     const operando = operacao?.animar(agora) ?? false;
-    const pulsando = realcando || operando;
+    // O aparelho que recebe energia ganha vida: hélice girando e LED piscando correm no tempo de verdade, mesmo com o
+    // relógio da simulação em pausa. Sem aparelho assim, a cena continua parada.
+    const vida = dispositivos.animar(agora);
+    if (vida.mudou) sujo = true;
+    const pulsando = realcando || operando || vida.animando;
     if (!sujo) {
       seguidos = 0;
       lentos = 0;
@@ -464,11 +473,13 @@ export function criarCena(container: HTMLElement): Cena {
       } else {
         // Quadro só para o pulso: não conta como movimento (não liga o modo econômico). Em aparelho lento sai mais
         // espaçado, a três vezes o tempo que o quadro de pulso anterior levou, para o ponteiro não engasgar.
-        if (!pulsando) return;
+        // O custo do quadro de pulso é medido na volta seguinte do laço, haja ou não outro pulso: o LED que pisca pede
+        // um quadro de vez em quando, e o intervalo até o próximo não é custo.
         if (pulsoPendente) {
           custoDoPulso = Math.min(500, agora - ultimoPulso);
           pulsoPendente = false;
         }
+        if (!pulsando) return;
         if (aparelhoLento && agora - ultimoPulso < Math.max(PULSO_ECONOMICO_MS, 3 * custoDoPulso)) return;
         ultimoPulso = agora;
         pulsoPendente = true;
@@ -630,6 +641,7 @@ export function criarCena(container: HTMLElement): Cena {
     telaDoBotao: (uid) => camadaDeOperacao.telaDoBotao(uid),
     textoDoVisor: (uid) => camadaDeOperacao.textoDoVisor(uid),
     operacaoNaCena: () => camadaDeOperacao.resumo(),
+    vidaDoAparelho: (uid) => dispositivos.vida(uid),
     recalcular: recalcularAgora,
     ambiente: () => sombra.ambiente,
     resumoDaSombra: () => sombra.resumo(),

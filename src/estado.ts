@@ -17,7 +17,7 @@ import { registrarClimaReal, temClimaReal } from './nucleo/climaReal';
 import { irradianciaNasPlacas, localDoProjeto, localPorId } from './nucleo/irradiancia';
 import { converterProjeto } from './nucleo/migracao';
 import {
-  type AlvoDeConserto, analiseDeOperacao, aplicarConsequencias, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao,
+  type AlvoDeConserto, analiseDeOperacao, aparelhoComEnergia, aplicarConsequencias, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao,
   type AvisoDeDesenergizar, circuitoDoCabo, type CodigoDeConsequencia, type Consequencia, consertar as consertarNoProjeto,
   correntesDeOperacao, estadoDaProtecao, inversorOperando, type Manobra, passoDeOperacao, planoDeDesenergizar, projetoVivo,
   type RecusaDeEnergizar, sequenciaDeEnergizar,
@@ -344,6 +344,23 @@ export function analiseViva(): AnaliseCircuito {
  */
 export function analiseDaSimulacao(): AnaliseCircuito {
   return analiseDeOperacao(estado.projeto, CATALOGO, analiseViva());
+}
+
+/**
+ * `uid` dos aparelhos que estão recebendo energia neste instante: ligados, dentro do horário de uso e atendidos pelo
+ * sistema ou pela tomada da rede (`aparelhoComEnergia`, em `nucleo/operacao.ts`). A cena acende e move só estes.
+ */
+export function aparelhosComEnergia(): Set<string> {
+  const condicoes = {
+    daSimulacao: analiseDaSimulacao(), viva: analiseViva(), saida: estado.simulacao.saida,
+    horaLocal: ultimoPasso.horaLocal, redeDisponivel: !estado.simulacao.quedaDeLuz.ativa,
+  };
+  const comEnergia = new Set<string>();
+  for (const d of estado.projeto.dispositivos) {
+    const item = CATALOGO.get(d.itemId);
+    if (item?.categoria === 'aparelho' && aparelhoComEnergia(d, item, condicoes)) comEnergia.add(d.uid);
+  }
+  return comEnergia;
 }
 
 /** Corrente que passa em cada cabo neste instante, em ampères, por `uid` do cabo. Cabo interrompido fica com 0. */

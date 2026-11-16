@@ -347,6 +347,35 @@ export function correntesDeOperacao(
   return resultado;
 }
 
+// ---------------------------------------------------------------- Aparelho com energia
+
+/** O que decide se um aparelho está recebendo energia neste instante. */
+export interface CondicoesDeEnergia {
+  /** A análise que a simulação do instante usa (`analiseDeOperacao`): as cargas do sistema vêm dela. */
+  daSimulacao: AnaliseCircuito;
+  /** A análise viva: dela vêm os aparelhos ligados direto em uma tomada da rede. */
+  viva: AnaliseCircuito;
+  /** Saída do passo do instante. */
+  saida: SaidaPasso;
+  /** Hora local, de 0 a 24. Nulo: os aparelhos funcionam o tempo todo, como no passo da simulação. */
+  horaLocal: number | null;
+  /** Falso durante a queda de luz. */
+  redeDisponivel: boolean;
+}
+
+/**
+ * Verdadeiro se o aparelho está funcionando neste instante: com o botão ligado, sem estar queimado, dentro do horário
+ * de uso e com energia chegando ao plugue. A energia chega de dois jeitos: o aparelho é uma das cargas do sistema e a
+ * simulação está atendendo as cargas (`cargaAtendidaW > 0`), ou ele está ligado direto em uma tomada da rede e a rede
+ * não está em queda de luz. Inversor desligado, proteção aberta, bateria vazia e sobrecarga zeram a carga atendida.
+ */
+export function aparelhoComEnergia(dispositivo: Dispositivo, item: Aparelho, c: CondicoesDeEnergia): boolean {
+  if (!dispositivo.ligado || dispositivo.queimado !== undefined) return false;
+  if (c.horaLocal !== null && !emUso(usoDe(dispositivo, item), c.horaLocal)) return false;
+  if (c.daSimulacao.sistema !== null && c.saida.cargaAtendidaW > 0 && c.daSimulacao.sistema.cargas.includes(dispositivo.uid)) return true;
+  return c.redeDisponivel && c.viva.naRede.includes(dispositivo.uid);
+}
+
 // ---------------------------------------------------------------- Consequências
 
 export type CodigoDeConsequencia = CodigoDano | 'sobrecarga' | 'desarme' | 'fusivel-queimou';

@@ -2,7 +2,10 @@
 //
 // A caixa de `dimensoes` do catálogo é o aparelho; computador, notebook, TV, modem e micro-ondas vêm com o
 // móvel em que ficam (mesa, rack, mesinha, balcão), desenhado abaixo dessa caixa. Partes com nome:
-// `aceso` (o que aparece com o aparelho ligado), `apagado` (o contrário) e `helice` (gira no ventilador).
+// `aceso` (o que aparece com o aparelho recebendo energia: tela, LED, visor, lâmpada, água do chuveiro), `apagado`
+// (o contrário), `pisca` (LED de atividade, dentro de um `aceso`, que acende e apaga) e `helice` (gira no ventilador).
+// Quem decide se o aparelho recebe energia é o estado (`aparelhosComEnergia`); a camada de dispositivos mostra.
+// O que acende é material que brilha por conta própria: nenhuma luz nova na cena, nenhuma sombra nova.
 
 import * as THREE from 'three';
 import type { Aparelho } from '../catalogo/tipos';
@@ -12,6 +15,12 @@ import { estampa, logotipo, retangulo, texto } from './estampas';
 import type { Molde, V3 } from './molde';
 
 const PARA_CIMA: V3 = [0, 1, 0];
+
+/**
+ * Nome da parte que fica de fora da caixa que envolve o desenho (`volume` do modelo): a água do chuveiro. Ela não
+ * conta para a moldura da seleção nem como obstáculo no caminho dos cabos.
+ */
+export const FORA_DO_VOLUME = 'fora-do-volume';
 
 /** Plugue em pé sobre um móvel ou sobre o aparelho, com o terminal `plug` na ponta dos pinos. */
 function plugueComTerminal(m: Molde, T: Marcar, x: number, y: number, z: number, origemDoFio?: V3): void {
@@ -101,8 +110,10 @@ function telaDePC(gamer: boolean): THREE.Material {
   }, { acesa: 0.9, rugosidade: 0.25 });
 }
 
-function teclado(gamer: boolean): THREE.Material {
-  return estampa(gamer ? 'teclado-gamer' : 'teclado', 256, 80, (g, w, h) => {
+/** Teclado. O do computador gamer tem luz nas teclas: `aceso` diz se elas estão brilhando. */
+function teclado(gamer: boolean, aceso = false): THREE.Material {
+  const colorido = gamer && aceso;
+  return estampa(colorido ? 'teclado-gamer' : gamer ? 'teclado-gamer-apagado' : 'teclado', 256, 80, (g, w, h) => {
     g.fillStyle = gamer ? '#0e0f11' : '#24272b';
     g.fillRect(0, 0, w, h);
     const colunas = 15;
@@ -110,13 +121,28 @@ function teclado(gamer: boolean): THREE.Material {
     for (let j = 0; j < linhas; j++) {
       for (let i = 0; i < colunas; i++) {
         if (j === 4 && i > 3 && i < 10) continue;
-        g.fillStyle = gamer ? `hsl(${(i / colunas) * 300 + j * 12}, 90%, 60%)` : '#3a3e44';
+        g.fillStyle = colorido ? `hsl(${(i / colunas) * 300 + j * 12}, 90%, 60%)` : gamer ? '#2b2e33' : '#3a3e44';
         g.fillRect(4 + i * ((w - 8) / colunas) + 1, 4 + j * ((h - 8) / linhas) + 1, (w - 8) / colunas - 2, (h - 8) / linhas - 2);
       }
     }
-    g.fillStyle = gamer ? 'hsl(160, 90%, 60%)' : '#3a3e44';
+    g.fillStyle = colorido ? 'hsl(160, 90%, 60%)' : gamer ? '#2b2e33' : '#3a3e44';
     g.fillRect(4 + 4 * ((w - 8) / colunas) + 1, 4 + 4 * ((h - 8) / linhas) + 1, 6 * ((w - 8) / colunas) - 2, (h - 8) / linhas - 2);
-  }, gamer ? { acesa: 0.6 } : {});
+  }, colorido ? { acesa: 0.6 } : {});
+}
+
+/** Visor pequeno de números acesos sobre fundo escuro (relógio do micro-ondas, temperatura da geladeira). */
+function visorDeNumeros(chave: string, numeros: string, cor: string): THREE.Material {
+  return estampa(chave, 128, 56, (g, w, h) => {
+    g.fillStyle = '#04090a';
+    g.fillRect(0, 0, w, h);
+    texto(g, numeros, w / 2, h / 2 + 2, h * 0.72, cor, 'center', 'bold', w - 12);
+  }, { acesa: 1 });
+}
+
+/** LED de painel: um ponto escuro sempre no lugar e, com energia, a luz por cima. */
+function led(m: Molde, aceso: Molde, cor: string, x: number, y: number, z: number, raio = 0.004): void {
+  m.cilindro('plastico', '#1b1d20', x, y, z, raio * 1.5, 0.0016, 'z', 10);
+  aceso.esfera('luz', cor, x, y, z + 0.001, raio, [1, 1, 0.4], 8);
 }
 
 // ---------------------------------------------------------------- Geladeira
@@ -157,6 +183,18 @@ function geladeira(item: Aparelho, m: Molde, T: Marcar): void {
   // Plaqueta genérica na porta de cima e dobradiça no topo.
   m.bloco('metal', '#dfe3e6', W * 0.22, y1 - 0.09, D / 2 + 0.0012, 0.07, 0.016, 0.002);
   m.bloco('plastico', inox ? '#9aa0a6' : '#dfe2e3', W / 2 - 0.05, H / 2 + 0.003, D / 2 - dPorta - 0.01, 0.07, 0.008, 0.05, 0.003);
+  const aceso = m.filho('aceso');
+  if (duasPortas) {
+    // Painel eletrônico na porta do congelador: a temperatura aparece com a geladeira recebendo energia.
+    const yPainel = y1 - 0.09;
+    m.bloco('plastico', '#101214', 0, yPainel, D / 2 + 0.0008, 0.11, 0.046, 0.002, 0.001);
+    aceso.estampa(visorDeNumeros('visor-geladeira', '-18 °C', '#7fd6ff'), -0.012, yPainel, D / 2 + 0.0021, 0.074, 0.032, 'pz');
+    led(m, aceso, '#39d353', 0.041, yPainel, D / 2 + 0.0018, 0.0035);
+  } else {
+    // Geladeira de uma porta e frigobar: só a luz verde de ligado, no alto da porta.
+    m.bloco('plastico', '#2a2d31', W * 0.3, y1 - 0.045, D / 2 + 0.0008, 0.03, 0.016, 0.002, 0.001);
+    led(m, aceso, '#39d353', W * 0.3, y1 - 0.045, D / 2 + 0.0018, 0.0035);
+  }
   // Plugue no topo, junto à borda de trás; o fio desce por trás da geladeira.
   const zt = -D / 2 + 0.06;
   plugueComTerminal(m, T, 0, H / 2, zt, [0, H / 2 - 0.02, -D / 2 - 0.004]);
@@ -251,9 +289,11 @@ function tv(item: Aparelho, m: Molde, T: Marcar): void {
   }
   const lt = W - 0.02;
   const at = ht - 0.03;
-  m.filho('aceso').estampa(telaDeTV(), 0, yt + 0.005, 0.0146, lt, at, 'pz');
+  const aceso = m.filho('aceso');
+  aceso.estampa(telaDeTV(), 0, yt + 0.005, 0.0146, lt, at, 'pz');
   m.filho('apagado').estampa(telaApagada(), 0, yt + 0.005, 0.0146, lt, at, 'pz');
-  m.esfera('luz', '#ff3b30', 0, yt - ht / 2 + 0.007, 0.0146, 0.003, [1, 1, 0.4], 6);
+  // Luz de ligado na borda de baixo. Sem energia, nem a luz vermelha de espera fica acesa.
+  led(m, aceso, '#e8f4ff', 0, yt - ht / 2 + 0.007, 0.0142, 0.003);
   // Plugue sobre o rack, atrás da TV, do lado direito.
   plugueComTerminal(m, T, W / 2 + 0.1, yRack, -0.1, [W * 0.2, yRack + 0.2, -0.05]);
 }
@@ -298,8 +338,11 @@ function pc(item: Aparelho, m: Molde, T: Marcar): void {
     m.bloco('plastico', '#3a3e44', xg, H * 0.3, zf + 0.0008, W * 0.8, H * 0.08, 0.002, 0.001);
     m.bloco('plastico', '#1c1e21', xg, H * 0.3, zf + 0.002, W * 0.6, 0.006, 0.001);
     for (let i = 0; i < 6; i++) m.bloco('plastico', '#1c1e21', xg, -H * 0.1 - i * 0.018, zf + 0.0006, W * 0.7, 0.006, 0.0012);
+    // Botão de ligar com a luz de energia e, ao lado, a luz de atividade do disco, que pisca.
     m.cilindro('plastico', '#4a4f56', xg, H * 0.16, zf + 0.002, 0.009, 0.004, 'z', 12);
     aceso.esfera('luz', '#6fd3ff', xg, H * 0.16, zf + 0.0042, 0.004, [1, 1, 0.4], 8);
+    m.cilindro('plastico', '#1b1d20', xg + 0.03, H * 0.16, zf + 0.0008, 0.0035, 0.0016, 'z', 8);
+    aceso.filho('pisca').esfera('luz', '#ffb300', xg + 0.03, H * 0.16, zf + 0.0018, 0.0025, [1, 1, 0.4], 6);
     for (const dx of [-0.02, 0.02]) m.bloco('plastico', '#0c0d0e', xg + dx, H * 0.07, zf + 0.0008, 0.014, 0.006, 0.002);
   }
   // Monitor.
@@ -313,10 +356,16 @@ function pc(item: Aparelho, m: Molde, T: Marcar): void {
   m.bloco('plastico', '#101113', xm, ym, zm, lm, hm, 0.022, 0.005);
   aceso.estampa(telaDePC(gamer), xm, ym + 0.004, zm + 0.0116, lm - 0.016, hm - 0.026, 'pz');
   apagado.estampa(telaApagada(), xm, ym + 0.004, zm + 0.0116, lm - 0.016, hm - 0.026, 'pz');
+  // Luz de ligado do monitor, no canto de baixo da moldura.
+  led(m, aceso, '#6fd3ff', xm + lm / 2 - 0.03, ym - hm / 2 + 0.0075, zm + 0.0112, 0.0028);
   // Teclado e mouse.
   const zt = 0.14;
   m.bloco('plastico', gamer ? '#0e0f11' : '#24272b', xm, yMesa + 0.009, zt, 0.43, 0.018, 0.135, 0.004);
-  m.estampa(teclado(gamer), xm, yMesa + 0.0183, zt, 0.42, 0.125, 'py');
+  if (gamer) {
+    // As teclas iluminadas só brilham com o computador recebendo energia.
+    aceso.estampa(teclado(true, true), xm, yMesa + 0.0183, zt, 0.42, 0.125, 'py');
+    apagado.estampa(teclado(true), xm, yMesa + 0.0183, zt, 0.42, 0.125, 'py');
+  } else m.estampa(teclado(false), xm, yMesa + 0.0183, zt, 0.42, 0.125, 'py');
   if (gamer) m.bloco('plastico', '#17181a', 0.2, yMesa + 0.0015, zt, 0.24, 0.003, 0.2, 0.001);
   m.esfera('plastico', gamer ? '#0e0f11' : '#3a3e44', 0.2, yMesa + 0.012, zt, 0.05, [0.62, 0.36, 1], 10);
   if (gamer) aceso.bloco('luz', '#28e0ff', 0.2, yMesa + 0.027, zt + 0.02, 0.006, 0.002, 0.03);
@@ -335,7 +384,13 @@ function notebook(item: Aparelho, m: Molde, T: Marcar): void {
   const eb = 0.016;
   const db = D * 0.94;
   m.bloco('plastico', cor, 0, yMesa + eb / 2, D / 2 - db / 2, W, eb, db, 0.004);
-  m.estampa(teclado(gamer), 0, yMesa + eb + 0.0004, D / 2 - db * 0.58, W * 0.86, db * 0.48, 'py');
+  // Luz de ligado na borda da frente; no notebook gamer, as teclas iluminadas só brilham com energia.
+  const luzes = m.filho('aceso');
+  led(m, luzes, '#6fd3ff', W * 0.4, yMesa + eb * 0.5, D / 2 - 0.0002, 0.0025);
+  if (gamer) {
+    luzes.estampa(teclado(true, true), 0, yMesa + eb + 0.0004, D / 2 - db * 0.58, W * 0.86, db * 0.48, 'py');
+    m.filho('apagado').estampa(teclado(true), 0, yMesa + eb + 0.0004, D / 2 - db * 0.58, W * 0.86, db * 0.48, 'py');
+  } else m.estampa(teclado(false), 0, yMesa + eb + 0.0004, D / 2 - db * 0.58, W * 0.86, db * 0.48, 'py');
   m.bloco('plastico', gamer ? '#2a2c31' : '#a3a9af', 0, yMesa + eb + 0.0004, D / 2 - db * 0.17, W * 0.3, 0.0008, db * 0.24);
   // Tampa aberta, inclinada para trás, com a tela.
   const inclinacao = 0.3;
@@ -349,6 +404,8 @@ function notebook(item: Aparelho, m: Molde, T: Marcar): void {
   m.esfera('plastico', '#3a3e44', W / 2 + 0.1, yMesa + 0.012, 0.06, 0.05, [0.62, 0.36, 1], 10);
   const xf = -W / 2 - 0.12;
   m.bloco('plastico', '#17181a', xf, yMesa + 0.014, -0.08, 0.11, 0.028, 0.048, 0.006);
+  // Luz verde da fonte.
+  luzes.bloco('luz', '#39d353', xf + 0.035, yMesa + 0.0283, -0.08, 0.006, 0.0006, 0.003);
   m.tubo('plastico', '#17181a', [[xf + 0.055, yMesa + 0.012, -0.08], [-W / 2 - 0.03, yMesa + 0.006, -0.02], [-W / 2, yMesa + 0.008, 0.02]], 0.0025, 4, 8);
   plugueComTerminal(m, T, xf, yMesa, -0.19, [xf, yMesa + 0.014, -0.104]);
 }
@@ -374,10 +431,17 @@ function roteador(item: Aparelho, m: Molde, T: Marcar): void {
     m.cilindro('plastico', '#17181a', xr + i * 0.075, yMesa + 0.04, -0.06, 0.006, 0.02, 'y', 8);
     m.cilindro('plastico', '#17181a', xr + i * 0.075, yMesa + 0.115, -0.06, 0.0042, 0.15, 'y', 8, 0.0035);
   }
-  for (let i = 0; i < 6; i++) aceso.bloco('luz', i === 0 ? '#39d353' : i === 5 ? '#ffb300' : '#6fd3ff', xr - 0.07 + i * 0.022, yMesa + 0.02, 0.0655, 0.008, 0.003, 0.001);
+  // Luzes da frente do roteador: energia, as portas e, por último, a de tráfego, que pisca.
+  const pisca = aceso.filho('pisca');
+  m.bloco('plastico', '#0b0c0d', xr - 0.015, yMesa + 0.02, 0.0652, 0.13, 0.006, 0.0006);
+  for (let i = 0; i < 6; i++) (i === 5 ? pisca : aceso).bloco('luz', i === 0 ? '#39d353' : i === 5 ? '#ffb300' : '#6fd3ff', xr - 0.07 + i * 0.022, yMesa + 0.02, 0.0658, 0.008, 0.003, 0.001);
   // Modem em pé e mini PC.
   m.bloco('plastico', '#f1f2f0', 0.105, yMesa + 0.075, -0.06, 0.036, 0.15, 0.075, 0.008);
-  for (let i = 0; i < 4; i++) aceso.bloco('luz', '#39d353', 0.105, yMesa + 0.125 - i * 0.02, -0.022, 0.006, 0.006, 0.001);
+  // Modem: energia, sinal da fibra, internet e, por último, a de dados, que pisca.
+  for (let i = 0; i < 4; i++) {
+    m.bloco('plastico', '#c9ccc8', 0.105, yMesa + 0.125 - i * 0.02, -0.0224, 0.008, 0.008, 0.0006);
+    (i === 3 ? pisca : aceso).bloco('luz', '#39d353', 0.105, yMesa + 0.125 - i * 0.02, -0.0218, 0.006, 0.006, 0.001);
+  }
   m.bloco('plastico', '#3a3f46', 0.11, yMesa + 0.022, 0.04, 0.115, 0.042, 0.115, 0.008);
   m.cilindro('plastico', '#22252a', 0.14, yMesa + 0.028, 0.098, 0.006, 0.002, 'z', 10);
   aceso.esfera('luz', '#6fd3ff', 0.14, yMesa + 0.028, 0.0995, 0.003, [1, 1, 0.4], 6);
@@ -445,12 +509,16 @@ function microondas(item: Aparelho, m: Molde, T: Marcar): void {
       g.fillStyle = '#22252a';
       g.fillRect(0, 0, w, h);
       retangulo(g, 14, 16, w - 28, 44, 6, '#061008');
-      texto(g, '12:00', w / 2, 39, 30, '#39e36a');
       for (let j = 0; j < 4; j++) for (let i = 0; i < 3; i++) retangulo(g, 16 + i * 34, 80 + j * 30, 28, 22, 5, '#3c4148');
       retangulo(g, 16, 206, 44, 30, 8, '#c62828');
       retangulo(g, 68, 206, 44, 30, 8, '#2e9e4f');
-    }, { acesa: 0.3 }),
+    }),
     W / 2 - lPainel / 2, yc, zf + 0.0042, lPainel - 0.014, hc - 0.022, 'pz',
+  );
+  // Visor do relógio: aceso só com o micro-ondas recebendo energia. Cobre o retângulo escuro do painel.
+  m.filho('aceso').estampa(
+    visorDeNumeros('visor-microondas', '12:00', '#39e36a'),
+    W / 2 - lPainel / 2, yc + (0.5 - 38 / 256) * (hc - 0.022), zf + 0.0046, ((128 - 28) / 128) * (lPainel - 0.014), (44 / 256) * (hc - 0.022), 'pz',
   );
   // Plugue sobre o balcão, ao lado do micro-ondas.
   plugueComTerminal(m, T, W / 2 + 0.09, yTampo, -D / 2 + 0.03, [W / 2 - 0.02, yTampo + 0.05, -D / 2 - 0.004]);
@@ -495,6 +563,19 @@ function chuveiro(item: Aparelho, m: Molde, T: Marcar): void {
   }
   // Seletor de temperatura.
   m.bloco('plastico', '#2a6fb5', 0, yCano + 0.042, zc, 0.03, 0.012, 0.014, 0.003);
+  // Ligado e com energia: a luz de aquecimento na frente e a água caindo do espalhador.
+  const aceso = m.filho('aceso');
+  led(m, aceso, '#ff5a3c', 0, yCano - 0.03, zc + 0.0585, 0.004);
+  const agua = aceso.filho(FORA_DO_VOLUME);
+  for (let i = 0; i < 16; i++) {
+    const a = (Math.PI * 2 * i) / (i < 10 ? 10 : 6) + (i < 10 ? 0 : 0.3);
+    const r = i < 10 ? 0.045 : 0.02;
+    // Os fios de água abrem um pouco para fora e têm comprimentos diferentes.
+    const comp = 0.42 + ((i * 37) % 10) * 0.012;
+    const x = Math.cos(a) * r * 1.25;
+    const z = zc + Math.sin(a) * r * 1.25;
+    agua.cilindro('vidro', '#cfeaff', x, yCano - 0.092 - comp / 2, z, 0.0022, comp, 'y', 5, 0.0016);
+  }
   // Fio até a emenda, no alto, junto à parede.
   const ye = H / 2 - 0.014;
   m.tubo('plastico', '#f1f1ee', [[0.03, yCano + 0.02, zc - 0.03], [0.03, ye - 0.03, zp + 0.06], [0, ye - 0.006, zp + 0.016]], 0.004, 4, 8);
@@ -530,6 +611,8 @@ function caixa(item: Aparelho, m: Molde, T: Marcar): void {
     }),
     0, pe / 2, D / 2 + 0.0006, le, he, 'pz',
   );
+  // Luz verde de funcionando, no alto da frente.
+  led(m, m.filho('aceso'), '#39d353', W * 0.38, pe / 2 + (H - pe) * 0.43, D / 2 + 0.0008, 0.005);
   plugueComTerminal(m, T, 0, H / 2, -D / 2 + 0.04, [0, H / 2 - 0.03, -D / 2 - 0.004]);
 }
 

@@ -13,9 +13,10 @@
 import * as THREE from 'three';
 import { CATALOGO } from '../catalogo';
 import type { Protecao } from '../catalogo/tipos';
-import { analiseDaSimulacao, assinar, correntesDeOperacaoAgora, estado, type EventoDeOperacao } from '../estado';
+import { analiseDaSimulacao, assinar, correntesDeOperacaoAgora, estado, type EventoDeOperacao, horaLocalDe } from '../estado';
 import { estadoDaProtecao } from '../nucleo/operacao';
 import type { Dispositivo } from '../nucleo/tipos';
+import { emUso, usoDe } from '../nucleo/uso';
 import type { CamadaDeCabos } from './cabos';
 import type { CamadaDeDispositivos } from './dispositivos';
 import { criarEfeitos } from './efeitos';
@@ -660,7 +661,16 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       if (d.falha === 'sobrecarga') return 'Inversor em falha por sobrecarga. Clique para desligar; depois, com menos aparelhos, clique de novo para ligar o inversor.';
       return d.ligado ? 'Inversor ligado. Clique para desligar o inversor.' : 'Inversor desligado. Clique para ligar o inversor.';
     }
-    return d.ligado ? `${item.nome}: ligado. Clique para desligar.` : `${item.nome}: desligado. Clique para ligar.`;
+    if (!d.ligado) return `${item.nome}: desligado. Clique para ligar.`;
+    // Botão ligado e aparelho parado: a dica diz por quê, para o botão verde ao lado da tela apagada não parecer defeito.
+    if (item.categoria === 'aparelho' && c.dispositivos.vida(uid)?.comEnergia === false) {
+      const uso = usoDe(d, item);
+      if (!emUso(uso, horaLocalDe(estado.projeto, estado.tempo.msUtc))) {
+        return `${item.nome}: ligado, mas parado: está fora do horário de uso dele (das ${uso.inicio} às ${uso.fim} h). Clique para desligar.`;
+      }
+      return `${item.nome}: ligado, mas sem energia chegando ao plugue. Clique para desligar.`;
+    }
+    return `${item.nome}: ligado. Clique para desligar.`;
   }
 
   // ---------------------------------------------------------------- Estado

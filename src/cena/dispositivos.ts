@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { CATALOGO } from '../catalogo';
 import type { Item } from '../catalogo/tipos';
-import { estado } from '../estado';
+import { aparelhosComEnergia, assinar, estado } from '../estado';
 import { estadoDaProtecao } from '../nucleo/operacao';
 import type { Dispositivo, TipoTerminal } from '../nucleo/tipos';
 import { COR_TERMINAL } from './conectores';
@@ -45,6 +45,22 @@ export interface PassagemPeloQuadro {
   /** Direção em que os dois trechos deixam a caixa: para baixo dela. */
   direcao: THREE.Vector3;
 }
+
+export interface VidaDoAparelho {
+  /** O aparelho está ligado, no horário de uso e com energia chegando ao plugue. */
+  comEnergia: boolean;
+  /** As partes que acendem (tela, LEDs, lâmpada, visor) estão acesas. Falso no aparelho que não tem parte que acende. */
+  aceso: boolean;
+  /** A hélice está girando. Falso no aparelho sem hélice. */
+  girando: boolean;
+}
+
+/** Velocidade da hélice do ventilador, em radianos por segundo: devagar o bastante para se ver as pás passando. */
+const GIRO_DA_HELICE = 14;
+/** Maior intervalo entre dois quadros que a hélice acompanha: depois de uma pausa, ela não dá um salto. */
+const INTERVALO_MAXIMO_S = 0.1;
+/** De quanto em quanto tempo o LED de atividade (modem, roteador) acende e apaga. */
+const MEIO_PISCAR_MS = 600;
 
 export interface CamadaDeDispositivos {
   /** Refaz o que mudou em `estado.projeto.dispositivos` e, nos quadros, nas proteções dos cabos. */
@@ -90,10 +106,18 @@ export interface CamadaDeDispositivos {
   mostrarRotulo(uid: string, terminal: string, visivel: boolean): void;
   /** Mostra o nome curto de uma peça acima dela. Nulo esconde. */
   mostrarNome(uid: string | null): void;
-  /** Liga ou desliga o que acende na peça (tela, lâmpada, luzes). Vale até a próxima mudança de `ligado`. */
-  definirAtivo(uid: string, ativo: boolean): void;
-  /** Gira as hélices dos ventiladores ativos. Para o laço de simulação da fase 3. */
-  animar(segundos: number): boolean;
+  /**
+   * Chamada a cada volta do laço da cena, com o relógio de verdade em milissegundos. Põe em dia o que está vivo (o
+   * aparelho acende e gira só quando recebe energia: `aparelhosComEnergia`, do estado), gira as hélices e pisca os LEDs.
+   * `mudou`: algum aparelho acendeu ou apagou, e a cena precisa de um quadro novo. `animando`: há hélice girando ou LED
+   * que acabou de piscar, e a cena precisa de quadros enquanto durar. Sem aparelho animado, não faz nada.
+   */
+  animar(agoraMs: number): { mudou: boolean; animando: boolean };
+  /**
+   * Para a verificação: se o aparelho recebe energia, se as partes que acendem (tela, LED, lâmpada) estão acesas e se
+   * a hélice está girando. Nulo se a peça não está na cena ou não é um aparelho.
+   */
+  vida(uid: string): VidaDoAparelho | null;
   /** Triângulos do modelo de cada item à mostra, para conferir o limite de 3.000 por peça. */
   triangulos(): Record<string, number>;
   destruir(): void;
@@ -110,6 +134,11 @@ interface Peca {
   escondida: boolean;
   rotulos: Map<string, THREE.Sprite>;
   helice: THREE.Object3D | null;
+  /** LEDs de atividade: ficam dentro de uma parte `aceso` e piscam enquanto o aparelho recebe energia. */
+  pisca: THREE.Object3D[];
+  /** O modelo tem parte que acende. */
+  temAceso: boolean;
+  /** Aparelho recebendo energia: o que acende está aceso e a hélice gira. Nas demais peças, sempre falso. */
   ativo: boolean;
   trilho: THREE.Group | null;
   assinaturaDoTrilho: string;
@@ -221,6 +250,41 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     for (const p of pecas.values()) for (const t of p.modelo.terminais) vestirTerminal(p, t);
   }
 
+  // ---------------------------------------------------------------- Aparelho vivo
+
+  /** O que está vivo precisa ser conferido com o estado: a simulação andou, ou as peças mudaram. */
+  let vidaSuja = true;
+  /** Ventiladores com a hélice girando e aparelhos com LED piscando, à vista. Refeitas em `atualizarVida`. */
+  let girando: Peca[] = [];
+  let piscando: Peca[] = [];
+  let ultimoQuadroMs = -Infinity;
+  let piscaAcesa = true;
+
+  /**
+   * Acende e apaga cada aparelho conforme ele recebe energia agora (botão ligado, horário de uso e energia chegando).
+   * Devolve verdadeiro se algum mudou.
+   */
+  function atualizarVida(): boolean {
+    vidaSuja = false;
+    const comEnergia = aparelhosComEnergia();
+    let mudou = false;
+    girando = [];
+    piscando = [];
+    for (const p of pecas.values()) {
+      if (p.item.categoria !== 'aparelho') continue;
+      const ativo = comEnergia.has(p.uid);
+      if (ativo !== p.ativo) {
+        p.ativo = ativo;
+        aplicarAtivo(p);
+        mudou = true;
+      }
+      if (!ativo || p.escondida) continue;
+      if (p.helice) girando.push(p);
+      if (p.pisca.length > 0) piscando.push(p);
+    }
+    return mudou;
+  }
+
   function aplicarAtivo(p: Peca): void {
     p.grupo.traverse((o) => {
       if (o.name === 'aceso') o.visible = p.ativo;
@@ -250,10 +314,16 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     for (const t of modelo.terminais) grupo.add(criarTerminal(d.uid, t, rotulos));
     const peca: Peca = {
       uid: d.uid, item, modelo, grupo, pos: '', superficie: null, ligado: d.ligado, escondida: false, rotulos,
-      helice: grupo.getObjectByName('helice') ?? null, ativo: d.ligado, trilho: null, assinaturaDoTrilho: '', ocupacao: null,
+      helice: grupo.getObjectByName('helice') ?? null, pisca: [], temAceso: false, ativo: false, trilho: null, assinaturaDoTrilho: '', ocupacao: null,
       suporte: null, inclinacaoDoSuporte: null, queimada: false, fuligem: null, protecoes: new Map(),
     };
+    grupo.traverse((o) => {
+      if (o.name === 'pisca') peca.pisca.push(o);
+      else if (o.name === 'aceso') peca.temAceso = true;
+    });
+    // Nasce apagada; `atualizarVida` acende a que recebe energia.
     aplicarAtivo(peca);
+    vidaSuja = true;
     casa.add(grupo);
     return peca;
   }
@@ -457,11 +527,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
         p.grupo.position.set(d.pos[0], d.pos[1], d.pos[2]);
         p.grupo.quaternion.set(d.quat[0], d.quat[1], d.quat[2], d.quat[3]);
       }
-      if (d.ligado !== p.ligado) {
-        p.ligado = d.ligado;
-        p.ativo = d.ligado;
-        aplicarAtivo(p);
-      }
+      p.ligado = d.ligado;
       p.superficie = d.superficie;
       aplicarQueimado(p, d.queimado !== undefined);
       refazerTrilho(p);
@@ -473,6 +539,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       }
     }
     for (const p of [...pecas.values()]) if (!vivos.has(p.uid)) removerPeca(p);
+    vidaSuja = true;
     if (nome && nome.visible && !pecas.has(nome.userData.dispositivo as string)) mostrarNome(null);
   }
 
@@ -484,6 +551,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       p.escondida = escondida;
       esconder(p.grupo, escondida);
     }
+    vidaSuja = true;
   }
 
   function dispositivoNaCena(uid: string): { d: Dispositivo; modelo: Modelo; item: Item } | null {
@@ -557,6 +625,12 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
 
   const centro = new THREE.Vector3();
 
+  // O que recebe energia muda com a simulação (o relógio, a queda de luz, uma chave) e com a análise refeita.
+  const sujarVida = (): void => {
+    vidaSuja = true;
+  };
+  const cancelar = [assinar('simulacao', sujarVida), assinar('derivados', sujarVida)];
+
   return {
     atualizar,
     atualizarVisao,
@@ -626,20 +700,32 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       corpo.position.set(0, 0, (p.modelo.dimensoes[2] / 2) * (escala - 1));
     },
     mostrarNome,
-    definirAtivo(uid, ativo) {
-      const p = pecas.get(uid);
-      if (!p || p.ativo === ativo) return;
-      p.ativo = ativo;
-      aplicarAtivo(p);
-    },
-    animar(segundos) {
-      let girou = false;
-      for (const p of pecas.values()) {
-        if (!p.helice || !p.ativo) continue;
-        p.helice.rotation.z -= segundos * 14;
-        girou = true;
+    animar(agoraMs) {
+      const mudou = vidaSuja ? atualizarVida() : false;
+      let animando = false;
+      if (girando.length > 0) {
+        // Tempo de verdade, e não o da simulação: a pausa é do relógio, não da tomada.
+        const segundos = Math.min(INTERVALO_MAXIMO_S, Math.max(0, (agoraMs - ultimoQuadroMs) / 1000));
+        for (const p of girando) p.helice!.rotation.z -= segundos * GIRO_DA_HELICE;
+        animando = true;
       }
-      return girou;
+      ultimoQuadroMs = agoraMs;
+      if (piscando.length > 0) {
+        const acesa = Math.floor(agoraMs / MEIO_PISCAR_MS) % 2 === 0;
+        // Só o instante em que o LED troca pede um quadro: duas vezes por piscada, e não sessenta por segundo.
+        if (acesa !== piscaAcesa || mudou) {
+          piscaAcesa = acesa;
+          for (const p of piscando) for (const o of p.pisca) o.visible = acesa;
+          animando = true;
+        }
+      }
+      return { mudou, animando };
+    },
+    vida(uid) {
+      const p = pecas.get(uid);
+      if (!p || p.item.categoria !== 'aparelho') return null;
+      if (vidaSuja) atualizarVida();
+      return { comEnergia: p.ativo, aceso: p.ativo && p.temAceso, girando: p.ativo && p.helice !== null && !p.escondida };
     },
     triangulos() {
       const t: Record<string, number> = {};
@@ -647,6 +733,7 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
       return t;
     },
     destruir() {
+      cancelar.forEach((f) => f());
       for (const p of [...pecas.values()]) removerPeca(p);
       mostrarNome(null);
       geoCaixa.dispose();
