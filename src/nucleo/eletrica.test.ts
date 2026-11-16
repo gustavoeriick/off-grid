@@ -432,3 +432,56 @@ describe('passoSimulacao: modo solar primeiro', () => {
     expect(t.origem).toBe('bateria');
   });
 });
+
+describe('passoSimulacao: inversor desligado, em falha ou queimado (entrada.inversorLigado)', () => {
+  const projeto = cenarioPlanoCorrigido();
+  const sol = new Map<string, CondicaoPlaca>([['placa1', { g: 800, tAmb: 25 }], ['placa2', { g: 800, tAmb: 25 }]]);
+  const fileira = { fileiras: [['placa1', 'placa2']] };
+  const base = { redeDisponivel: true, placas: sol } as const;
+
+  it('campo ausente e verdadeiro dão o mesmo resultado de antes', () => {
+    const analise = analisePapel(fileira);
+    const ausente = passoSimulacao(projeto, CATALOGO, analise, estadoInicial(), entrada(base));
+    const verdadeiro = passoSimulacao(projeto, CATALOGO, analise, estadoInicial(), entrada({ ...base, inversorLigado: true }));
+    expect(verdadeiro).toEqual(ausente);
+    const semRede = entrada({ placas: sol });
+    expect(passoSimulacao(projeto, CATALOGO, analise, estadoInicial(), { ...semRede, inversorLigado: true })).toEqual(
+      passoSimulacao(projeto, CATALOGO, analise, estadoInicial(), semRede),
+    );
+  });
+
+  it('inversor com solar embutido, desligado: nada atendido, rede não usada, placas não carregam', () => {
+    const analise = analisePapel(fileira);
+    const ligado = passoSimulacao(projeto, CATALOGO, analise, { soc: 0.5, cortado: false, emRede: false }, entrada(base));
+    expect(ligado.redeW).toBeGreaterThan(0);
+    const s = passoSimulacao(projeto, CATALOGO, analise, { soc: 0.5, cortado: false, emRede: false }, entrada({ ...base, inversorLigado: false }));
+    expect(s.cargaAtendidaW).toBe(0);
+    expect(s.redeW).toBe(0);
+    expect(s.bateriaW).toBe(0);
+    expect(s.pvW).toBe(0);
+    expect(s.origem).toBe('nenhuma');
+    expect(s.estado.soc).toBe(0.5);
+    expect(s.pvDisponivelW).toBeGreaterThan(0);
+    expect(s.avisos).not.toContain('sobrecarga');
+  });
+
+  it('inversor desligado não gasta a bateria nem com o consumo próprio', () => {
+    const s = passoSimulacao(projeto, CATALOGO, analisePapel(), estadoInicial(), entrada({ placas: SEM_PLACAS, inversorLigado: false }));
+    expect(s.bateriaW).toBe(0);
+    expect(s.estado.soc).toBe(1);
+  });
+
+  it('com controlador externo, as placas continuam carregando a bateria', () => {
+    const analise = analisePapel({ controlador: 'ctl', entradaSolar: PWM, fileiras: [['placa1']] });
+    const estado = { soc: 0.5, cortado: false, emRede: false };
+    const s = passoSimulacao(projeto, CATALOGO, analise, estado, entrada({ placas: sol, inversorLigado: false }));
+    expect(s.cargaAtendidaW).toBe(0);
+    expect(s.redeW).toBe(0);
+    expect(s.pvW).toBeGreaterThan(0);
+    expect(s.bateriaW).toBeGreaterThan(0);
+    expect(s.estado.soc).toBeGreaterThan(0.5);
+    // O mesmo passo com o inversor ligado carrega com a mesma potência das placas, sem carga atendida a descontar.
+    const ligado = passoSimulacao(projeto, CATALOGO, analise, estado, entrada({ placas: sol }));
+    expect(ligado.cargaAtendidaW).toBeGreaterThan(0);
+  });
+});

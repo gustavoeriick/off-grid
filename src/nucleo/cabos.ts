@@ -34,7 +34,24 @@ interface Calculo {
 
 const chave = (disp: string, terminal: string): string => `${disp}:${terminal}`;
 
-function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito): Calculo {
+/**
+ * Injeções de corrente que mudam de um uso para outro: a corrente de projeto (nucleo.md, seção 9) ou a de operação
+ * (operar.md, seção 4). Campo ausente vale o da corrente de projeto.
+ */
+export interface Injecoes {
+  /** Corrente de uma placa, em A, na fileira de índice dado. */
+  placa?: (uid: string, fileira: number) => number;
+  /** Corrente de cada ramo do banco, em A. */
+  bateriaPorRamo?: number;
+  /** Corrente que o controlador injeta no banco, em A. */
+  controlador?: (uid: string, item: Controlador) => number;
+  /** Corrente do plugue de cada aparelho da saída, em A. */
+  aparelho?: (uid: string) => number;
+  /** Corrente da entrada CA do inversor, em A. */
+  entradaCa?: number;
+}
+
+function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito, fontes: Injecoes = {}): Calculo {
   const correntes = new Map<string, number>(projeto.cabos.map((c) => [c.uid, 0]));
   const arvore = new Map<string, Elo>();
   const sistema = analise.sistema;
@@ -99,10 +116,11 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
   if (sistema.entradaSolar !== null && sistema.fileiras.length > 0) {
     const iPos: [string, number][] = [];
     const iNeg: [string, number][] = [];
-    for (const fileira of sistema.fileiras) {
+    for (const [indice, fileira] of sistema.fileiras.entries()) {
       const primeira = fileira[0];
       const ultima = fileira[fileira.length - 1];
-      const isc = (uid: string): number => (placaDe(uid)?.isc ?? 0) * MARGEM_ISC;
+      const isc = (uid: string): number =>
+        fontes.placa ? fontes.placa(uid, indice) : (placaDe(uid)?.isc ?? 0) * MARGEM_ISC;
       iPos.push([chave(primeira, 'pos'), isc(primeira)]);
       iNeg.push([chave(ultima, 'neg'), isc(ultima)]);
       for (let k = 0; k + 1 < fileira.length; k++) {
@@ -117,7 +135,7 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
   const banco = inversor ? infoBanco(sistema, projeto, catalogo) : null;
   if (inversor && banco !== null && sistema.banco.length > 0) {
     const iBateria = inversor.potenciaW / (inversor.rendimento * banco.tensaoRef);
-    const porRamo = iBateria / sistema.banco.length;
+    const porRamo = fontes.bateriaPorRamo ?? iBateria / sistema.banco.length;
     const P = rede(sistema.inversor, 'batPos');
     const N = rede(sistema.inversor, 'batNeg');
     const iPos: [string, number][] = [];
@@ -132,8 +150,9 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
     for (const d of projeto.dispositivos) {
       const c = item(d.uid, 'controlador') as Controlador | undefined;
       if (!c || rede(d.uid, 'batPos') !== P || rede(d.uid, 'batNeg') !== N) continue;
-      iPos.push([chave(d.uid, 'batPos'), c.solar.correnteCargaA]);
-      iNeg.push([chave(d.uid, 'batNeg'), c.solar.correnteCargaA]);
+      const iControlador = fontes.controlador ? fontes.controlador(d.uid, c) : c.solar.correnteCargaA;
+      iPos.push([chave(d.uid, 'batPos'), iControlador]);
+      iNeg.push([chave(d.uid, 'batNeg'), iControlador]);
     }
     resolver(chave(sistema.inversor, 'batPos'), iPos);
     resolver(chave(sistema.inversor, 'batNeg'), iNeg);
@@ -144,7 +163,10 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
   const tensaoRede = projeto.tensaoRede;
   resolver(
     chave(sistema.inversor, 'caSaida'),
-    sistema.cargas.map((uid): [string, number] => [chave(uid, 'plug'), potenciaDe(uid) / tensaoRede]),
+    sistema.cargas.map((uid): [string, number] => [
+      chave(uid, 'plug'),
+      fontes.aparelho ? fontes.aparelho(uid) : potenciaDe(uid) / tensaoRede,
+    ]),
   );
 
   if (inversor && sistema.redeLigada) {
@@ -154,7 +176,9 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
       const cargaW = sistema.cargas.reduce((s, uid) => s + potenciaDe(uid), 0);
       const carregadorW =
         banco === null ? 0 : Math.min(inversor.carregadorRedeA ?? 0, LIMITE_CARREGADOR_REDE_A) * banco.tensaoCarga;
-      resolver(chave(tomada.uid, 'tomada'), [[chave(sistema.inversor, 'caEntrada'), (cargaW + carregadorW) / tensaoRede]]);
+      resolver(chave(tomada.uid, 'tomada'), [
+        [chave(sistema.inversor, 'caEntrada'), fontes.entradaCa ?? (cargaW + carregadorW) / tensaoRede],
+      ]);
     }
   }
 
@@ -164,6 +188,16 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
 /** Corrente que cada cabo precisa aguentar, em ampères, por `uid` do cabo. Cabo fora de qualquer circuito, ou que fecha laço, fica com 0. */
 export function correntesDeProjeto(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito): Map<string, number> {
   return calcular(projeto, catalogo, analise).correntes;
+}
+
+/** Correntes por cabo com injeções próprias: a base de `correntesDeOperacao` (operacao.ts). */
+export function correntesComInjecoes(
+  projeto: Projeto,
+  catalogo: Catalogo,
+  analise: AnaliseCircuito,
+  injecoes: Injecoes,
+): Map<string, number> {
+  return calcular(projeto, catalogo, analise, injecoes).correntes;
 }
 
 /** Cabos de um terminal até o sorvedouro da rede, pela árvore do cálculo das correntes. */

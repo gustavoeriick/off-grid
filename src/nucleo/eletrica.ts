@@ -64,7 +64,7 @@ function estadoFileira(placas: EstadoPlaca[]): { p: number; i: number; v: number
 
 // ---------------------------------------------------------------- Entrada solar
 
-const RENDIMENTO_MPPT = 0.97;
+export const RENDIMENTO_MPPT = 0.97;
 
 /** Potência que o arranjo entrega ao barramento da bateria pela entrada solar dada. */
 export function saidaArranjo(fileiras: EstadoPlaca[][], solar: EntradaSolar, tensaoCarga: number): SaidaArranjo {
@@ -280,13 +280,16 @@ export function passoSimulacao(
   const pvDisp = arranjo.p;
   const limiteSolarW = solar ? solar.correnteCargaA * b.tensaoCarga : 0;
 
-  const sobrecarga = nominalW > inversor.potenciaW;
+  // Inversor desligado, em falha ou queimado (operar.md, seção 4): nada é atendido, a rede não é usada e ele não consome.
+  // Campo ausente vale ligado. Desligado, ele também não pode estar em sobrecarga.
+  const ligado = entrada.inversorLigado !== false;
+  const sobrecarga = ligado && nominalW > inversor.potenciaW;
   if (sobrecarga) avisar('sobrecarga');
   const consumoVazioW = inversor.consumoVazioW;
 
   // 5. Modo "solar primeiro".
   let { soc, cortado, emRede } = estado;
-  const redeOk = entrada.redeDisponivel && sistema.redeLigada;
+  const redeOk = ligado && entrada.redeDisponivel && sistema.redeLigada;
   if (projeto.prioridade === 'solar') {
     if (redeOk) {
       if (!emRede && soc <= b.socMin + 0.1) emRede = true;
@@ -322,9 +325,11 @@ export function passoSimulacao(
   } else {
     // 8.
     if (cortado && soc >= b.socMin + 0.05) cortado = false;
-    const pCc = cortado ? 0 : sobrecarga || pedidaW === 0 ? consumoVazioW : pedidaW / inversor.rendimento + consumoVazioW;
-    const liquido = pvDisp - pCc;
-    const atendivel = cortado || sobrecarga ? 0 : pedidaW;
+    const pCc = !ligado || cortado ? 0 : sobrecarga || pedidaW === 0 ? consumoVazioW : pedidaW / inversor.rendimento + consumoVazioW;
+    // Com o inversor desligado, as placas da entrada dele não carregam; as de um controlador externo continuam.
+    const pvUtil = ligado || sistema.controlador !== null ? pvDisp : 0;
+    const liquido = pvUtil - pCc;
+    const atendivel = !ligado || cortado || sobrecarga ? 0 : pedidaW;
 
     if (liquido >= 0) {
       const aceita = cargaAceita(b, soc, dt);

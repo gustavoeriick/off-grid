@@ -96,12 +96,27 @@ export interface Dispositivo {
   superficie: string | null;
   /** Giro em torno da normal da superfície: 0, 90, 180 ou 270. No terreno, ângulo livre em torno da vertical, em passos de 15. */
   giro: number;
-  /** Aparelhos: ligado ou desligado. Nas demais peças, sempre verdadeiro. */
+  /** Aparelho e inversor: ligado ou desligado. Nas demais peças, sempre verdadeiro. */
   ligado: boolean;
+  /** Peça queimada por um erro de operação (especificacao/operar.md). Queimada, não funciona e os cabos dela não conduzem. */
+  queimado?: Dano;
+  /** Inversor que desligou sozinho por sobrecarga e espera ser religado. */
+  falha?: 'sobrecarga';
   /** Aparelhos: horário de uso definido pelo usuário. Nulo usa o `usoPadrao` do catálogo. */
   uso: Uso | null;
   /** Placa no chão, sobre suporte: inclinação em graus a partir da horizontal. Ausente nas demais peças. */
   inclinacaoGraus?: number;
+}
+
+/** Estado de uma proteção instalada em um cabo. Fusível aberto é fusível fora do porta-fusível. */
+export type EstadoProtecao = 'fechada' | 'aberta' | 'queimada';
+
+export type CodigoDano = 'controlador-sem-bateria' | 'bateria-invertida' | 'curto-na-bateria' | 'arco-no-conector' | 'arco-no-disjuntor-ca';
+
+export interface Dano {
+  codigo: CodigoDano;
+  /** Instante simulado em que aconteceu. */
+  msUtc: number;
 }
 
 export interface PontaCabo {
@@ -121,6 +136,10 @@ export interface Cabo {
   protecoes: string[];
   /** `uid` do quadro de energia por onde o cabo passa. Nulo sem quadro. */
   quadro: string | null;
+  /** Estado de cada proteção de `protecoes`, na mesma ordem. Ausente: todas fechadas. */
+  estados?: EstadoProtecao[];
+  /** Cabo queimado por curto sem proteção. Queimado, não conduz. */
+  queimado?: Dano;
   /** `uid` dos grampos de parede por onde o cabo passa, na ordem de `de` para `para`. Cada grampo prende um cabo só. */
   grampos?: string[];
 }
@@ -275,6 +294,8 @@ export interface EntradaPasso {
   /** Hora local decimal, de 0 a 24. Com ela, só consomem os aparelhos dentro do horário de uso. Nulo ignora os horários. */
   horaLocal: number | null;
   placas: ReadonlyMap<string, CondicaoPlaca>;
+  /** Falso com o inversor desligado, em falha ou queimado (especificacao/operar.md, seção 4). Ausente vale verdadeiro. */
+  inversorLigado?: boolean;
 }
 
 export type OrigemEnergia = 'rede' | 'bateria' | 'solar' | 'nenhuma';
