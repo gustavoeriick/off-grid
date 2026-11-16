@@ -252,7 +252,7 @@ export const GLOSSARIO: TermoGlossario[] = [
     termo: 'Visor',
     curto: 'A telinha com números de uma peça: tensão, corrente, consumo ou carga.',
     texto:
-      'O controlador de carga e o inversor de verdade têm visor: mostram a tensão das placas, a corrente de carga, o consumo. No simulador, a bateria também ganha um visor, que é só ajuda: mostra a carga em % e a potência entrando ou saindo, e não os volts, porque o simulador não tem a curva que liga a tensão da bateria à carga dela. Bateria de chumbo de verdade não tem visor.',
+      'O controlador de carga e o inversor de verdade têm visor: mostram a tensão das placas, a corrente de carga, o consumo. No simulador, a bateria também ganha um visor, que é só ajuda: mostra a carga em %, os volts aproximados (≈) e a potência entrando ou saindo. Os volts são os da bateria parada, tirados da carga por uma tabela de fabricante (Trojan para chumbo, LiTime para lítio), porque as marcas do catálogo não publicam a delas. No lítio a tensão quase não muda entre 25 % e 100 %: por isso bateria de lítio usa medidor próprio. Bateria de chumbo de verdade não tem visor.',
     veja: ['controlador-de-carga', 'inversor', 'tensao'],
   },
 

@@ -1941,7 +1941,7 @@ async function principal() {
     const notaDoVisor = pagina.locator('#item-selecionado [data-nota="visor-da-bateria"]');
     conferir((await notaDoVisor.count()) === 1 && (await notaDoVisor.isVisible()), 'o painel da bateria deveria explicar o visor dela');
     const textoDaNota = await notaDoVisor.textContent();
-    conferir(textoDaNota.includes('não em volts') && textoDaNota.includes('Bateria de chumbo de verdade não tem visor'), `a nota do visor da bateria: "${textoDaNota}"`);
+    conferir(textoDaNota.includes('Os volts são aproximados') && textoDaNota.includes('bateria de chumbo de verdade não tem visor'), `a nota do visor da bateria: "${textoDaNota}"`);
     await captura('84b-tutorial-painel-da-bateria-visor');
     await og(() => window.__offgrid.acoes.selecionar(null));
 

@@ -121,7 +121,7 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
       h(
         'p',
         { class: 'detalhe', 'data-nota': 'visor-da-bateria' },
-        'O visor sobre a bateria é ajuda do simulador: mostra a carga em %, e não em volts, porque o simulador não calcula a tensão da bateria. Bateria de chumbo de verdade não tem visor.',
+        'O visor sobre a bateria é ajuda do simulador: bateria de chumbo de verdade não tem visor. Os volts são aproximados (≈): é a tensão da bateria parada, tirada da carga por uma tabela de outro fabricante (Trojan para chumbo, LiTime para lítio), porque as marcas do catálogo não publicam a delas. Carregando, a tensão de verdade fica um pouco acima; alimentando aparelhos, um pouco abaixo. No lítio os volts quase não mudam entre 25 % e 100 %: por isso bateria de lítio usa medidor próprio, não voltímetro.',
       ),
       h('p', { class: 'veja-tambem' }, ...etiquetasDeTermos(['visor'], 'etiqueta-termo')),
     );

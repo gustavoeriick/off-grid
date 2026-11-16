@@ -176,15 +176,36 @@ São o atalho de quem só quer dimensionar: botão "Ligar o sistema" no alto, e 
 
 ## 7. Visores
 
-Números ao vivo sobre a peça, lidos da `SaidaPasso` e da corrente de operação. O simulador não tem modelo da tensão da bateria conforme a carga; por isso o visor da bateria mostra a porcentagem, não volts (**simplificação**, dita no "Por quê?").
+Números ao vivo sobre a peça, lidos da `SaidaPasso` e da corrente de operação. O visor da bateria mostra a porcentagem e, a pedido do Gustavo em 16/11/2026, também os volts, que são a tensão de repouso aproximada da seção 7.1 (**simplificação**, dita na tela).
 
 | Peça | Mostra | Apagado quando |
 |---|---|---|
 | Controlador | Tensão das placas (`pvTensao`), corrente de carga em A, e a situação: "carregando", "sem sol", "bateria cheia" | Sem bateria presente, ou queimado |
 | Inversor | Situação ("ligado", "falha: sobrecarga"), de onde vem a energia (rede, bateria, placas), consumo em W e em % da potência do inversor. Com solar embutido, também a tensão das placas e a corrente de carga (AX) | Desligado, sem bateria presente, ou queimado |
-| Bateria | Carga em % e a potência entrando ou saindo, em W | Nunca (é ajuda do simulador; bateria de chumbo não tem visor) |
+| Bateria | Carga em %, a tensão de repouso aproximada ("≈ 12,4 V") e a potência entrando ou saindo, em W | Nunca (é ajuda do simulador; bateria de chumbo não tem visor) |
 | Disjuntor e fusível | Posição da alavanca; fusível fora, colocado ou queimado | — |
 | Peça queimada | Marca de queimado, fumaça por alguns segundos | — |
+
+### 7.1 Volts da bateria
+
+O simulador calcula a carga da bateria, não a tensão. Os volts do visor saem da carga, por uma tabela de fabricante de tensão em repouso (bateria parada, sem carregar nem descarregar). Moura e Freedom, as marcas de chumbo do catálogo, só publicam essa relação em gráfico, sem números; nenhuma marca de lítio do catálogo publica tabela. Por decisão do Gustavo (caminho 1, 16/11/2026), valem tabelas de outros fabricantes, e a tela diz isso.
+
+| Química | Fonte | Condição |
+|---|---|---|
+| `chumbo` e `automotiva` | Trojan Battery, "User's Guide" (2018), Table 7, bateria ventilada de 12 V (https://s1.solacity.com/docs/Trojan/TrojanBattery_UsersGuide.pdf, p. 22) | Circuito aberto, parada há pelo menos 6 horas |
+| `lifepo4` | LiTime, manual da bateria de 12 V 50 Ah, seção 4.6 (https://au.litime.com/pages/litime-12v-50ah-lifepo4-battery-use-manual) | Circuito aberto, parada há 3 horas ou mais |
+
+Chumbo, 12 V: 100 % 12,73 V; 90 % 12,62; 80 % 12,50; 70 % 12,37; 60 % 12,24; 50 % 12,10; 40 % 11,96; 30 % 11,81; 20 % 11,66; 10 % 11,51. A tabela não tem 0 %.
+
+Lítio, 12 V: 100 % 13,33 V; 75 % 13,2 a 13,3; 50 % 13,1 a 13,2; 25 % 13,0 a 13,1. A linha de 0 % da tabela é a faixa de 10 a 12 V e fica de fora. Vale o meio de cada faixa: 13,25; 13,15; 13,05.
+
+Regras (`src/nucleo/tensaoDeRepouso.ts`):
+
+- Entre dois pontos, uma reta (escolha do simulador). Abaixo do último ponto (10 % no chumbo, 25 % no lítio) não há extrapolação: o visor mostra "< 11,5 V" ou "< 13,1 V".
+- 24 V e 48 V são a tabela de 12 V multiplicada por 2 e por 4. Em um banco, o visor de cada bateria mostra os volts dela, pela tensão nominal dela.
+- O visor escreve "≈" na frente. O número é o da bateria parada: carregando, a tensão de verdade fica acima; alimentando aparelhos, abaixo. O simulador não calcula esse desvio.
+- A conferência cruzada disponível: o manual Moura VRLA MVA (V5, 2024) dá em texto 12,84 V com 100 % e 12,24 V com 50 % para a selada, próximo da tabela usada.
+- O painel da bateria e o glossário dizem de onde vêm os números e que, no lítio, a tensão quase não muda entre 25 % e 100 % (os fabricantes Battle Born e LiTime dizem que tensão não é bom indicador de carga no lítio; por isso bateria de lítio usa medidor próprio).
 
 ## 8. Tela
 

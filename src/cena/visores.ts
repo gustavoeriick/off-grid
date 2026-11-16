@@ -2,10 +2,12 @@
 // Especificação: docs/especificacao/operar.md, seção 7. Tarefa 8.3.
 //
 // Os números vêm só da saída do passo da simulação (`SaidaPasso`), do catálogo e da corrente de operação dos cabos.
-// O simulador não tem modelo da tensão da bateria conforme a carga: o visor da bateria mostra a porcentagem, não volts.
+// O visor da bateria mostra a porcentagem e os volts aproximados de repouso (operar.md, seção 7.1): os volts saem da carga,
+// por tabela de fabricante, e não de um modelo de tensão sob corrente.
 
-import type { Catalogo, Inversor, Item } from '../catalogo/tipos';
+import type { Bateria, Catalogo, Inversor, Item } from '../catalogo/tipos';
 import { bateriaPresente, caboInterrompido } from '../nucleo/operacao';
+import { tensaoDeRepouso } from '../nucleo/tensaoDeRepouso';
 import type { AnaliseCircuito, Dispositivo, Projeto, SaidaPasso } from '../nucleo/tipos';
 import type { Pincel } from './estampas';
 
@@ -103,20 +105,22 @@ function doInversor(d: Dispositivo, item: Inversor, l: LeituraDosVisores): Conte
   return { aceso: true, linhas, alerta: falha, barras: null };
 }
 
-function daBateria(d: Dispositivo, l: LeituraDosVisores): ConteudoDoVisor {
+function daBateria(d: Dispositivo, item: Bateria, l: LeituraDosVisores): ConteudoDoVisor {
   // Nunca apaga: é ajuda do simulador (bateria de chumbo não tem visor).
   const s = l.saida;
   const noBanco = l.viva.sistema?.banco.some((ramo) => ramo.includes(d.uid)) ?? false;
   const w = noBanco ? s.bateriaW : 0;
   const potencia = w >= 0.5 ? `entrando ${numero(w, 0)} W` : w <= -0.5 ? `saindo ${numero(-w, 0)} W` : 'parada · 0 W';
-  return { aceso: true, linhas: [`${numero(100 * s.estado.soc, 0)} %`, potencia], alerta: false, barras: s.estado.soc };
+  const t = tensaoDeRepouso(item.quimica, s.estado.soc, item.tensao);
+  const volts = `${t.abaixoDaTabela ? '<' : '≈'} ${numero(t.volts, 1)} V`;
+  return { aceso: true, linhas: [`${numero(100 * s.estado.soc, 0)} %`, volts, potencia], alerta: false, barras: s.estado.soc };
 }
 
 /** O que o visor da peça mostra agora. Nulo para a peça que não tem visor (placa, aparelho, tomada, quadro). */
 export function conteudoDoVisor(d: Dispositivo, item: Item, l: LeituraDosVisores): ConteudoDoVisor | null {
   if (item.categoria === 'controlador') return doControlador(d, l);
   if (item.categoria === 'inversor') return doInversor(d, item, l);
-  if (item.categoria === 'bateria') return daBateria(d, l);
+  if (item.categoria === 'bateria') return daBateria(d, item, l);
   return null;
 }
 
