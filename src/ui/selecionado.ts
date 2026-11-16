@@ -115,6 +115,17 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
   const queimado = blocoDePecaQueimada(d);
   if (queimado) nos.splice(1, 0, queimado);
   if (item.categoria === 'inversor') nos.push(...controlesDoInversor(d));
+  // operar.md, seção 7: o visor da bateria é ajuda do simulador (simplificação dita na tela).
+  if (item.categoria === 'bateria') {
+    nos.push(
+      h(
+        'p',
+        { class: 'detalhe', 'data-nota': 'visor-da-bateria' },
+        'O visor sobre a bateria é ajuda do simulador: mostra a carga em %, e não em volts, porque o simulador não calcula a tensão da bateria. Bateria de chumbo de verdade não tem visor.',
+      ),
+      h('p', { class: 'veja-tambem' }, ...etiquetasDeTermos(['visor'], 'etiqueta-termo')),
+    );
+  }
 
   // Grampo de parede: não gira (o desenho acompanha o cabo) e, apagado, só solta o cabo naquele ponto.
   const grampo = item.categoria === 'acessorio' && item.tipo === 'grampo';
@@ -193,7 +204,7 @@ function linhaDaChave(c: Cabo, indice: number): HTMLElement {
       : botao(
           estadoAtual === 'fechada' ? (eFusivel ? 'Tirar o fusível' : 'Abrir') : eFusivel ? 'Pôr o fusível' : 'Fechar',
           () => acoes.alternarProtecao(c.uid, indice),
-          { 'data-acao': 'alternar-protecao' },
+          { 'data-acao': 'alternar-protecao', title: eFusivel ? 'Só sem corrente passando: desligue antes o inversor e os aparelhos.' : undefined },
         );
   return h('div', { class: 'protecao-estado' }, h('span', { class: estadoAtual === 'fechada' ? 'estado-ligado' : 'estado-desligado', 'data-estado-protecao': estadoAtual }, palavras[estadoAtual]), comando);
 }
@@ -232,7 +243,7 @@ function painelCabo(c: Cabo): Node[] | null {
     explicacaoDasChaves.push(h('p', { class: 'detalhe' }, 'Disjuntor: chave que também abre sozinha quando passa corrente demais. Isso é desarmar: a alavanca cai e o circuito para. Depois de resolver a causa, é só fechar de novo.'));
   }
   if (tiposDeProtecao.has('fusivel')) {
-    explicacaoDasChaves.push(h('p', { class: 'detalhe' }, 'Fusível: peça que queima para cortar a corrente demais. Fora do porta-fusível, o circuito está cortado; queimado, só volta com um fusível novo.'));
+    explicacaoDasChaves.push(h('p', { class: 'detalhe' }, 'Fusível: peça que queima para cortar a corrente demais. Fora do porta-fusível, o circuito está cortado; queimado, só volta com um fusível novo. Ele não é chave de uso: tire e ponha o fusível só com o circuito sem corrente (inversor e aparelhos desligados). Para cortar com corrente, use um disjuntor de corrente contínua.'));
   }
   if (explicacaoDasChaves.length) explicacaoDasChaves.push(h('p', { class: 'veja-tambem' }, ...etiquetasDeTermos(['disjuntor', 'fusivel', 'arco-eletrico'], 'etiqueta-termo')));
   const explicacaoDeQueimadas = queimadas.map((i) => {
@@ -244,7 +255,7 @@ function painelCabo(c: Cabo): Node[] | null {
       h('p', { class: 'rotulo-queimado' }, `Queimado: ${eFusivel ? 'o fusível' : 'a proteção'} deste cabo`),
       ...(chave
         ? corpoDoTexto(TEXTOS_DE_OPERACAO[chave], { chave, alvos: [{ tipo: 'protecao', cabo: c.uid, indice: i }], semBotao: true, porQueAberto: true })
-        : [h('p', { class: 'op-houve' }, eFusivel ? TEXTO_GERAL_DE_FUSIVEL_QUEIMADO : 'Esta proteção queimou e não corta mais o circuito. Descubra a causa antes de trocar.')]),
+        : [h('p', { class: 'op-houve' }, eFusivel ? TEXTO_GERAL_DE_FUSIVEL_QUEIMADO : 'Esta proteção queimou e não deixa mais a corrente passar: o circuito está cortado até ela ser trocada. Descubra a causa antes de trocar.')]),
     );
   });
   const chaveDoCabo = chaveDoCaboQueimado(c);

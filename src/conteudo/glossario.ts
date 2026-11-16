@@ -247,6 +247,14 @@ export const GLOSSARIO: TermoGlossario[] = [
       'Motor parado puxa várias vezes a potência normal até ganhar rotação, por uma fração de segundo ou poucos segundos. O compressor da geladeira é o caso típico da casa. O inversor precisa aguentar esse pico somado ao que já está ligado.',
     veja: ['potencia', 'inversor'],
   },
+  {
+    id: 'visor',
+    termo: 'Visor',
+    curto: 'A telinha com números de uma peça: tensão, corrente, consumo ou carga.',
+    texto:
+      'O controlador de carga e o inversor de verdade têm visor: mostram a tensão das placas, a corrente de carga, o consumo. No simulador, a bateria também ganha um visor, que é só ajuda: mostra a carga em % e a potência entrando ou saindo, e não os volts, porque o simulador não tem a curva que liga a tensão da bateria à carga dela. Bateria de chumbo de verdade não tem visor.',
+    veja: ['controlador-de-carga', 'inversor', 'tensao'],
+  },
 
   // ------------------------------------------------------------ Baterias
 
@@ -373,8 +381,8 @@ export const GLOSSARIO: TermoGlossario[] = [
     termo: 'Porta-fusível',
     curto: 'A base em que o fusível encaixa: com o fusível fora dela, a corrente não passa.',
     texto:
-      'O porta-fusível prende o fusível no cabo e deixa tirá-lo e pô-lo sem ferramenta especial. Tirar o fusível do porta-fusível desliga o circuito, como uma chave. Durante a fiação ele fica fora do lugar e só vai para o porta-fusível na hora de ligar, depois de conferida a polaridade. Muitos anúncios de fusível vêm sem o porta-fusível, que é comprado à parte.',
-    veja: ['fusivel', 'polaridade'],
+      'O porta-fusível prende o fusível no cabo e deixa tirá-lo e pô-lo sem ferramenta especial. Com o fusível fora, o circuito fica cortado, mas o porta-fusível não é chave para usar com corrente passando: o fusível só se tira e só se põe com o circuito sem corrente (inversor e aparelhos desligados). Para cortar com corrente, use o disjuntor de corrente contínua. Na fiação o fusível fica fora e só vai para o lugar na hora de ligar, depois de conferida a polaridade. Muito anúncio de fusível vem sem o porta-fusível.',
+    veja: ['fusivel', 'polaridade', 'disjuntor-cc'],
   },
   {
     id: 'disjuntor',

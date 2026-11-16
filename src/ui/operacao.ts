@@ -60,7 +60,8 @@ export function rotuloDoConserto(alvos: readonly AlvoDeConserto[]): string {
 
 export function consertarTudo(alvos: readonly AlvoDeConserto[]): void {
   const pendentes = alvos.filter(alvoPendente);
-  for (const a of pendentes) acoes.consertar(a);
+  // Um passo só do desfazer para tudo o que o mesmo acidente queimou.
+  acoes.consertarVarios(pendentes);
   if (pendentes.length > 0) mostrarMensagem('Consertado. No simulador é de graça; de verdade seria uma peça nova.');
 }
 

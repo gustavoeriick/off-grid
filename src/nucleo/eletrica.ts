@@ -62,6 +62,31 @@ function estadoFileira(placas: EstadoPlaca[]): { p: number; i: number; v: number
   return melhor;
 }
 
+/** Estado de cada placa de cada fileira do sistema, com a luz e a temperatura de `condicoes`. Placa sem condição fica no escuro. */
+export function estadosDasFileiras(
+  sistema: Sistema, projeto: Projeto, catalogo: Catalogo, condicoes: ReadonlyMap<string, CondicaoPlaca>,
+): EstadoPlaca[][] {
+  const semCondicao: CondicaoPlaca = { g: 0, tAmb: 25 };
+  const fileiras: EstadoPlaca[][] = [];
+  for (const fileira of sistema.fileiras) {
+    const placas: EstadoPlaca[] = [];
+    for (const uid of fileira) {
+      const d = projeto.dispositivos.find((x) => x.uid === uid);
+      const item = d ? catalogo.get(d.itemId) : undefined;
+      if (!item || item.categoria !== 'placa') continue;
+      const cond = condicoes.get(uid) ?? semCondicao;
+      placas.push(estadoPlaca(item, cond.g, cond.tAmb));
+    }
+    fileiras.push(placas);
+  }
+  return fileiras;
+}
+
+/** Corrente que cada fileira entrega no ponto de trabalho dela, em A, na ordem dada. Fileira vazia: zero. */
+export function correntesDasFileiras(fileiras: EstadoPlaca[][]): number[] {
+  return fileiras.map((f) => (f.length > 0 ? estadoFileira(f).i : 0));
+}
+
 // ---------------------------------------------------------------- Entrada solar
 
 export const RENDIMENTO_MPPT = 0.97;
@@ -261,19 +286,7 @@ export function passoSimulacao(
   if (!b) return saidaVazia(estado, ['sem-bateria'], pedidaW);
 
   // 3. Placas.
-  const semCondicao: CondicaoPlaca = { g: 0, tAmb: 25 };
-  const fileiras: EstadoPlaca[][] = [];
-  for (const fileira of sistema.fileiras) {
-    const placas: EstadoPlaca[] = [];
-    for (const uid of fileira) {
-      const d = dispositivoPorUid(projeto, uid);
-      const item = d ? catalogo.get(d.itemId) : undefined;
-      if (!item || item.categoria !== 'placa') continue;
-      const cond = entrada.placas.get(uid) ?? semCondicao;
-      placas.push(estadoPlaca(item, cond.g, cond.tAmb));
-    }
-    fileiras.push(placas);
-  }
+  const fileiras = estadosDasFileiras(sistema, projeto, catalogo, entrada.placas);
   const solar = sistema.entradaSolar;
   const arranjo = solar ? saidaArranjo(fileiras, solar, b.tensaoCarga) : { p: 0, v: 0, i: 0, avisos: [] as AvisoPasso[] };
   for (const a of arranjo.avisos) avisar(a);

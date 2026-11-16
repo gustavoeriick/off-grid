@@ -7,9 +7,10 @@
 import type { Aparelho, Catalogo, Protecao } from '../catalogo/tipos';
 import { correntesComInjecoes } from './cabos';
 import { analisarCircuito, montarRedes, type Rede } from './circuito';
-import { infoBanco, RENDIMENTO_MPPT } from './eletrica';
+import { correntesDasFileiras, estadosDasFileiras, infoBanco, passoSimulacao, RENDIMENTO_MPPT } from './eletrica';
 import type {
-  AnaliseCircuito, Cabo, CodigoDano, Circuito, CondicaoPlaca, Dano, Dispositivo, EstadoProtecao, Projeto, SaidaPasso,
+  AnaliseCircuito, Cabo, CodigoDano, Circuito, CondicaoPlaca, Dano, Dispositivo, EntradaPasso, EstadoProtecao, EstadoSim,
+  Projeto, SaidaPasso,
 } from './tipos';
 import { emUso, usoDe } from './uso';
 
@@ -120,6 +121,18 @@ function cadeias(
   return achadas;
 }
 
+/** As cadeias que não repetem peça de uma cadeia já aceita, como `analisarCircuito` faz com os ramos e as fileiras. */
+function semRepeticao(lista: string[][]): string[][] {
+  const usadas = new Set<string>();
+  const aceitas: string[][] = [];
+  for (const cadeia of lista) {
+    if (cadeia.some((uid) => usadas.has(uid))) continue;
+    aceitas.push(cadeia);
+    for (const uid of cadeia) usadas.add(uid);
+  }
+  return aceitas;
+}
+
 const chave = (disp: string, terminal: string): string => `${disp}:${terminal}`;
 
 /**
@@ -203,6 +216,69 @@ export function polosTrocados(projeto: Projeto, catalogo: Catalogo, uid: string)
   return acharInversao(projetoVivo(projeto, catalogo), catalogo, uid) !== null;
 }
 
+/**
+ * O mesmo que `polosTrocados`, mas olhando a montagem inteira, como se tudo estivesse fechado: é o que o passo 1 de
+ * "Ligar o sistema" e o consultor conferem antes de qualquer chave fechar. Devolve as baterias do ramo invertido, ou nulo.
+ */
+export function inversaoNaMontagem(projeto: Projeto, catalogo: Catalogo, uid: string): string[] | null {
+  return acharInversao(projeto, catalogo, uid)?.ramo ?? null;
+}
+
+// ---------------------------------------------------------------- Controlador carregando sem o inversor
+
+/**
+ * Análise "só do controlador" (operar.md, seção 4): a análise viva não tem banco no inversor (a proteção da bateria dele
+ * está aberta, ou ele queimou), mas um controlador externo tem bateria presente e fileira viva. O banco é o que a cadeia
+ * de baterias do controlador alcança e a entrada solar é a dele; nenhum aparelho é atendido e a rede não entra. Nulo
+ * quando não é esse o caso. Com mais de um controlador nessa situação, vale o primeiro.
+ */
+export function analiseSoDoControlador(projeto: Projeto, catalogo: Catalogo, analiseViva: AnaliseCircuito): AnaliseCircuito | null {
+  const sistema = analiseViva.sistema;
+  if (sistema === null || sistema.banco.length > 0) return null;
+  // Estação portátil tem a bateria dentro: nunca fica sem banco.
+  if (terminaisDeBateria(projeto, catalogo, sistema.inversor) === null) return null;
+  const vivo = projetoVivo(projeto, catalogo);
+  const rede = montarRedes(vivo);
+  for (const d of vivo.dispositivos) {
+    const item = catalogo.get(d.itemId);
+    if (item?.categoria !== 'controlador' || d.queimado !== undefined) continue;
+    const banco = semRepeticao(cadeias(vivo, catalogo, 'bateria', rede, rede(d.uid, 'batPos'), rede(d.uid, 'batNeg')));
+    if (banco.length === 0) continue;
+    const fileiras = semRepeticao(cadeias(vivo, catalogo, 'placa', rede, rede(d.uid, 'pvPos'), rede(d.uid, 'pvNeg')));
+    if (fileiras.length === 0) continue;
+    return {
+      sistema: { inversor: sistema.inversor, controlador: d.uid, entradaSolar: item.solar, fileiras, banco, cargas: [], redeLigada: false },
+      problemas: [],
+      naRede: analiseViva.naRede,
+    };
+  }
+  return null;
+}
+
+/**
+ * A análise que a simulação do instante usa: a "só do controlador" quando é o caso, senão a própria análise viva. Os
+ * visores leem dela qual controlador e qual banco estão em uso.
+ */
+export function analiseDeOperacao(projeto: Projeto, catalogo: Catalogo, analiseViva: AnaliseCircuito): AnaliseCircuito {
+  return analiseSoDoControlador(projeto, catalogo, analiseViva) ?? analiseViva;
+}
+
+/**
+ * O passo da simulação sobre o que está vivo. É `passoSimulacao` com a análise viva; quando o inversor está sem banco e
+ * um controlador externo tem bateria e fileira viva, o passo é o da análise "só do controlador", com o inversor fora:
+ * as placas carregam a bateria, nenhum aparelho é atendido e o inversor não consome. A saída mantém o aviso
+ * `'sem-bateria'` e a carga pedida, que continuam valendo para o inversor.
+ */
+export function passoDeOperacao(
+  projeto: Projeto, catalogo: Catalogo, analiseViva: AnaliseCircuito, estado: EstadoSim, entrada: EntradaPasso,
+): SaidaPasso {
+  const normal = passoSimulacao(projeto, catalogo, analiseViva, estado, entrada);
+  const so = analiseSoDoControlador(projeto, catalogo, analiseViva);
+  if (so === null) return normal;
+  const carga = passoSimulacao(projeto, catalogo, so, estado, { ...entrada, inversorLigado: false });
+  return { ...carga, cargaPedidaW: normal.cargaPedidaW, avisos: [...new Set([...normal.avisos, ...carga.avisos])] };
+}
+
 // ---------------------------------------------------------------- Correntes de operação
 
 /** Aparelhos da saída que o inversor atende neste instante: ligados e, havendo hora, dentro do horário de uso. */
@@ -222,7 +298,12 @@ function aparelhosAtendidos(projeto: Projeto, catalogo: Catalogo, analise: Anali
 /**
  * Corrente que passa em cada cabo neste instante, em ampères, por `uid` do cabo (operar.md, seção 4). É o método de
  * `correntesDeProjeto` com as injeções do instante. `analiseViva` é a análise do `projetoVivo`; cabo interrompido fica com 0.
- * `horaLocal` (opcional) limita os aparelhos aos que estão no horário de uso.
+ * `horaLocal` (opcional) limita os aparelhos aos que estão no horário de uso. Com `placas` (a luz em cada placa), a
+ * corrente das placas é repartida entre as fileiras pelo que cada uma entrega; sem ela, em partes iguais.
+ *
+ * No barramento do banco as injeções têm sinal: a bateria descarregando injeta e carregando absorve; o controlador
+ * injeta. A corrente de cada cabo é o valor absoluto da soma, de modo que o cabo entre a bateria e o inversor leva só o
+ * que o inversor consome.
  */
 export function correntesDeOperacao(
   projeto: Projeto,
@@ -230,28 +311,37 @@ export function correntesDeOperacao(
   analiseViva: AnaliseCircuito,
   saida: SaidaPasso,
   horaLocal: number | null = null,
+  placas?: ReadonlyMap<string, CondicaoPlaca>,
 ): Map<string, number> {
   const vivo = projetoVivo(projeto, catalogo);
   const resultado = new Map<string, number>(projeto.cabos.map((c) => [c.uid, 0]));
-  const sistema = analiseViva.sistema;
+  // Inversor sem banco e controlador carregando a bateria: as correntes são as da análise "só do controlador".
+  const soDoControlador = analiseSoDoControlador(vivo, catalogo, analiseViva);
+  const analise = soDoControlador ?? analiseViva;
+  const sistema = analise.sistema;
   if (sistema === null) return resultado;
   const banco = infoBanco(sistema, vivo, catalogo);
-  const nFileiras = Math.max(1, sistema.fileiras.length);
 
-  // Corrente de cada fileira: a potência das placas aproveitada, vista do lado das placas, dividida entre as fileiras.
-  let porFileira = 0;
+  // Corrente das placas: a potência aproveitada, vista do lado das placas, repartida entre as fileiras.
+  let total = 0;
   if (saida.pvW > 0 && sistema.entradaSolar !== null) {
-    if (sistema.entradaSolar.tipo === 'pwm') porFileira = banco ? saida.pvW / banco.tensaoCarga / nFileiras : 0;
-    else porFileira = saida.pvTensao > 0 ? saida.pvW / RENDIMENTO_MPPT / saida.pvTensao / nFileiras : 0;
+    if (sistema.entradaSolar.tipo === 'pwm') total = banco ? saida.pvW / banco.tensaoCarga : 0;
+    else total = saida.pvTensao > 0 ? saida.pvW / RENDIMENTO_MPPT / saida.pvTensao : 0;
   }
-  const atendidos = aparelhosAtendidos(vivo, catalogo, analiseViva, saida, horaLocal);
+  const entregue = placas ? correntesDasFileiras(estadosDasFileiras(sistema, vivo, catalogo, placas)) : [];
+  const somaEntregue = entregue.reduce((s, i) => s + i, 0);
+  const nFileiras = Math.max(1, sistema.fileiras.length);
+  const daFileira = (indice: number): number =>
+    somaEntregue > 0 ? (total * (entregue[indice] ?? 0)) / somaEntregue : total / nFileiras;
+  const atendidos = aparelhosAtendidos(vivo, catalogo, analise, saida, horaLocal);
 
-  const correntes = correntesComInjecoes(vivo, catalogo, analiseViva, {
-    placa: () => porFileira,
-    bateriaPorRamo: banco ? Math.abs(saida.bateriaW) / banco.tensaoRef / Math.max(1, sistema.banco.length) : 0,
+  const correntes = correntesComInjecoes(vivo, catalogo, analise, {
+    placa: (_uid, fileira) => daFileira(fileira),
+    bateriaPorRamo: banco ? -saida.bateriaW / banco.tensaoRef / Math.max(1, sistema.banco.length) : 0,
     controlador: (uid) => (banco && uid === sistema.controlador ? saida.pvW / banco.tensaoCarga : 0),
     aparelho: (uid) => ((atendidos.get(uid)?.potenciaW ?? 0) / projeto.tensaoRede),
     entradaCa: saida.redeW / projeto.tensaoRede,
+    ...(soDoControlador !== null && sistema.controlador !== null ? { sorvedouroDoBanco: sistema.controlador } : {}),
   });
   for (const [uid, amperes] of correntes) resultado.set(uid, amperes);
   return resultado;
@@ -289,12 +379,20 @@ function primeiraProtecaoDeCorrente(catalogo: Catalogo, cabos: Cabo[]): Mudanca 
   return null;
 }
 
+/** Fileiras completas entre o PV+ e o PV− do aparelho, em `vivo` (passe o projeto vivo). */
+function fileirasDe(vivo: Projeto, catalogo: Catalogo, uid: string): string[][] {
+  const rede = montarRedes(vivo);
+  return cadeias(vivo, catalogo, 'placa', rede, rede(uid, 'pvPos'), rede(uid, 'pvNeg'));
+}
+
 /** Há fileira completa, entre o PV+ e o PV− do aparelho, com alguma placa recebendo luz. */
 function fileiraComSol(vivo: Projeto, catalogo: Catalogo, uid: string, placas: ReadonlyMap<string, CondicaoPlaca>): boolean {
-  const rede = montarRedes(vivo);
-  return cadeias(vivo, catalogo, 'placa', rede, rede(uid, 'pvPos'), rede(uid, 'pvNeg')).some((f) =>
-    f.some((p) => (placas.get(p)?.g ?? 0) > 0),
-  );
+  return fileirasDe(vivo, catalogo, uid).some((f) => f.some((p) => (placas.get(p)?.g ?? 0) > 0));
+}
+
+/** Há fileira completa viva no aparelho, com ou sem sol: as placas alcançam o PV+ e o PV− por cabos não interrompidos. */
+function temFileiraViva(projeto: Projeto, catalogo: Catalogo, uid: string): boolean {
+  return fileirasDe(projetoVivo(projeto, catalogo), catalogo, uid).length > 0;
 }
 
 /**
@@ -352,10 +450,14 @@ export function avaliarOperacao(
   // ---- Curto na bateria: a análise viva acusa.
   // Cada laço tem uma ponta positiva, uma negativa e a peça que o nomeia (`uid`): a bateria, ou a primeira do ramo em série.
   const curtos = new Map<string, { uid: string; pos: string; neg: string }>();
-  const acharCurto = (uid: string, primeira: string, ultima: string): void => {
+  /** Conjuntos de baterias que já têm um laço de curto achado, para o laço de baterias não repetir o mesmo curto. */
+  const jaNoCurto = new Set<string>();
+  const conjunto = (baterias: readonly string[]): string => [...baterias].sort().join('|');
+  const acharCurto = (uid: string, primeira: string, ultima: string, baterias: readonly string[] = [uid]): void => {
     const pos = chave(primeira, 'pos');
     const neg = chave(ultima, 'neg');
     curtos.set(`${pos}>${neg}`, { uid, pos, neg });
+    jaNoCurto.add(conjunto(baterias));
   };
   for (const problema of analiseViva.problemas) {
     if (problema.codigo !== 'curto-bateria') continue;
@@ -374,14 +476,13 @@ export function avaliarOperacao(
         // Baterias em série: o curto une o barramento a ele mesmo (P = N), e a análise viva não devolve ramo. Os ramos
         // são achados como em `bateriaPresente`, da rede do BAT+ à do BAT−, e o laço vai do pos da primeira ao neg da última.
         for (const ramo of cadeias(vivo, catalogo, 'bateria', rede, barramento, rede(uid, 'batNeg'), true)) {
-          acharCurto(ramo[0], ramo[0], ramo[ramo.length - 1]);
+          acharCurto(ramo[0], ramo[0], ramo[ramo.length - 1], ramo);
         }
       }
     }
   }
-  for (const { uid, pos, neg } of curtos.values()) {
-    const laco = caminhoMaisCurto(vivo, pos, neg);
-    if (!laco || laco.length === 0) continue;
+  /** Com proteção de corrente fechada no laço, a de menor corrente abre; sem nenhuma, os cabos do laço queimam. */
+  const curtoNoLaco = (laco: Cabo[], pecas: string[]): void => {
     let escolhida: { cabo: Cabo; indice: number; correnteA: number; tipo: Protecao['tipo'] } | null = null;
     for (const cabo of laco) {
       for (let indice = 0; indice < cabo.protecoes.length; indice++) {
@@ -393,17 +494,44 @@ export function avaliarOperacao(
     if (escolhida !== null) {
       lista.push({
         codigo: 'curto-na-bateria',
-        uids: [escolhida.cabo.uid, uid],
+        uids: [escolhida.cabo.uid, ...pecas],
         msUtc,
         mudancas: [{ tipo: 'protecao', cabo: escolhida.cabo.uid, indice: escolhida.indice, estado: escolhida.tipo === 'fusivel' ? 'queimada' : 'aberta' }],
       });
     } else {
       lista.push({
         codigo: 'curto-na-bateria',
-        uids: [...laco.map((c) => c.uid), uid],
+        uids: [...laco.map((c) => c.uid), ...pecas],
         msUtc,
         mudancas: laco.map((c): Mudanca => ({ tipo: 'cabo-queimado', uid: c.uid, dano: dano('curto-na-bateria') })),
       });
+    }
+  };
+  for (const { uid, pos, neg } of curtos.values()) {
+    const laco = caminhoMaisCurto(vivo, pos, neg);
+    if (laco && laco.length > 0) curtoNoLaco(laco, [uid]);
+  }
+
+  // ---- Laço de baterias: baterias em série fechadas sobre si mesmas. O caso comum é o paralelo com uma invertida
+  // (o positivo de uma no negativo da outra, nos dois polos). Não depende do inversor nem de chave dele: as tensões se
+  // somam em um laço sem carga nenhuma. O laço são os cabos entre uma bateria e a seguinte.
+  {
+    const rede = montarRedes(vivo);
+    const baterias = vivo.dispositivos.filter((d) => itemDe(vivo, catalogo, d.uid)?.categoria === 'bateria');
+    for (const b of baterias) {
+      const inicio = rede(b.uid, 'pos');
+      for (const volta of cadeias(vivo, catalogo, 'bateria', rede, inicio, inicio, true)) {
+        if (volta.length < 2 || jaNoCurto.has(conjunto(volta))) continue;
+        jaNoCurto.add(conjunto(volta));
+        const laco = new Map<string, Cabo>();
+        let fechado = true;
+        volta.forEach((uid, i) => {
+          const trecho = caminhoMaisCurto(vivo, chave(uid, 'neg'), chave(volta[(i + 1) % volta.length], 'pos'));
+          if (trecho === null) fechado = false;
+          else for (const c of trecho) laco.set(c.uid, c);
+        });
+        if (fechado && laco.size > 0) curtoNoLaco([...laco.values()], volta);
+      }
     }
   }
 
@@ -417,7 +545,7 @@ export function avaliarOperacao(
   }
 
   // ---- Desarme e fusível queimado: corrente de operação acima da nominal da proteção fechada.
-  const correntes = correntesDeOperacao(projeto, catalogo, analiseViva, saida, horaLocal);
+  const correntes = correntesDeOperacao(projeto, catalogo, analiseViva, saida, horaLocal, placas);
   for (const cabo of vivo.cabos) {
     const amperes = correntes.get(cabo.uid) ?? 0;
     cabo.protecoes.forEach((id, indice) => {
@@ -554,10 +682,39 @@ export type Manobra =
   | { tipo: 'protecao'; cabo: string; indice: number; estado: 'fechada' | 'aberta' }
   | { tipo: 'inversor'; uid: string; ligado: boolean };
 
-/** Por que o passo 1 (conferir a ligação) recusa ligar. */
+/** Projeto novo com as manobras aplicadas, na ordem dada. Apertar o botão do inversor limpa a falha. Proteção queimada não muda. */
+export function aplicarManobras(projeto: Projeto, manobras: readonly Manobra[]): Projeto {
+  let { dispositivos, cabos } = projeto;
+  for (const m of manobras) {
+    if (m.tipo === 'inversor') {
+      dispositivos = dispositivos.map((d) => {
+        if (d.uid !== m.uid) return d;
+        const { falha: _falha, ...resto } = d;
+        return { ...resto, ligado: m.ligado };
+      });
+    } else {
+      cabos = cabos.map((c) => {
+        if (c.uid !== m.cabo || estadoDaProtecao(c, m.indice) === 'queimada') return c;
+        const estados: EstadoProtecao[] = c.protecoes.map((_, i) => estadoDaProtecao(c, i));
+        estados[m.indice] = m.estado;
+        return { ...c, estados };
+      });
+    }
+  }
+  return manobras.length === 0 ? projeto : { ...projeto, dispositivos, cabos };
+}
+
+/** Problemas da análise de projeto que impedem ligar: polaridade e curto. */
+type ProblemaQueImpede = 'bateria-invertida' | 'placa-invertida' | 'curto-bateria' | 'curto-placas';
+
+/** Por que "Ligar o sistema" recusa. */
 export interface RecusaDeEnergizar {
-  /** O primeiro problema de polaridade ou de curto encontrado. */
-  codigo: 'bateria-invertida' | 'placa-invertida' | 'curto-bateria' | 'curto-placas';
+  /**
+   * O primeiro impedimento encontrado: um problema de polaridade ou de curto na montagem (passo 1), ou
+   * `'controlador-sem-bateria'`, quando a bateria não chega ao controlador mesmo com as chaves dela fechadas (proteção
+   * ou cabo queimado no caminho) e fechar a chave das placas queimaria o controlador.
+   */
+  codigo: ProblemaQueImpede | 'controlador-sem-bateria';
   /** Peças e cabos do problema. */
   uids: string[];
   texto: string;
@@ -569,7 +726,7 @@ export interface PlanoDeEnergizar {
   recusa: RecusaDeEnergizar | null;
 }
 
-const TEXTO_DA_RECUSA: Record<RecusaDeEnergizar['codigo'], string> = {
+const TEXTO_DA_RECUSA: Record<ProblemaQueImpede, string> = {
   'bateria-invertida': 'A bateria está ligada com os polos trocados. Antes de fechar qualquer chave, confira positivo com positivo e negativo com negativo.',
   'placa-invertida': 'Uma placa está ligada com os polos trocados. Antes de fechar qualquer chave, confira positivo com positivo e negativo com negativo.',
   'curto-bateria': 'Há um curto-circuito na bateria. Antes de fechar qualquer chave, desfaça a ligação que une o positivo ao negativo.',
@@ -599,13 +756,56 @@ function manobraDoInversor(projeto: Projeto, analise: AnaliseCircuito, ligar: bo
   return [{ tipo: 'inversor', uid: d.uid, ligado: ligar }];
 }
 
+const PORQUE_SEM_BATERIA = 'com as placas ligadas e sem bateria, o controlador queima.';
+
+/**
+ * A recusa de fechar a chave das placas de um controlador que não recebe a bateria: diz o que trocar ou consertar
+ * primeiro. Procura a proteção queimada (ou o cabo queimado) no caminho com menos cabos entre os terminais de bateria do
+ * controlador e as pontas de um ramo do banco, na montagem inteira.
+ */
+function recusaPorControladorSemBateria(projeto: Projeto, catalogo: Catalogo, controlador: string): RecusaDeEnergizar {
+  const rede = montarRedes(projeto);
+  const ramo = cadeias(projeto, catalogo, 'bateria', rede, rede(controlador, 'batPos'), rede(controlador, 'batNeg'))[0];
+  const caminho = ramo === undefined ? [] : [
+    ...(caminhoMaisCurto(projeto, chave(controlador, 'batPos'), chave(ramo[0], 'pos')) ?? []),
+    ...(caminhoMaisCurto(projeto, chave(controlador, 'batNeg'), chave(ramo[ramo.length - 1], 'neg')) ?? []),
+  ];
+  for (const cabo of caminho) {
+    const indice = cabo.protecoes.findIndex((_, i) => estadoDaProtecao(cabo, i) === 'queimada');
+    if (indice < 0) continue;
+    const item = catalogo.get(cabo.protecoes[indice]);
+    const nome = item?.nome ?? 'proteção';
+    const texto = item?.categoria === 'protecao' && item.tipo === 'fusivel'
+      ? `O fusível da bateria do controlador de carga está queimado (${nome}). Troque o fusível antes de ligar o sistema: ${PORQUE_SEM_BATERIA}`
+      : `A proteção da bateria do controlador de carga está queimada (${nome}). Conserte-a antes de ligar o sistema: ${PORQUE_SEM_BATERIA}`;
+    return { codigo: 'controlador-sem-bateria', uids: [controlador, cabo.uid], texto };
+  }
+  const queimado = caminho.find((c) => c.queimado !== undefined);
+  if (queimado) {
+    return {
+      codigo: 'controlador-sem-bateria',
+      uids: [controlador, queimado.uid],
+      texto: `O cabo entre a bateria e o controlador de carga está queimado. Conserte o cabo antes de ligar o sistema: ${PORQUE_SEM_BATERIA}`,
+    };
+  }
+  return {
+    codigo: 'controlador-sem-bateria',
+    uids: [controlador],
+    texto: `A bateria não chega ao controlador de carga. Conserte o que interrompe a ligação entre os dois antes de ligar o sistema: ${PORQUE_SEM_BATERIA}`,
+  };
+}
+
 /**
  * Passos 2 a 5 de operar.md, seção 6, em ordem: proteções da bateria, proteções das placas, inversor, proteções da
- * saída. Só entram as manobras que mudam algo. Os aparelhos ficam de fora. Recusa se o passo 1 falha: erro de polaridade
- * ou de curto na análise de projeto. As proteções da entrada CA (rede) não fazem parte do atalho.
+ * saída. Só entram as manobras que mudam algo. Os aparelhos ficam de fora. As proteções da entrada CA (rede) não fazem
+ * parte do atalho. Recusa, sem manobra nenhuma:
+ * - se o passo 1 falha: erro de polaridade ou de curto na análise de projeto, ou os polos da bateria trocados nos
+ *   terminais de um controlador ou do inversor, olhando a montagem inteira (como se tudo estivesse fechado);
+ * - se, depois da etapa da bateria, o controlador das placas continua sem bateria presente (proteção da bateria dele
+ *   queimada, que fica de fora das manobras): fechar a chave das placas queimaria o controlador.
  */
 export function sequenciaDeEnergizar(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito): PlanoDeEnergizar {
-  const impeditivo = analise.problemas.find((p): p is typeof p & { codigo: RecusaDeEnergizar['codigo'] } =>
+  const impeditivo = analise.problemas.find((p): p is typeof p & { codigo: ProblemaQueImpede } =>
     p.codigo === 'bateria-invertida' || p.codigo === 'placa-invertida' || p.codigo === 'curto-bateria' || p.codigo === 'curto-placas',
   );
   if (impeditivo) {
@@ -616,10 +816,26 @@ export function sequenciaDeEnergizar(projeto: Projeto, catalogo: Catalogo, anali
     };
     return { manobras: [], recusa };
   }
+  // Polos trocados nos terminais de bateria de um controlador (a análise de projeto só olha os do inversor) ou do inversor.
+  for (const d of projeto.dispositivos) {
+    const ramo = inversaoNaMontagem(projeto, catalogo, d.uid);
+    if (ramo === null) continue;
+    return { manobras: [], recusa: { codigo: 'bateria-invertida', uids: [d.uid, ...ramo], texto: TEXTO_DA_RECUSA['bateria-invertida'] } };
+  }
+
+  const daBateria = chavesDoCircuito(projeto, catalogo, analise, 'bateria', 'fechada');
+  const dasPlacas = chavesDoCircuito(projeto, catalogo, analise, 'placas', 'fechada');
+  // Só fecha a chave das placas do controlador se, com a etapa da bateria feita, ele tem bateria presente.
+  const controlador = analise.sistema?.controlador ?? null;
+  if (controlador !== null && dasPlacas.length > 0 && dispositivoDe(projeto, controlador)?.queimado === undefined) {
+    if (!bateriaPresente(aplicarManobras(projeto, daBateria), catalogo, controlador)) {
+      return { manobras: [], recusa: recusaPorControladorSemBateria(projeto, catalogo, controlador) };
+    }
+  }
   return {
     manobras: [
-      ...chavesDoCircuito(projeto, catalogo, analise, 'bateria', 'fechada'),
-      ...chavesDoCircuito(projeto, catalogo, analise, 'placas', 'fechada'),
+      ...daBateria,
+      ...dasPlacas,
       ...manobraDoInversor(projeto, analise, true),
       ...chavesDoCircuito(projeto, catalogo, analise, 'saida', 'fechada'),
     ],
@@ -627,14 +843,60 @@ export function sequenciaDeEnergizar(projeto: Projeto, catalogo: Catalogo, anali
   };
 }
 
-/** A ordem inversa: saída, inversor, placas e por último a bateria. */
-export function sequenciaDeDesenergizar(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito): Manobra[] {
-  return [
+/** Por que "Desligar o sistema" não desligou tudo. */
+export interface AvisoDeDesenergizar {
+  codigo: 'placas-sem-chave';
+  /** Os controladores que ficaram ligados à bateria e os cabos das proteções que ficaram fechadas. */
+  uids: string[];
+  texto: string;
+}
+
+export interface PlanoDeDesenergizar {
+  manobras: Manobra[];
+  aviso: AvisoDeDesenergizar | null;
+}
+
+const TEXTO_PLACAS_SEM_CHAVE =
+  'O controlador ficou ligado à bateria: as placas dele não têm disjuntor. Para desligar tudo, solte ou cubra as placas antes.';
+
+/**
+ * A ordem inversa: saída, inversor, placas e por último a bateria. Controlador que continua com fileira viva depois da
+ * etapa das placas (as placas dele não têm chave nenhuma para abrir) não pode ficar sem bateria: a manobra da bateria
+ * que o deixaria sem ela não entra, e o plano devolve o aviso `placas-sem-chave`. Vale de dia e de noite, porque o sol
+ * nasce depois. As demais proteções da bateria (a do inversor, quando o controlador não depende dela) abrem.
+ */
+export function planoDeDesenergizar(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito): PlanoDeDesenergizar {
+  const manobras: Manobra[] = [
     ...chavesDoCircuito(projeto, catalogo, analise, 'saida', 'aberta'),
     ...manobraDoInversor(projeto, analise, false),
     ...chavesDoCircuito(projeto, catalogo, analise, 'placas', 'aberta'),
-    ...chavesDoCircuito(projeto, catalogo, analise, 'bateria', 'aberta'),
   ];
+  let atual = aplicarManobras(projeto, manobras);
+  const presos = atual.dispositivos
+    .filter((d) => catalogo.get(d.itemId)?.categoria === 'controlador' && d.queimado === undefined)
+    .map((d) => d.uid)
+    .filter((uid) => temFileiraViva(atual, catalogo, uid) && bateriaPresente(atual, catalogo, uid));
+  const ficaram = new Set<string>();
+  const cabos = new Set<string>();
+  for (const m of chavesDoCircuito(projeto, catalogo, analise, 'bateria', 'aberta')) {
+    const tentativa = aplicarManobras(atual, [m]);
+    const semBateria = presos.filter((uid) => !bateriaPresente(tentativa, catalogo, uid));
+    if (semBateria.length > 0) {
+      for (const uid of semBateria) ficaram.add(uid);
+      if (m.tipo === 'protecao') cabos.add(m.cabo);
+      continue;
+    }
+    atual = tentativa;
+    manobras.push(m);
+  }
+  const aviso: AvisoDeDesenergizar | null =
+    ficaram.size > 0 ? { codigo: 'placas-sem-chave', uids: [...ficaram, ...cabos], texto: TEXTO_PLACAS_SEM_CHAVE } : null;
+  return { manobras, aviso };
+}
+
+/** As manobras de `planoDeDesenergizar`. */
+export function sequenciaDeDesenergizar(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito): Manobra[] {
+  return planoDeDesenergizar(projeto, catalogo, analise).manobras;
 }
 
 // ---------------------------------------------------------------- Consertar

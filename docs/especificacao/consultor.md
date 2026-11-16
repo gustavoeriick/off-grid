@@ -25,6 +25,7 @@ Nos textos, o que está entre chaves é calculado. Os números seguem as conven�
 | `sem-bateria` | erro | Problema `sem-bateria` | O inversor está sem bateria | Ligue o positivo da bateria no terminal BAT+ do inversor e o negativo no BAT−. Sem bateria, o inversor não liga. |
 | `curto-bateria` | erro | Problema `curto-bateria` | Curto-circuito na bateria | O positivo e o negativo da bateria estão ligados entre si. Em uma bateria de verdade isso derrete o cabo em segundos. Desfaça essa ligação. |
 | `bateria-invertida` | erro | Problema `bateria-invertida` | Bateria ligada ao contrário | O positivo da bateria vai no BAT+ e o negativo no BAT−. Invertida, ela queima o inversor na hora. |
+| `bateria-invertida` (no controlador) | erro | Os terminais de bateria de um controlador de carga alcançam um ramo de baterias com os polos trocados, olhando a montagem inteira (`inversaoNaMontagem`, operar.md, seção 6). Não repete a bateria que o problema `bateria-invertida` já apontou. Alvos: o controlador e as baterias do ramo | Bateria ligada ao contrário | O positivo da bateria vai no BAT+ do controlador e o negativo no BAT−. Invertida, com sol nas placas, ela queima o controlador. |
 | `bateria-solta` | alerta | Problema `bateria-solta` | Bateria sem circuito fechado | Esta bateria tem cabo em um polo só. Ligue os dois polos para ela entrar no banco. |
 | `ramos-desiguais` | erro | Problema `ramos-desiguais` | Baterias em paralelo com tensões diferentes | Só se liga em paralelo o que tem a mesma tensão. Confira quantas baterias há em cada série. |
 | `baterias-misturadas` | alerta | Problema `baterias-misturadas` | Baterias de modelos diferentes | Baterias do mesmo banco devem ser do mesmo modelo e da mesma idade. Misturadas, a mais fraca trabalha demais e estraga antes. |
@@ -132,9 +133,9 @@ Textos de `peca-queimada` por `CodigoDano`:
 | Código | Texto |
 |---|---|
 | `controlador-sem-bateria` | As placas ficaram ligadas ao controlador sem a bateria. Os manuais mandam ligar a bateria primeiro e as placas por último. Nem todo controlador queima nessa situação; o simulador mostra o pior caso. |
-| `bateria-invertida` | A bateria foi ligada com os polos trocados (positivo no negativo). A peça queima na hora, mesmo com fusível no caminho. Confira positivo com positivo antes de fechar qualquer chave. |
+| `bateria-invertida` | A bateria foi ligada com os polos trocados (positivo no negativo). No inversor, a peça queima assim que a bateria chega a ele, mesmo com fusível no caminho; no controlador, queima quando as placas estão ligadas e com sol. Confira positivo com positivo, com o multímetro, antes de fechar qualquer chave. |
 | `curto-na-bateria` | Um curto-circuito na bateria, sem proteção para abrir antes, pôs o cabo em brasa e o queimou. De verdade, a bateria também pode se estragar e pegar fogo. |
-| `arco-no-conector` | Soltar um conector das placas com corrente passando abre um arco elétrico, que queima o conector. Desligue o disjuntor das placas, ou cubra as placas, antes de mexer. |
+| `arco-no-conector` | Soltar um conector das placas com corrente passando abre um arco elétrico, que queima o conector e a mão de quem o segura. Desligue o disjuntor das placas, ou cubra as placas, antes de mexer. |
 | `arco-no-disjuntor-ca` | Um disjuntor de corrente alternada não apaga o arco da corrente contínua. Ao abrir com corrente passando, ele queimou. |
 
 Projeto sem os campos novos (`estados`, `queimado`) e com tudo ligado, como nos cenários prontos: nenhuma das duas aparece.

@@ -1010,3 +1010,40 @@ describe('`sistema-desligado`', () => {
     expect(regras(consultar(p))).not.toContain('sistema-desligado');
   });
 });
+
+// Revisão da fase 8: a bateria de polos trocados nos terminais de bateria de um controlador de carga.
+describe('`bateria-invertida` no controlador', () => {
+  /** Inversor e bateria certos; o controlador ligado na bateria com os polos trocados, ou certos. */
+  const comControlador = (invertido: boolean): Projeto =>
+    montar({ inv: AIKER, b: BELIFOU, ctl: PWM, p: 'placa-resun-100' }, [
+      ...ligaBanco('inv', 'b'),
+      ['ctl.batPos', invertido ? 'b.neg' : 'b.pos'], ['ctl.batNeg', invertido ? 'b.pos' : 'b.neg'],
+      ['p.pos', 'ctl.pvPos', 'cabo-solar-6'], ['p.neg', 'ctl.pvNeg', 'cabo-solar-6'],
+    ]);
+
+  it('erro com o mesmo título do erro do inversor, sem ação, e o texto do controlador', () => {
+    const lista = consultar(comControlador(true));
+    const s = da(lista, 'bateria-invertida');
+    expect(s.nivel).toBe('erro');
+    expect(s.titulo).toBe('Bateria ligada ao contrário');
+    expect(s.texto).toBe('O positivo da bateria vai no BAT+ do controlador e o negativo no BAT−. Invertida, com sol nas placas, ela queima o controlador.');
+    expect(s.alvos).toEqual(['ctl', 'b']);
+    expect(s.acao).toBeUndefined();
+    expect(regras(lista).filter((r) => r === 'bateria-invertida')).toHaveLength(1);
+    // Com erro na montagem, a dica de ligar o sistema não aparece.
+    expect(regras(lista)).not.toContain('sistema-desligado');
+  });
+
+  it('com o controlador ligado certo, não aparece', () => {
+    expect(regras(consultar(comControlador(false)))).not.toContain('bateria-invertida');
+  });
+
+  it('a bateria invertida no inversor, com o controlador no mesmo barramento, continua sendo um erro só', () => {
+    const p = montar({ inv: AIKER, b: BELIFOU, ctl: PWM }, [
+      ['b.pos', 'inv.batNeg'], ['b.neg', 'inv.batPos'], ['ctl.batPos', 'inv.batPos'], ['ctl.batNeg', 'inv.batNeg'],
+    ]);
+    const invertidas = consultar(p).filter((s) => s.regra === 'bateria-invertida');
+    expect(invertidas).toHaveLength(1);
+    expect(invertidas[0].texto).toBe('O positivo da bateria vai no BAT+ e o negativo no BAT−. Invertida, ela queima o inversor na hora.');
+  });
+});

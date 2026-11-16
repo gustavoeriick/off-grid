@@ -41,10 +41,15 @@ const chave = (disp: string, terminal: string): string => `${disp}:${terminal}`;
 export interface Injecoes {
   /** Corrente de uma placa, em A, na fileira de índice dado. */
   placa?: (uid: string, fileira: number) => number;
-  /** Corrente de cada ramo do banco, em A. */
+  /** Corrente de cada ramo do banco, em A. Na operação tem sinal: positiva descarregando (injeta), negativa carregando (absorve). */
   bateriaPorRamo?: number;
   /** Corrente que o controlador injeta no banco, em A. */
   controlador?: (uid: string, item: Controlador) => number;
+  /**
+   * Peça cujos BAT+ e BAT− são o sorvedouro da rede do banco. Ausente: o inversor. Na operação é o controlador, quando
+   * ele carrega a bateria com o inversor fora do banco (operar.md, seção 4).
+   */
+  sorvedouroDoBanco?: string;
   /** Corrente do plugue de cada aparelho da saída, em A. */
   aparelho?: (uid: string) => number;
   /** Corrente da entrada CA do inversor, em A. */
@@ -98,7 +103,8 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
       const no = ordem[i];
       const elo = arvore.get(no)!;
       const soma = acumulado.get(no) ?? 0;
-      correntes.set(elo.cabo.uid, soma);
+      // As injeções da operação têm sinal (a bateria carregando absorve): a corrente do cabo é o valor absoluto da soma.
+      correntes.set(elo.cabo.uid, Math.abs(soma));
       acumulado.set(elo.de, (acumulado.get(elo.de) ?? 0) + soma);
     }
   };
@@ -136,8 +142,9 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
   if (inversor && banco !== null && sistema.banco.length > 0) {
     const iBateria = inversor.potenciaW / (inversor.rendimento * banco.tensaoRef);
     const porRamo = fontes.bateriaPorRamo ?? iBateria / sistema.banco.length;
-    const P = rede(sistema.inversor, 'batPos');
-    const N = rede(sistema.inversor, 'batNeg');
+    const sorvedouro = fontes.sorvedouroDoBanco ?? sistema.inversor;
+    const P = rede(sorvedouro, 'batPos');
+    const N = rede(sorvedouro, 'batNeg');
     const iPos: [string, number][] = [];
     const iNeg: [string, number][] = [];
     for (const ramo of sistema.banco) {
@@ -149,13 +156,13 @@ function calcular(projeto: Projeto, catalogo: Catalogo, analise: AnaliseCircuito
     }
     for (const d of projeto.dispositivos) {
       const c = item(d.uid, 'controlador') as Controlador | undefined;
-      if (!c || rede(d.uid, 'batPos') !== P || rede(d.uid, 'batNeg') !== N) continue;
+      if (!c || d.uid === sorvedouro || rede(d.uid, 'batPos') !== P || rede(d.uid, 'batNeg') !== N) continue;
       const iControlador = fontes.controlador ? fontes.controlador(d.uid, c) : c.solar.correnteCargaA;
       iPos.push([chave(d.uid, 'batPos'), iControlador]);
       iNeg.push([chave(d.uid, 'batNeg'), iControlador]);
     }
-    resolver(chave(sistema.inversor, 'batPos'), iPos);
-    resolver(chave(sistema.inversor, 'batNeg'), iNeg);
+    resolver(chave(sorvedouro, 'batPos'), iPos);
+    resolver(chave(sorvedouro, 'batNeg'), iNeg);
   }
 
   // ---------------------------------------------------------------- Corrente alternada

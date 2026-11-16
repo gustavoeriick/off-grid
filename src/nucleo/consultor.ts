@@ -6,7 +6,7 @@ import type {
 import { caminhosAteOSorvedouro, correntesDeProjeto, quedasDeTensao } from './cabos';
 import { montarRedes } from './circuito';
 import { comodoDe } from './comodos';
-import { estadoDaProtecao, sequenciaDeEnergizar } from './operacao';
+import { estadoDaProtecao, inversaoNaMontagem, sequenciaDeEnergizar } from './operacao';
 import { FATOR_TENSAO_CARGA, infoBanco, LIMITE_CARREGADOR_REDE_A, vmpQuente, vocFrio } from './eletrica';
 import type {
   Acao, AnaliseCircuito, Cabo, Circuito, CodigoDano, CodigoProblema, Estimativas, InfoBanco, Nivel, PlanoMaisPlaca, Projeto,
@@ -71,6 +71,10 @@ const LIGACAO: [CodigoProblema, Nivel, string, string][] = [
   ['placas-no-banco', 'erro', 'Placas e bateria ligadas direto',
     'O circuito das placas e o da bateria só se encontram dentro do inversor ou do controlador de carga. Ligados direto, a placa sobrecarrega a bateria ou a bateria descarrega na entrada das placas. Placa vai em PV+ e PV−; bateria vai em BAT+ e BAT−.'],
 ];
+
+/** Texto de `bateria-invertida` quando os polos estão trocados nos terminais de bateria de um controlador de carga. */
+const TEXTO_INVERTIDA_NO_CONTROLADOR =
+  'O positivo da bateria vai no BAT+ do controlador e o negativo no BAT−. Invertida, com sol nas placas, ela queima o controlador.';
 
 const CODIGOS_DE_PLACA: CodigoProblema[] = ['curto-placas', 'placa-invertida', 'placa-solta', 'fileiras-desiguais', 'placas-misturadas'];
 /** Códigos que são problema de placa quando apontam alguma placa. */
@@ -151,6 +155,16 @@ export function analisarConsultor(
     if (sistema === null && codigo !== 'sem-inversor') continue;
     for (const p of analise.problemas.filter((x) => x.codigo === codigo)) {
       sugerir({ regra: codigo, nivel, titulo, texto, alvos: [...p.dispositivos, ...p.cabos] });
+    }
+    if (codigo !== 'bateria-invertida') continue;
+    // Polos trocados nos terminais de bateria de um controlador: a análise de projeto só olha os do inversor. A bateria
+    // que ela já apontou como invertida não é apontada de novo.
+    const jaApontadas = new Set(analise.problemas.filter((x) => x.codigo === 'bateria-invertida').flatMap((x) => x.dispositivos));
+    for (const d of projeto.dispositivos) {
+      if (catalogo.get(d.itemId)?.categoria !== 'controlador') continue;
+      const ramo = inversaoNaMontagem(projeto, catalogo, d.uid);
+      if (ramo === null || ramo.some((uid) => jaApontadas.has(uid))) continue;
+      sugerir({ regra: codigo, nivel, titulo, texto: TEXTO_INVERTIDA_NO_CONTROLADOR, alvos: [d.uid, ...ramo] });
     }
   }
   if (sistema === null) return lista;
@@ -668,11 +682,11 @@ const TEXTO_DO_DANO: Record<CodigoDano, string> = {
   'controlador-sem-bateria':
     'As placas ficaram ligadas ao controlador sem a bateria. Os manuais mandam ligar a bateria primeiro e as placas por último. Nem todo controlador queima nessa situação; o simulador mostra o pior caso.',
   'bateria-invertida':
-    'A bateria foi ligada com os polos trocados (positivo no negativo). A peça queima na hora, mesmo com fusível no caminho. Confira positivo com positivo antes de fechar qualquer chave.',
+    'A bateria foi ligada com os polos trocados (positivo no negativo). No inversor, a peça queima assim que a bateria chega a ele, mesmo com fusível no caminho; no controlador, queima quando as placas estão ligadas e com sol. Confira positivo com positivo, com o multímetro, antes de fechar qualquer chave.',
   'curto-na-bateria':
     'Um curto-circuito na bateria, sem proteção para abrir antes, pôs o cabo em brasa e o queimou. De verdade, a bateria também pode se estragar e pegar fogo.',
   'arco-no-conector':
-    'Soltar um conector das placas com corrente passando abre um arco elétrico, que queima o conector. Desligue o disjuntor das placas, ou cubra as placas, antes de mexer.',
+    'Soltar um conector das placas com corrente passando abre um arco elétrico, que queima o conector e a mão de quem o segura. Desligue o disjuntor das placas, ou cubra as placas, antes de mexer.',
   'arco-no-disjuntor-ca':
     'Um disjuntor de corrente alternada não apaga o arco da corrente contínua. Ao abrir com corrente passando, ele queimou.',
 };

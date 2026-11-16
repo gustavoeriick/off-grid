@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import { CATALOGO } from '../catalogo';
 import type { Protecao } from '../catalogo/tipos';
-import { analiseViva, assinar, correntesDeOperacaoAgora, estado, type EventoDeOperacao } from '../estado';
+import { analiseDaSimulacao, assinar, correntesDeOperacaoAgora, estado, type EventoDeOperacao } from '../estado';
 import { estadoDaProtecao } from '../nucleo/operacao';
 import type { Dispositivo } from '../nucleo/tipos';
 import type { CamadaDeCabos } from './cabos';
@@ -329,7 +329,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
   function lerVisores(): void {
     visoresSujos = false;
     if (visores.size === 0) return;
-    const leitura = { projeto: estado.projeto, catalogo: CATALOGO, viva: analiseViva(), saida: estado.simulacao.saida, correntes: correntesDeOperacaoAgora() };
+    const leitura = { projeto: estado.projeto, catalogo: CATALOGO, viva: analiseDaSimulacao(), saida: estado.simulacao.saida, correntes: correntesDeOperacaoAgora() };
     let mudou = false;
     for (const v of visores.values()) {
       const d = dispositivoDe(v.uid);
@@ -643,7 +643,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       if (situacao === 'queimada') return `Fusível de ${item.correnteA} A queimado. Clique para ver como trocar.`;
       return situacao === 'aberta'
         ? `Fusível de ${item.correnteA} A fora do porta-fusível: o cabo não conduz. Clique para pôr o fusível.`
-        : `Fusível de ${item.correnteA} A colocado. Clique para tirar o fusível.`;
+        : `Fusível de ${item.correnteA} A colocado. Clique para tirar o fusível (de verdade, só sem corrente passando).`;
     }
     const nome = item.tipo === 'disjuntorCC' ? `Disjuntor CC de ${item.correnteA} A` : `Disjuntor de ${item.correnteA} A`;
     if (situacao === 'queimada') return `${nome} queimado. Clique para ver o conserto.`;

@@ -4,7 +4,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CATALOGO } from './catalogo';
 import { ROTEIRO_TUTORIAL } from './conteudo/roteiros';
-import { acoes, analiseViva, assinar, correntesDeOperacaoAgora, emTutorial, estado, horaLocalDe, PECA_NOVA_NASCE_DESLIGADA, recalcularAgora } from './estado';
+import {
+  acoes, analiseDaSimulacao, analiseViva, assinar, correntesDeOperacaoAgora, emTutorial, estado, horaLocalDe, PECA_NOVA_NASCE_DESLIGADA,
+  recalcularAgora,
+} from './estado';
 import { cenarioPlanoCorrigido } from './nucleo/cenarios';
 
 /** 21/06/2026 às 20:00 no Rio (UTC − 3). */
@@ -596,10 +599,11 @@ describe('operar o sistema', () => {
     expect(JSON.stringify(estado.projeto)).toBe(antes);
     acoes.refazer();
     expect(JSON.stringify(estado.projeto)).toBe(ligado);
-    // Desligar o sistema: tudo aberto e o inversor desligado, em um passo.
-    acoes.desenergizar();
+    // Desligar o sistema: o inversor desligado e a proteção da bateria dele aberta, em um passo. As placas estão ligadas
+    // direto no controlador, sem chave: a proteção da bateria dele fica fechada (aberta, ele queimaria com o sol), com aviso.
+    expect(acoes.desenergizar()?.codigo).toBe('placas-sem-chave');
     expect(cabo(m.positivo).estados).toEqual(['aberta']);
-    expect(cabo(m.doControlador).estados).toEqual(['aberta']);
+    expect(cabo(m.doControlador).estados).toEqual(['fechada']);
     expect(peca(m.inv).ligado).toBe(false);
     expect(estado.simulacao.eventos).toHaveLength(0);
     acoes.desfazer();
@@ -817,5 +821,217 @@ describe('operar o sistema', () => {
     for (let i = 0; i < 24 * 6; i += 1) acoes.avancarTempo(10);
     expect(estado.simulacao.eventos).toHaveLength(0);
     expect(JSON.stringify(estado.projeto)).toBe(texto);
+  });
+
+  // ---- Correções da revisão da fase 8
+
+  it('"Desligar o sistema" de dia, com as placas ligadas direto no controlador: nada queima e a ação devolve o aviso', () => {
+    const m = montar();
+    const [positivoDaPlaca] = ligarPlaca(m);
+    expect(acoes.energizar()).toBeNull();
+    acoes.definirTempo(MEIO_DIA);
+    const ligado = JSON.stringify(estado.projeto);
+    expect(acoes.desenergizar()).toEqual({
+      codigo: 'placas-sem-chave',
+      uids: [m.ctl, m.doControlador],
+      texto: 'O controlador ficou ligado à bateria: as placas dele não têm disjuntor. Para desligar tudo, solte ou cubra as placas antes.',
+    });
+    expect(peca(m.ctl).queimado).toBeUndefined();
+    expect(estado.simulacao.eventos).toHaveLength(0);
+    // O resto desligou: o inversor e a proteção da bateria dele.
+    expect(peca(m.inv).ligado).toBe(false);
+    expect(cabo(m.positivo).estados).toEqual(['aberta']);
+    expect(cabo(m.doControlador).estados).toEqual(['fechada']);
+    // De novo: nada a fazer, sem passo novo do desfazer, e o aviso continua.
+    expect(acoes.desenergizar()?.codigo).toBe('placas-sem-chave');
+    acoes.desfazer();
+    expect(JSON.stringify(estado.projeto)).toBe(ligado);
+    // Com um disjuntor nas placas, desliga tudo e não há aviso.
+    acoes.instalarProtecao(positivoDaPlaca!, 'prot-disjuntor-cc-32');
+    acoes.alternarProtecao(positivoDaPlaca!, 0);
+    expect(acoes.desenergizar()).toBeNull();
+    expect(cabo(positivoDaPlaca!).estados).toEqual(['aberta']);
+    expect(cabo(m.doControlador).estados).toEqual(['aberta']);
+    expect(peca(m.ctl).queimado).toBeUndefined();
+    expect(estado.simulacao.eventos).toHaveLength(0);
+    acoes.sairDoTutorial();
+  });
+
+  it('"Ligar o sistema" com o fusível da bateria do controlador queimado: recusa, e o controlador não queima', () => {
+    const m = montar('prot-fusivel-anl-100');
+    const [positivoDaPlaca] = ligarPlaca(m);
+    acoes.instalarProtecao(positivoDaPlaca!, 'prot-disjuntor-cc-32');
+    // O fusível do controlador queimado, como depois de um curto.
+    const projeto = JSON.parse(JSON.stringify(estado.projeto)) as typeof estado.projeto;
+    projeto.cabos.find((c) => c.uid === m.doControlador)!.estados = ['queimada'];
+    acoes.carregarProjeto(projeto);
+    acoes.definirTempo(MEIO_DIA);
+    const antes = JSON.stringify(estado.projeto);
+    const recusa = acoes.energizar();
+    expect(recusa?.codigo).toBe('controlador-sem-bateria');
+    expect(recusa?.uids).toEqual([m.ctl, m.doControlador]);
+    expect(recusa?.texto).toContain('Troque o fusível antes de ligar o sistema');
+    expect(JSON.stringify(estado.projeto)).toBe(antes);
+    expect(peca(m.ctl).queimado).toBeUndefined();
+    expect(estado.simulacao.eventos).toHaveLength(0);
+    // Trocado o fusível, liga tudo sem dano.
+    acoes.consertar({ tipo: 'protecao', cabo: m.doControlador, indice: 0 });
+    expect(acoes.energizar()).toBeNull();
+    expect(cabo(positivoDaPlaca!).estados).toEqual(['fechada']);
+    expect(peca(m.ctl).queimado).toBeUndefined();
+    expect(estado.simulacao.saida.pvDisponivelW).toBeGreaterThan(0);
+    expect(estado.simulacao.eventos).toHaveLength(0);
+    if (emTutorial()) acoes.sairDoTutorial();
+  });
+
+  it('com a proteção da bateria do inversor aberta, o controlador continua carregando a bateria; apagar o cabo da placa abre arco', () => {
+    const m = montar();
+    acoes.alternarProtecao(m.positivo, 0);
+    acoes.alternarProtecao(m.doControlador, 0);
+    acoes.definirLigado(m.inv, true);
+    acoes.definirLigado(m.lamp, true);
+    // Três horas de lâmpada, de noite: a bateria deixa de estar cheia.
+    acoes.avancarTempo(180);
+    expect(estado.simulacao.estadoSim.soc).toBeLessThan(1);
+    // Abre o fusível do inversor: ele fica sem bateria; o controlador, não.
+    acoes.alternarProtecao(m.positivo, 0);
+    acoes.definirTempo(MEIO_DIA);
+    const [positivoDaPlaca] = ligarPlaca(m);
+    expect(analiseViva().sistema?.banco ?? []).toHaveLength(0);
+    expect(analiseDaSimulacao().sistema).toMatchObject({ controlador: m.ctl, banco: [[m.bat]], fileiras: [[m.placa]] });
+    const s = estado.simulacao.saida;
+    expect(s.pvW).toBeGreaterThan(0);
+    expect(s.bateriaW).toBe(s.pvW);
+    expect(s.cargaAtendidaW).toBe(0);
+    expect(s.avisos).toContain('sem-bateria');
+    expect(correntesDeOperacaoAgora().get(positivoDaPlaca!)).toBeGreaterThan(0);
+    expect(correntesDeOperacaoAgora().get(m.doControlador)).toBeGreaterThan(0);
+    expect(correntesDeOperacaoAgora().get(m.positivo)).toBe(0);
+    const soc = estado.simulacao.estadoSim.soc;
+    acoes.avancarTempo(30);
+    expect(estado.simulacao.estadoSim.soc).toBeGreaterThan(soc);
+    expect(estado.simulacao.eventos).toHaveLength(0);
+    acoes.removerCabo(positivoDaPlaca!);
+    expect(peca(m.placa).queimado?.codigo).toBe('arco-no-conector');
+    expect(codigosDosEventos()).toEqual(['arco-no-conector']);
+    acoes.sairDoTutorial();
+  });
+
+  it('"Desligar o sistema" com disjuntor CA no cabo das placas e corrente passando: o disjuntor queima, no mesmo passo do desfazer', () => {
+    const m = montar();
+    const [positivoDaPlaca] = ligarPlaca(m);
+    acoes.instalarProtecao(positivoDaPlaca!, 'prot-disjuntor-ca-16');
+    expect(acoes.energizar()).toBeNull();
+    acoes.definirLigado(m.lamp, true);
+    acoes.avancarTempo(180);
+    acoes.definirTempo(MEIO_DIA);
+    expect(estado.simulacao.eventos).toHaveLength(0);
+    expect(estado.simulacao.estadoSim.soc).toBeLessThan(1);
+    expect(correntesDeOperacaoAgora().get(positivoDaPlaca!)).toBeGreaterThan(0);
+    const antes = JSON.stringify(estado.projeto);
+    // O inversor sai antes, mas o controlador continua carregando: há corrente contínua no disjuntor quando ele abre.
+    expect(acoes.desenergizar()).toBeNull();
+    expect(cabo(positivoDaPlaca!).estados).toEqual(['queimada']);
+    expect(codigosDosEventos()).toEqual(['arco-no-disjuntor-ca']);
+    expect(estado.simulacao.eventos[0]!.uids).toEqual([positivoDaPlaca]);
+    // O resto da sequência seguiu, e o controlador não queimou (o disjuntor queimado interrompe o cabo).
+    expect(peca(m.inv).ligado).toBe(false);
+    expect(cabo(m.positivo).estados).toEqual(['aberta']);
+    expect(cabo(m.doControlador).estados).toEqual(['aberta']);
+    expect(peca(m.ctl).queimado).toBeUndefined();
+    acoes.desfazer();
+    expect(JSON.stringify(estado.projeto)).toBe(antes);
+    acoes.sairDoTutorial();
+  });
+
+  it('na ordem certa de desligar, o disjuntor CA do cabo da bateria abre sem arco: o inversor sai antes dele', () => {
+    const m = montar();
+    acoes.instalarProtecao(m.positivo, 'prot-disjuntor-ca-16');
+    expect(acoes.energizar()).toBeNull();
+    acoes.definirLigado(m.lamp, true);
+    expect(correntesDeOperacaoAgora().get(m.positivo)).toBeGreaterThan(0);
+    expect(acoes.desenergizar()).toBeNull();
+    expect(cabo(m.positivo).estados).toEqual(['aberta', 'aberta']);
+    expect(estado.simulacao.eventos).toHaveLength(0);
+    // Aberto à mão, com o inversor atendendo a lâmpada, ele queima.
+    acoes.desfazer();
+    acoes.alternarProtecao(m.positivo, 1);
+    expect(cabo(m.positivo).estados).toEqual(['fechada', 'queimada']);
+    expect(codigosDosEventos()).toEqual(['arco-no-disjuntor-ca']);
+    acoes.sairDoTutorial();
+  });
+
+  it('`consertarVarios` conserta a peça e a proteção em um passo só do desfazer', () => {
+    acoes.entrarNoTutorial();
+    const bat = acoes.adicionarDispositivo('bat-moura-12mn105', em('piso-quartinho', -0.5));
+    const inv = acoes.adicionarDispositivo('inv-aiker-500-12v-110', em('piso-quartinho', 0.5));
+    const trocado = liga(bat, 'neg', inv, 'batPos');
+    acoes.instalarProtecao(trocado, 'prot-fusivel-anl-100');
+    liga(bat, 'pos', inv, 'batNeg');
+    acoes.alternarProtecao(trocado, 0);
+    expect(peca(inv).queimado?.codigo).toBe('bateria-invertida');
+    expect(cabo(trocado).estados).toEqual(['queimada']);
+    const queimado = JSON.stringify(estado.projeto);
+    acoes.consertarVarios([{ tipo: 'dispositivo', uid: inv }, { tipo: 'protecao', cabo: trocado, indice: 0 }]);
+    // O fusível volta aberto: o inversor consertado não queima de novo.
+    expect(peca(inv).queimado).toBeUndefined();
+    expect(cabo(trocado).estados).toEqual(['aberta']);
+    acoes.desfazer();
+    expect(JSON.stringify(estado.projeto)).toBe(queimado);
+    acoes.refazer();
+    expect(peca(inv).queimado).toBeUndefined();
+    expect(cabo(trocado).estados).toEqual(['aberta']);
+    // Lista vazia não cria passo.
+    acoes.consertarVarios([]);
+    acoes.desfazer();
+    expect(JSON.stringify(estado.projeto)).toBe(queimado);
+    acoes.sairDoTutorial();
+  });
+
+  it('desfazer um dano do relógio queima de novo sem gravar evento repetido', () => {
+    const m = montar();
+    ligarPlaca(m);
+    for (let i = 0; i < 15 * 6 && peca(m.ctl).queimado === undefined; i += 1) acoes.avancarTempo(10);
+    expect(peca(m.ctl).queimado?.codigo).toBe('controlador-sem-bateria');
+    expect(codigosDosEventos()).toEqual(['controlador-sem-bateria']);
+    let avisos = 0;
+    const cancelar = assinar('operacao', () => (avisos += 1));
+    // O sol continua lá: desfeito o passo do dano, o controlador queima de novo, sem passo novo e sem evento novo.
+    acoes.desfazer();
+    expect(peca(m.ctl).queimado?.codigo).toBe('controlador-sem-bateria');
+    expect(codigosDosEventos()).toEqual(['controlador-sem-bateria']);
+    acoes.refazer();
+    expect(peca(m.ctl).queimado?.codigo).toBe('controlador-sem-bateria');
+    expect(codigosDosEventos()).toEqual(['controlador-sem-bateria']);
+    expect(avisos).toBe(0);
+    // Fora do desfazer, queimar de novo é acontecimento novo: consertar sem corrigir a causa.
+    acoes.consertar({ tipo: 'dispositivo', uid: m.ctl });
+    expect(codigosDosEventos()).toEqual(['controlador-sem-bateria', 'controlador-sem-bateria']);
+    expect(avisos).toBe(1);
+    cancelar();
+    acoes.sairDoTutorial();
+  });
+
+  it('sobrecarga no meio de uma chamada longa de `avancarTempo` põe o inversor em falha', () => {
+    const m = montar();
+    const micro = acoes.adicionarDispositivo('ap-microondas', em('piso-quartinho', 1.5));
+    liga(micro, 'plug', m.inv, 'caSaida');
+    // O micro-ondas só é usado das 21:00 às 21:12.
+    acoes.definirUso(micro, { inicio: 21, fim: 21.2 });
+    acoes.energizar();
+    acoes.definirLigado(m.lamp, true);
+    acoes.definirLigado(micro, true);
+    expect(peca(m.inv).falha).toBeUndefined();
+    expect(estado.simulacao.saida.cargaAtendidaW).toBe(9);
+    // Das 20:00 às 23:00 em uma chamada só: a sobrecarga acontece e passa antes do último subpasso.
+    acoes.avancarTempo(180);
+    expect(estado.tempo.msUtc).toBe(VINTE_HORAS + 180 * 60_000);
+    expect(estado.simulacao.saida.avisos).not.toContain('sobrecarga');
+    expect(peca(m.inv).falha).toBe('sobrecarga');
+    // O evento é do subpasso em que aconteceu: o que termina às 21:05.
+    expect(estado.simulacao.eventos).toEqual([{ codigo: 'sobrecarga', uids: [m.inv], msUtc: VINTE_HORAS + 65 * 60_000 }]);
+    // Em falha, o inversor não atendeu mais nada até o fim da chamada.
+    expect(estado.simulacao.saida.cargaAtendidaW).toBe(0);
+    acoes.sairDoTutorial();
   });
 });

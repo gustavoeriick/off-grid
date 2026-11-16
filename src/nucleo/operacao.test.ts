@@ -3,13 +3,14 @@ import { CATALOGO } from '../catalogo';
 import type { Catalogo, Item, Protecao } from '../catalogo/tipos';
 import { cenarioPlanoCorrigido, CASA_INICIAL } from './cenarios';
 import { analisarCircuito } from './circuito';
-import { estadoInicial, passoSimulacao } from './eletrica';
+import { estadoInicial, estadoPlaca, infoBanco, passoSimulacao, RENDIMENTO_MPPT } from './eletrica';
 import {
-  aplicarConsequencias, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao, bateriaPresente, caboInterrompido, consertar,
-  correntesDeOperacao, estadoDaProtecao, inversorOperando, polosTrocados, projetoVivo, sequenciaDeDesenergizar,
-  sequenciaDeEnergizar, type Consequencia,
+  analiseSoDoControlador, aplicarConsequencias, aplicarManobras, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao,
+  bateriaPresente, caboInterrompido, consertar, correntesDeOperacao, estadoDaProtecao, inversaoNaMontagem, inversorOperando,
+  passoDeOperacao, planoDeDesenergizar, polosTrocados, projetoVivo, sequenciaDeDesenergizar, sequenciaDeEnergizar,
+  type Consequencia,
 } from './operacao';
-import type { Cabo, CondicaoPlaca, Dano, EstadoProtecao, Projeto, SaidaPasso } from './tipos';
+import type { Cabo, CondicaoPlaca, Dano, EstadoProtecao, EstadoSim, Projeto, SaidaPasso } from './tipos';
 
 // ---------------------------------------------------------------- Montagem dos casos
 
@@ -745,5 +746,341 @@ describe('sequenciaDeEnergizar e sequenciaDeDesenergizar', () => {
     }
     expect(atual.cabos.every((c) => !caboInterrompido(c, atual, CATALOGO))).toBe(true);
     expect(situacao(atual, ESCURO).saida.cargaAtendidaW).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------- Correções da revisão da fase 8
+
+describe('revisão da fase 8: desligar sem deixar o controlador sem bateria', () => {
+  const plano = (p: Projeto) => planoDeDesenergizar(p, CATALOGO, analisarCircuito(p, CATALOGO));
+
+  it('placas ligadas direto no controlador, sem chave: a proteção da bateria dele fica fechada, com aviso', () => {
+    const p = tutorial();
+    const { manobras, aviso } = plano(p);
+    expect(manobras).toEqual([
+      { tipo: 'inversor', uid: 'inv', ligado: false },
+      { tipo: 'protecao', cabo: 'c1', indice: 0, estado: 'aberta' },
+    ]);
+    expect(aviso).toEqual({
+      codigo: 'placas-sem-chave',
+      uids: ['ctl', 'c3'],
+      texto: 'O controlador ficou ligado à bateria: as placas dele não têm disjuntor. Para desligar tudo, solte ou cubra as placas antes.',
+    });
+    // Aplicado, com sol: nada queima. Com a sequência antiga (c3 também aberto), o controlador queimava.
+    expect(codigos(situacao(aplicarManobras(p, manobras)))).toEqual([]);
+    const antiga = aplicarManobras(p, [...manobras, { tipo: 'protecao', cabo: 'c3', indice: 0, estado: 'aberta' }]);
+    expect(codigos(situacao(antiga))).toEqual(['controlador-sem-bateria']);
+    expect(sequenciaDeDesenergizar(p, CATALOGO, analisarCircuito(p, CATALOGO))).toEqual(manobras);
+  });
+
+  it('vale também de noite (o sol nasce depois) e some com um disjuntor nas placas', () => {
+    expect(codigos(situacao(tutorial(), ESCURO))).toEqual([]);
+    expect(plano(tutorial()).aviso?.codigo).toBe('placas-sem-chave');
+    const comDisjuntor = com(tutorial(), (x) => { x.cabos[4].protecoes = [DISJ_CC_32]; });
+    expect(plano(comDisjuntor).aviso).toBeNull();
+    expect(plano(comDisjuntor).manobras.map((m) => (m.tipo === 'protecao' ? m.cabo : m.uid))).toEqual(['inv', 'c5', 'c1', 'c3']);
+  });
+
+  it('a proteção da bateria do inversor também fica fechada quando o controlador depende dela', () => {
+    // O controlador ligado nos terminais de bateria do inversor: a bateria só chega a ele pelo cabo c1.
+    const p = com(tutorial(), (x) => {
+      x.cabos[2].para = { disp: 'inv', terminal: 'batPos' };
+      x.cabos[2].protecoes = [];
+      x.cabos[3].para = { disp: 'inv', terminal: 'batNeg' };
+    });
+    const { manobras, aviso } = plano(p);
+    expect(manobras).toEqual([{ tipo: 'inversor', uid: 'inv', ligado: false }]);
+    expect(aviso?.uids).toEqual(['ctl', 'c1']);
+  });
+
+  it('controlador que já está sem bateria, ou sem placas ligadas, não segura nada', () => {
+    const semPlacas = com(tutorial(), (x) => { x.cabos = x.cabos.filter((c) => c.uid !== 'c5' && c.uid !== 'c6'); });
+    expect(plano(semPlacas).aviso).toBeNull();
+    expect(plano(semPlacas).manobras.map((m) => (m.tipo === 'protecao' ? m.cabo : m.uid))).toEqual(['inv', 'c1', 'c3']);
+  });
+});
+
+describe('revisão da fase 8: ligar não fecha as placas de um controlador sem bateria', () => {
+  const tudoAberto = (): Projeto =>
+    com(tutorial(), (x) => {
+      x.cabos[4].protecoes = [DISJ_CC_32];
+      for (const c of x.cabos) if (c.protecoes.length > 0) c.estados = c.protecoes.map(() => 'aberta');
+      x.dispositivos.find((d) => d.uid === 'inv')!.ligado = false;
+    });
+  const sequencia = (p: Projeto) => sequenciaDeEnergizar(p, CATALOGO, analisarCircuito(p, CATALOGO));
+
+  it('fusível da bateria do controlador queimado: recusa e diz o que trocar primeiro', () => {
+    const p = com(tudoAberto(), (x) => estados(x, 'c3', 'queimada'));
+    const { manobras, recusa } = sequencia(p);
+    expect(manobras).toEqual([]);
+    expect(recusa?.codigo).toBe('controlador-sem-bateria');
+    expect(recusa?.uids).toEqual(['ctl', 'c3']);
+    expect(recusa?.texto).toBe(
+      `O fusível da bateria do controlador de carga está queimado (${CATALOGO.get(FUSIVEL)!.nome}). Troque o fusível antes de ligar o sistema: com as placas ligadas e sem bateria, o controlador queima.`,
+    );
+    // Era isto que a sequência antiga fazia: fechar c1 e c5, com c3 queimado. Com sol, o controlador queima.
+    const antiga = com(p, (x) => { estados(x, 'c1', 'fechada'); estados(x, 'c5', 'fechada'); });
+    expect(codigos(situacao(antiga))).toEqual(['controlador-sem-bateria']);
+  });
+
+  it('disjuntor queimado e cabo queimado no caminho também recusam, cada um com o seu texto', () => {
+    const disjuntor = com(tudoAberto(), (x) => { x.cabos[2].protecoes = [DISJ_CA]; estados(x, 'c3', 'queimada'); });
+    expect(sequencia(disjuntor).recusa?.texto).toContain(`A proteção da bateria do controlador de carga está queimada (${CATALOGO.get(DISJ_CA)!.nome})`);
+    const cabo = com(tudoAberto(), (x) => { x.cabos[3].queimado = dano; });
+    expect(sequencia(cabo).recusa).toMatchObject({ codigo: 'controlador-sem-bateria', uids: ['ctl', 'c4'] });
+    expect(sequencia(cabo).recusa?.texto).toContain('O cabo entre a bateria e o controlador de carga está queimado');
+  });
+
+  it('trocado o fusível (volta aberto), a sequência liga tudo; sem chave nas placas não há o que recusar', () => {
+    const trocado = consertar(com(tudoAberto(), (x) => estados(x, 'c3', 'queimada')), { tipo: 'protecao', cabo: 'c3', indice: 0 });
+    const { manobras, recusa } = sequencia(trocado);
+    expect(recusa).toBeNull();
+    expect(manobras.map((m) => (m.tipo === 'protecao' ? m.cabo : m.uid))).toEqual(['c1', 'c3', 'c5', 'inv']);
+    const semChave = com(tutorial(), (x) => { estados(x, 'c1', 'aberta'); estados(x, 'c3', 'queimada'); });
+    expect(sequencia(semChave).recusa).toBeNull();
+  });
+});
+
+describe('revisão da fase 8: bateria invertida no controlador', () => {
+  /** A bateria certa no inversor e de polos trocados no controlador; tudo aberto, com disjuntor nas placas. */
+  const invertida = (): Projeto =>
+    com(tutorial(), (x) => {
+      x.cabos[2].para = { disp: 'b1', terminal: 'neg' };
+      x.cabos[3].para = { disp: 'b1', terminal: 'pos' };
+      x.cabos[4].protecoes = [DISJ_CC_32];
+      for (const c of x.cabos) if (c.protecoes.length > 0) c.estados = c.protecoes.map(() => 'aberta');
+    });
+
+  it('a análise de projeto não acusa, mas a montagem tem os polos trocados no controlador', () => {
+    const p = invertida();
+    expect(analisarCircuito(p, CATALOGO).problemas.map((x) => x.codigo)).not.toContain('bateria-invertida');
+    // Com as chaves abertas, nada está vivo; olhando a montagem inteira, os polos estão trocados.
+    expect(polosTrocados(p, CATALOGO, 'ctl')).toBe(false);
+    expect(inversaoNaMontagem(p, CATALOGO, 'ctl')).toEqual(['b1']);
+    expect(inversaoNaMontagem(p, CATALOGO, 'inv')).toBeNull();
+    expect(inversaoNaMontagem(tutorial(), CATALOGO, 'ctl')).toBeNull();
+  });
+
+  it('`sequenciaDeEnergizar` recusa, em vez de fechar as chaves e queimar o controlador', () => {
+    const p = invertida();
+    const { manobras, recusa } = sequenciaDeEnergizar(p, CATALOGO, analisarCircuito(p, CATALOGO));
+    expect(manobras).toEqual([]);
+    expect(recusa?.codigo).toBe('bateria-invertida');
+    expect(recusa?.uids).toEqual(['ctl', 'b1']);
+    expect(recusa?.texto).toContain('polos trocados');
+    // Fechando tudo à mão, com sol, é o controlador que queima.
+    const fechado = com(p, (x) => { for (const c of x.cabos) delete c.estados; });
+    expect(situacao(fechado).consequencias.map((c) => `${c.codigo}:${c.uids.join(',')}`)).toEqual(['bateria-invertida:ctl']);
+  });
+});
+
+describe('revisão da fase 8: corrente de operação com sinal', () => {
+  const MEIA_CARGA: EstadoSim = { soc: 0.5, cortado: false, emRede: false };
+  /**
+   * 12 V, bateria de lítio, controlador MPPT de 40 A com duas placas de 585 W em paralelo, disjuntor CC de 80 A no cabo
+   * do inversor (c1) e no do controlador (c3), e só o ventilador. `noInversor`: o controlador ligado nos terminais de
+   * bateria do inversor, em vez de nos polos da bateria.
+   */
+  const carregando = (noInversor = false): Projeto =>
+    montar(
+      { p1: 'placa-renepv-585', p2: 'placa-renepv-585', b1: 'bat-belifou-12v-100', inv: 'inv-aiker-500-12v-110', ctl: 'ctl-epever-xtra4210n', vent: 'ap-ventilador' },
+      [
+        ['b1.pos', 'inv.batPos', ['prot-disjuntor-cc-80']], ['b1.neg', 'inv.batNeg'],
+        ['ctl.batPos', noInversor ? 'inv.batPos' : 'b1.pos', ['prot-disjuntor-cc-80']], ['ctl.batNeg', noInversor ? 'inv.batNeg' : 'b1.neg'],
+        ['p1.pos', 'ctl.pvPos', [], 'cabo-solar-6'], ['p1.neg', 'ctl.pvNeg', [], 'cabo-solar-6'],
+        ['p2.pos', 'ctl.pvPos', [], 'cabo-solar-6'], ['p2.neg', 'ctl.pvNeg', [], 'cabo-solar-6'],
+        ['inv.caSaida', 'vent.plug', [], 'cabo-ca-2p5'],
+      ],
+    );
+  const luz = (g1: number, g2 = g1): ReadonlyMap<string, CondicaoPlaca> => new Map([['p1', { g: g1, tAmb: 25 }], ['p2', { g: g2, tAmb: 25 }]]);
+  const medir = (p: Projeto, placas: ReadonlyMap<string, CondicaoPlaca>, comPlacas = true) => {
+    const viva = analisarCircuito(projetoVivo(p, CATALOGO), CATALOGO);
+    const saida = passoSimulacao(p, CATALOGO, viva, MEIA_CARGA, { dtHoras: 0, redeDisponivel: false, horaLocal: null, placas, inversorLigado: true });
+    const banco = infoBanco(viva.sistema!, p, CATALOGO)!;
+    return {
+      saida, banco,
+      correntes: correntesDeOperacao(p, CATALOGO, viva, saida, null, comPlacas ? placas : undefined),
+      consequencias: avaliarOperacao(p, CATALOGO, viva, saida, placas, MS),
+    };
+  };
+
+  it('a bateria carregando recebe corrente: o cabo do inversor leva só o que ele consome, e o disjuntor de 80 A não desarma', () => {
+    for (const g of [600, 800, 1000]) {
+      const { saida, banco, correntes, consequencias } = medir(carregando(), luz(g));
+      expect(saida.bateriaW).toBeGreaterThan(0);
+      expect(saida.cargaAtendidaW).toBeGreaterThan(0);
+      const doControlador = saida.pvW / banco.tensaoCarga;
+      const daBateria = saida.bateriaW / banco.tensaoRef;
+      expect(correntes.get('c3')).toBeCloseTo(doControlador, 9);
+      // Árvore com o sorvedouro no BAT+ do inversor: inversor ← bateria ← controlador. No cabo c1 passa a soma com sinal.
+      expect(correntes.get('c1')).toBeCloseTo(Math.abs(doControlador - daBateria), 9);
+      // Antes, as duas correntes se somavam em c1 (mais de 80 A) e o disjuntor desarmava com um ventilador ligado.
+      expect(doControlador + daBateria).toBeGreaterThan(80);
+      expect(correntes.get('c1')!).toBeLessThan(80);
+      expect(consequencias.map((c) => c.codigo)).toEqual([]);
+    }
+  });
+
+  it('com o controlador no barramento do inversor, o cabo da bateria leva abs(bateriaW) / tensaoRef', () => {
+    const { saida, banco, correntes, consequencias } = medir(carregando(true), luz(800));
+    expect(saida.bateriaW).toBeGreaterThan(0);
+    expect(correntes.get('c1')).toBeCloseTo(saida.bateriaW / banco.tensaoRef, 9);
+    expect(correntes.get('c2')).toBeCloseTo(saida.bateriaW / banco.tensaoRef, 9);
+    expect(correntes.get('c3')).toBeCloseTo(saida.pvW / banco.tensaoCarga, 9);
+    expect(consequencias.map((c) => c.codigo)).toEqual([]);
+  });
+
+  it('descarregando, o cabo da bateria leva abs(bateriaW) / tensaoRef, como antes', () => {
+    const { saida, banco, correntes } = medir(carregando(), luz(0));
+    expect(saida.bateriaW).toBeLessThan(0);
+    expect(correntes.get('c1')).toBeCloseTo(-saida.bateriaW / banco.tensaoRef, 9);
+    expect(correntes.get('c3')).toBe(0);
+  });
+
+  it('corrente por fileira: cada fileira leva a parte que entrega; sem a luz de cada placa, partes iguais', () => {
+    const p = carregando();
+    const placa = CATALOGO.get('placa-renepv-585');
+    if (placa?.categoria !== 'placa') throw new Error('placa fora do catálogo');
+    const { saida, correntes } = medir(p, luz(800, 300));
+    const total = saida.pvW / RENDIMENTO_MPPT / saida.pvTensao;
+    const i1 = estadoPlaca(placa, 800, 25).i;
+    const i2 = estadoPlaca(placa, 300, 25).i;
+    expect(correntes.get('c5')).toBeCloseTo((total * i1) / (i1 + i2), 9);
+    expect(correntes.get('c7')).toBeCloseTo((total * i2) / (i1 + i2), 9);
+    expect(correntes.get('c5')!).toBeGreaterThan(correntes.get('c7')!);
+    expect(correntes.get('c6')).toBeCloseTo(correntes.get('c5')!, 9);
+    // Sem as condições das placas (simplificação): a divisão igual.
+    const iguais = medir(p, luz(800, 300), false).correntes;
+    expect(iguais.get('c5')).toBeCloseTo(total / 2, 9);
+    expect(iguais.get('c7')).toBeCloseTo(total / 2, 9);
+  });
+});
+
+describe('revisão da fase 8: controlador com bateria e sol, e o inversor sem bateria', () => {
+  const SESSENTA: EstadoSim = { soc: 0.6, cortado: false, emRede: false };
+  /** O tutorial com o fusível do inversor (c1) aberto: a bateria chega ao controlador, não ao inversor. */
+  const soControlador = (): Projeto => com(tutorial(), (x) => estados(x, 'c1', 'aberta'));
+  const entrada = (placas: ReadonlyMap<string, CondicaoPlaca>, dtHoras = 0) =>
+    ({ dtHoras, redeDisponivel: false, horaLocal: null, placas, inversorLigado: true });
+
+  it('a análise viva fica sem banco; a análise "só do controlador" acha o banco e a fileira dele', () => {
+    const p = soControlador();
+    const viva = analisarCircuito(projetoVivo(p, CATALOGO), CATALOGO);
+    expect(viva.sistema?.banco).toEqual([]);
+    expect(bateriaPresente(p, CATALOGO, 'ctl')).toBe(true);
+    const so = analiseSoDoControlador(p, CATALOGO, viva);
+    expect(so?.sistema).toMatchObject({ inversor: 'inv', controlador: 'ctl', banco: [['b1']], fileiras: [['p1']], cargas: [], redeLigada: false });
+    // Com banco no inversor, ou com o controlador sem bateria ou sem fileira: não é o caso.
+    const tudoFechado = tutorial();
+    expect(analiseSoDoControlador(tudoFechado, CATALOGO, analisarCircuito(tudoFechado, CATALOGO))).toBeNull();
+    const semBateria = com(p, (x) => estados(x, 'c3', 'aberta'));
+    expect(analiseSoDoControlador(semBateria, CATALOGO, analisarCircuito(projetoVivo(semBateria, CATALOGO), CATALOGO))).toBeNull();
+    const semPlaca = com(p, (x) => { x.cabos = x.cabos.filter((c) => c.uid !== 'c6'); });
+    expect(analiseSoDoControlador(semPlaca, CATALOGO, analisarCircuito(projetoVivo(semPlaca, CATALOGO), CATALOGO))).toBeNull();
+  });
+
+  it('as placas carregam a bateria pelo controlador; nenhum aparelho é atendido e o inversor não consome', () => {
+    const p = soControlador();
+    const viva = analisarCircuito(projetoVivo(p, CATALOGO), CATALOGO);
+    // O passo de antes, só com a análise viva: sem banco, nada acontece.
+    const antes = passoSimulacao(p, CATALOGO, viva, SESSENTA, entrada(SOL, 1 / 12));
+    expect(antes.pvW).toBe(0);
+    expect(antes.estado.soc).toBe(0.6);
+    const saida = passoDeOperacao(p, CATALOGO, viva, SESSENTA, entrada(SOL, 1 / 12));
+    expect(saida.pvW).toBeGreaterThan(0);
+    expect(saida.bateriaW).toBe(saida.pvW);
+    expect(saida.estado.soc).toBeGreaterThan(0.6);
+    expect(saida.cargaAtendidaW).toBe(0);
+    expect(saida.redeW).toBe(0);
+    expect(saida.origem).toBe('nenhuma');
+    // Para o inversor continua valendo o aviso de sem bateria, e a carga pedida é a dos aparelhos ligados.
+    expect(saida.avisos).toContain('sem-bateria');
+    expect(saida.cargaPedidaW).toBe(antes.cargaPedidaW);
+    // Sem sol, nada entra; e nada se estraga em nenhum dos dois casos.
+    expect(passoDeOperacao(p, CATALOGO, viva, SESSENTA, entrada(ESCURO, 1 / 12)).bateriaW).toBe(0);
+    expect(avaliarOperacao(p, CATALOGO, viva, saida, SOL, MS)).toEqual([]);
+  });
+
+  it('fora desse estado, `passoDeOperacao` é o próprio `passoSimulacao`', () => {
+    const p = tutorial();
+    const viva = analisarCircuito(p, CATALOGO);
+    for (const placas of [SOL, ESCURO]) {
+      expect(passoDeOperacao(p, CATALOGO, viva, SESSENTA, entrada(placas, 1 / 12))).toEqual(passoSimulacao(p, CATALOGO, viva, SESSENTA, entrada(placas, 1 / 12)));
+    }
+  });
+
+  it('as correntes de operação e o arco no conector valem nesse estado', () => {
+    const p = soControlador();
+    const viva = analisarCircuito(projetoVivo(p, CATALOGO), CATALOGO);
+    const saida = passoDeOperacao(p, CATALOGO, viva, SESSENTA, entrada(SOL));
+    const correntes = correntesDeOperacao(p, CATALOGO, viva, saida, null, SOL);
+    const banco = infoBanco(analiseSoDoControlador(p, CATALOGO, viva)!.sistema!, p, CATALOGO)!;
+    // Controlador PWM: a corrente das placas é a de carga. O sorvedouro do banco é o controlador.
+    expect(correntes.get('c5')).toBeCloseTo(saida.pvW / banco.tensaoCarga, 9);
+    expect(correntes.get('c6')).toBeCloseTo(saida.pvW / banco.tensaoCarga, 9);
+    expect(correntes.get('c3')).toBeCloseTo(saida.bateriaW / banco.tensaoRef, 9);
+    expect(correntes.get('c4')).toBeCloseTo(saida.bateriaW / banco.tensaoRef, 9);
+    expect(correntes.get('c1')).toBe(0);
+    expect(correntes.get('c7')).toBe(0);
+    const arco = arcoNoConector(p, CATALOGO, { tipo: 'apagar-cabo', cabo: 'c5' }, correntes, MS);
+    expect(arco?.codigo).toBe('arco-no-conector');
+    expect(arco?.mudancas).toEqual([{ tipo: 'peca-queimada', uid: 'p1', dano: { codigo: 'arco-no-conector', msUtc: MS } }]);
+  });
+});
+
+describe('revisão da fase 8: baterias em paralelo com uma invertida', () => {
+  /** b1 no inversor (fusível em c1) e b2 de ponta-cabeça sobre b1: c3 liga b1.pos em b2.neg, c4 liga b1.neg em b2.pos. */
+  const invertida = (noLaco: string[] = [], comInversor = true): Projeto =>
+    montar(
+      { b1: 'bat-moura-12mn105', b2: 'bat-moura-12mn105', ...(comInversor ? { inv: 'inv-aiker-500-12v-110' } : {}) },
+      [
+        ...(comInversor ? ([['b1.pos', 'inv.batPos', [FUSIVEL]], ['b1.neg', 'inv.batNeg']] as Ligacao[]) : []),
+        ['b1.pos', 'b2.neg', noLaco], ['b1.neg', 'b2.pos'],
+      ],
+    );
+  const doCurto = (p: Projeto) => situacao(p, ESCURO).consequencias.filter((c) => c.codigo === 'curto-na-bateria');
+
+  it('sem proteção no laço: queimam os dois cabos entre as baterias, e não o cabo do inversor', () => {
+    const curto = doCurto(invertida());
+    expect(curto).toHaveLength(1);
+    expect(curto[0].mudancas.map((m) => (m.tipo === 'cabo-queimado' ? m.uid : '?')).sort()).toEqual(['c3', 'c4']);
+    // Os cabos na ordem do laço (do negativo de cada bateria ao positivo da seguinte), depois as baterias.
+    expect(curto[0].uids).toEqual(['c4', 'c3', 'b1', 'b2']);
+    expect(curto[0].mudancas.every((m) => m.tipo === 'cabo-queimado' && m.dano.codigo === 'curto-na-bateria')).toBe(true);
+  });
+
+  it('com proteção de corrente contínua fechada no laço: ela abre (o fusível queima, o disjuntor desarma)', () => {
+    expect(doCurto(invertida([FUSIVEL]))[0].mudancas).toEqual([{ tipo: 'protecao', cabo: 'c3', indice: 0, estado: 'queimada' }]);
+    expect(doCurto(invertida([DISJ_CC_125]))[0].mudancas).toEqual([{ tipo: 'protecao', cabo: 'c3', indice: 0, estado: 'aberta' }]);
+    // Disjuntor de corrente alternada não conta como proteção do laço.
+    expect(doCurto(invertida([DISJ_CA]))[0].mudancas.map((m) => m.tipo)).toEqual(['cabo-queimado', 'cabo-queimado']);
+  });
+
+  it('não depende do inversor nem do botão dele', () => {
+    const desligado = com(invertida(), (x) => { x.dispositivos.find((d) => d.uid === 'inv')!.ligado = false; });
+    expect(doCurto(desligado)).toHaveLength(1);
+    // Só as duas baterias, sem inversor nenhum no projeto (c1 e c2 são os cabos entre elas).
+    const curto = doCurto(invertida([], false));
+    expect(curto).toHaveLength(1);
+    expect(curto[0].mudancas.map((m) => (m.tipo === 'cabo-queimado' ? m.uid : '?')).sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('com a proteção do laço aberta nada acontece; aplicado o dano, o laço some', () => {
+    expect(doCurto(com(invertida([FUSIVEL]), (x) => estados(x, 'c3', 'aberta')))).toEqual([]);
+    const p = invertida();
+    expect(doCurto(aplicarConsequencias(p, doCurto(p)))).toEqual([]);
+  });
+
+  it('paralelo certo e série certa não são laço', () => {
+    const paralelo = montar(
+      { b1: 'bat-moura-12mn105', b2: 'bat-moura-12mn105', inv: 'inv-aiker-500-12v-110' },
+      [['b1.pos', 'inv.batPos'], ['b1.neg', 'inv.batNeg'], ['b1.pos', 'b2.pos'], ['b1.neg', 'b2.neg']],
+    );
+    expect(doCurto(paralelo)).toEqual([]);
+    const serie = montar(
+      { b1: 'bat-moura-12mn105', b2: 'bat-moura-12mn105', inv: 'inv-anenji-3kw-24v-127' },
+      [['b1.pos', 'inv.batPos'], ['b1.neg', 'b2.pos'], ['b2.neg', 'inv.batNeg']],
+    );
+    expect(doCurto(serie)).toEqual([]);
   });
 });

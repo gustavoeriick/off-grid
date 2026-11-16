@@ -43,16 +43,16 @@ function fazerOTutorial(): Pecas {
   ordem.push(['placa', () => (pecas.placa = acoes.adicionarDispositivo('placa-resun-100', em('telhado-quartinho')))]);
   ordem.push(['bateria', () => (pecas.bat = acoes.adicionarDispositivo('bat-moura-12mn105', em('piso-quartinho', -0.5)))]);
   ordem.push(['inversor', () => (pecas.inv = acoes.adicionarDispositivo('inv-aiker-500-12v-110', em('piso-quartinho', 0.5)))]);
-  ordem.push(['cabos-da-bateria', () => {
-    pecas.positivo = liga(pecas.bat, 'pos', pecas.inv, 'batPos');
-    liga(pecas.bat, 'neg', pecas.inv, 'batNeg');
-  }]);
+  // Cabo positivo, fusível nele e só então o negativo (seguranca.ts, `bateria-fusivel-no-positivo`).
+  ordem.push(['cabo-positivo', () => (pecas.positivo = liga(pecas.bat, 'pos', pecas.inv, 'batPos'))]);
   ordem.push(['fusivel', () => acoes.instalarProtecao(pecas.positivo, 'prot-fusivel-anl-100')]);
+  ordem.push(['cabo-negativo', () => liga(pecas.bat, 'neg', pecas.inv, 'batNeg')]);
+  // No controlador, a mesma ordem dentro de um passo: cabo positivo, disjuntor, cabo negativo.
   ordem.push(['controlador', () => {
     pecas.ctl = acoes.adicionarDispositivo('ctl-pwm-30a', em('parede-quartinho-fundo'));
     pecas.doControlador = liga(pecas.bat, 'pos', pecas.ctl, 'batPos');
-    liga(pecas.bat, 'neg', pecas.ctl, 'batNeg');
     acoes.instalarProtecao(pecas.doControlador, 'prot-disjuntor-cc-80');
+    liga(pecas.bat, 'neg', pecas.ctl, 'batNeg');
   }]);
   ordem.push(['aparelho', () => {
     pecas.vent = acoes.adicionarDispositivo('ap-ventilador', em('piso-quartinho', 1));
@@ -92,11 +92,13 @@ function entrar(hora: number): void {
 }
 
 describe('tutorial: os passos', () => {
-  it('13 passos, ids únicos, 8 na parte de montar e 5 na de ligar', () => {
+  it('14 passos, ids únicos, 9 na parte de montar e 5 na de ligar', () => {
     const passos = ROTEIRO_TUTORIAL.passos;
-    expect(passos).toHaveLength(13);
-    expect(new Set(passos.map((p) => p.id)).size).toBe(13);
-    expect(passos.filter((p) => p.parte === 'Parte 1: montar')).toHaveLength(8);
+    expect(passos).toHaveLength(14);
+    expect(new Set(passos.map((p) => p.id)).size).toBe(14);
+    expect(passos.filter((p) => p.parte === 'Parte 1: montar').map((p) => p.id)).toEqual([
+      'placa', 'bateria', 'inversor', 'cabo-positivo', 'fusivel', 'cabo-negativo', 'controlador', 'aparelho', 'sem-erros',
+    ]);
     expect(passos.filter((p) => p.parte === 'Parte 2: ligar').map((p) => p.id)).toEqual([
       'fechar-fusivel', 'fechar-controlador', 'cabos-da-placa', 'ligar-inversor', 'ligar-aparelho',
     ]);
@@ -122,6 +124,63 @@ describe('tutorial: os passos', () => {
     expect(passo('fechar-controlador').onde!(estado.projeto, CATALOGO)).toEqual([{ tipo: 'cabo', uid: pecas.doControlador }]);
     expect(passo('ligar-inversor').onde!(estado.projeto, CATALOGO)).toEqual([{ tipo: 'terminal', disp: pecas.inv, terminal: 'caSaida' }]);
     expect(passo('ligar-aparelho').onde!(estado.projeto, CATALOGO)).toEqual([{ tipo: 'terminal', disp: pecas.vent, terminal: 'plug' }]);
+  });
+
+  it('os cabos da bateria vêm na ordem positivo, proteção, negativo, e o realce acompanha', () => {
+    entrar(12);
+    const passo = (id: string) => ROTEIRO_TUTORIAL.passos.find((p) => p.id === id)!;
+    const onde = (id: string) => passo(id).onde!(estado.projeto, CATALOGO);
+    acoes.adicionarDispositivo('placa-resun-100', em('telhado-quartinho'));
+    const bat = acoes.adicionarDispositivo('bat-moura-12mn105', em('piso-quartinho', -0.5));
+    const inv = acoes.adicionarDispositivo('inv-aiker-500-12v-110', em('piso-quartinho', 0.5));
+    expect(passoDaVez()).toBe('cabo-positivo');
+    expect(onde('cabo-positivo')).toEqual([{ tipo: 'terminal', disp: bat, terminal: 'pos' }, { tipo: 'terminal', disp: inv, terminal: 'batPos' }]);
+    const positivo = liga(bat, 'pos', inv, 'batPos');
+    expect(passoDaVez()).toBe('fusivel');
+    expect(onde('fusivel')).toEqual([{ tipo: 'cabo', uid: positivo }]);
+    acoes.instalarProtecao(positivo, 'prot-fusivel-anl-100');
+    expect(passoDaVez()).toBe('cabo-negativo');
+    expect(onde('cabo-negativo')).toEqual([{ tipo: 'terminal', disp: bat, terminal: 'neg' }, { tipo: 'terminal', disp: inv, terminal: 'batNeg' }]);
+    liga(bat, 'neg', inv, 'batNeg');
+    expect(passoDaVez()).toBe('controlador');
+    // Controlador: os terminais do positivo, depois o cabo positivo (falta o disjuntor), depois os terminais do negativo.
+    const ctl = acoes.adicionarDispositivo('ctl-pwm-30a', em('parede-quartinho-fundo'));
+    expect(onde('controlador')).toEqual([{ tipo: 'terminal', disp: bat, terminal: 'pos' }, { tipo: 'terminal', disp: ctl, terminal: 'batPos' }]);
+    const doControlador = liga(bat, 'pos', ctl, 'batPos');
+    expect(onde('controlador')).toEqual([{ tipo: 'cabo', uid: doControlador }]);
+    acoes.instalarProtecao(doControlador, 'prot-disjuntor-cc-80');
+    expect(onde('controlador')).toEqual([{ tipo: 'terminal', disp: bat, terminal: 'neg' }, { tipo: 'terminal', disp: ctl, terminal: 'batNeg' }]);
+    expect(passoDaVez()).toBe('controlador');
+    liga(bat, 'neg', ctl, 'batNeg');
+    expect(passoDaVez()).toBe('aparelho');
+    expect(nadaQueimou()).toBe(true);
+  });
+
+  it('quem liga os dois cabos da bateria antes do fusível não fica preso: o passo do negativo já aparece feito', () => {
+    entrar(12);
+    acoes.adicionarDispositivo('placa-resun-100', em('telhado-quartinho'));
+    const bat = acoes.adicionarDispositivo('bat-moura-12mn105', em('piso-quartinho', -0.5));
+    const inv = acoes.adicionarDispositivo('inv-aiker-500-12v-110', em('piso-quartinho', 0.5));
+    const positivo = liga(bat, 'pos', inv, 'batPos');
+    liga(bat, 'neg', inv, 'batNeg');
+    expect(passoDaVez()).toBe('fusivel');
+    expect(ROTEIRO_TUTORIAL.passos.find((p) => p.id === 'cabo-negativo')!.feito(estado.projeto, estado.derivados, CATALOGO)).toBe(true);
+    acoes.instalarProtecao(positivo, 'prot-fusivel-anl-100');
+    expect(passoDaVez()).toBe('controlador');
+  });
+
+  it('o passo de pôr o fusível pede o inversor desligado', () => {
+    entrar(12);
+    const pecas = fazerOTutorial();
+    const passo = ROTEIRO_TUTORIAL.passos.find((p) => p.id === 'fechar-fusivel')!;
+    const momento = { solNoCeu: true, horaLocal: 12, bateriaCheia: false };
+    expect(passo.texto).toContain('inversor está desligado');
+    // Com o fusível fora e o inversor ligado, a frase do momento manda desligar antes.
+    acoes.definirLigado(pecas.vent, false);
+    acoes.alternarProtecao(pecas.positivo, 0);
+    expect(passo.agora!(estado.projeto, CATALOGO, momento)).toContain('desligue-o');
+    acoes.definirLigado(pecas.inv, false);
+    expect(passo.agora!(estado.projeto, CATALOGO, momento)).toBeNull();
   });
 
   it('de noite, o passo da placa diz que a corrente aparece com sol; de dia, não diz nada', () => {
@@ -246,9 +305,15 @@ describe('experimente errar', () => {
     expect(passoDoErro(id, 4)).toBe('desfazer');
     acoes.removerCabo(trocadoPos);
     acoes.removerCabo(trocadoNeg);
+    // Na ordem do texto: cabo positivo, fusível nele, cabo negativo; o realce acompanha.
+    const desfazer = erro(id).passos.find((p) => p.id === 'desfazer')!;
+    expect(desfazer.onde!(estado.projeto, CATALOGO)).toEqual([{ tipo: 'terminal', disp: pecas.bat, terminal: 'pos' }, { tipo: 'terminal', disp: pecas.inv, terminal: 'batPos' }]);
     const positivo = liga(pecas.bat, 'pos', pecas.inv, 'batPos');
-    liga(pecas.bat, 'neg', pecas.inv, 'batNeg');
+    expect(desfazer.onde!(estado.projeto, CATALOGO)).toEqual([{ tipo: 'cabo', uid: positivo }]);
     acoes.instalarProtecao(positivo, 'prot-fusivel-anl-100');
+    expect(desfazer.onde!(estado.projeto, CATALOGO)).toEqual([{ tipo: 'terminal', disp: pecas.bat, terminal: 'neg' }, { tipo: 'terminal', disp: pecas.inv, terminal: 'batNeg' }]);
+    expect(passoDoErro(id, 5)).toBe('desfazer');
+    liga(pecas.bat, 'neg', pecas.inv, 'batNeg');
     expect(passoDoErro(id, 5)).toBe('consertar');
     acoes.consertar({ tipo: 'dispositivo', uid: pecas.inv });
     acoes.alternarProtecao(positivo, 0);

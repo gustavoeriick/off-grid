@@ -371,6 +371,13 @@ function protegidoEFechado(cabo: Cabo, catalogo: Catalogo): boolean {
 const algumaFechada = (cabo: Cabo, catalogo: Catalogo): boolean => chavesDeCorrente(cabo, catalogo).some((i) => estadoDe(cabo, i) === 'fechada');
 const algumaQueimada = (cabo: Cabo, catalogo: Catalogo): boolean => chavesDeCorrente(cabo, catalogo).some((i) => estadoDe(cabo, i) === 'queimada');
 
+/** Cabos do positivo da bateria ao BAT+ do inversor, com ou sem o cabo negativo ao lado (passos 4 e 5 da montagem). */
+function cabosPositivosAoInversor(p: Projeto, c: Catalogo): Cabo[] {
+  const baterias = dispositivosQue(p, c, (i) => i.categoria === 'bateria');
+  const inversores = dispositivosQue(p, c, ehInversorDeVerdade);
+  return baterias.flatMap((b) => inversores.flatMap((i) => caboEntre(p, b.uid, 'pos', i.uid, 'batPos') ?? []));
+}
+
 /** Cabos positivos da bateria ao inversor (só os pares completos, positivo com positivo). */
 const positivosDoInversor = (p: Projeto, c: Catalogo): Cabo[] => cabosDoBanco(p, c, ehInversorDeVerdade, BAT).map((par) => par.pos);
 /** Cabos positivos da bateria ao controlador. */
@@ -393,7 +400,7 @@ const inversorFuncionando = (d: Dispositivo): boolean => d.ligado && d.falha ===
 
 const inteiro = (n: number): string => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(n);
 
-/** Os passos da parte "Montar" (1 a 8) e da parte "Ligar" (9 a 13). */
+/** Os passos da parte "Montar" (1 a 9) e da parte "Ligar" (10 a 14). */
 const MONTAR = 'Parte 1: montar';
 const LIGAR = 'Parte 2: ligar';
 
@@ -438,18 +445,18 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       onde: () => [superficie('piso-quartinho')],
     },
     {
-      id: 'cabos-da-bateria',
+      id: 'cabo-positivo',
       parte: MONTAR,
-      titulo: 'Ligue a bateria ao inversor',
+      titulo: 'Ligue o cabo positivo da bateria ao inversor',
       texto:
-        'Puxe um cabo do positivo (+) da bateria até o BAT+ do inversor e outro do negativo (−) até o BAT−: clique em um terminal e arraste até o outro. Positivo com positivo, negativo com negativo; invertido, o inversor queima.',
-      dica: 'Na vida real, confira a polaridade com o multímetro antes de apertar o último terminal, use ferramenta isolada e nunca deixe metal encostar nos dois polos da bateria: ela entrega centenas de ampères em um curto.',
+        'Puxe um cabo do positivo (+) da bateria até o BAT+ do inversor: clique em um terminal e arraste até o outro. É o primeiro dos dois cabos da bateria: o fusível entra nele antes de o cabo negativo ser ligado. Positivo com positivo; invertido, o inversor queima.',
+      dica: 'Na vida real, use ferramenta isolada, aperte um terminal de cada vez e nunca deixe metal encostar nos dois polos da bateria: ela entrega centenas de ampères em um curto.',
       categoria: 'cabo',
-      feito: (p, _d, c) => cabosDoBanco(p, c, ehInversorDeVerdade, BAT).length > 0,
+      feito: (p, _d, c) => cabosPositivosAoInversor(p, c).length > 0,
       onde: (p, c) => {
         const b = primeiro(p, c, bateriaDeChumbo12);
         const i = primeiro(p, c, inversor12DeOndaPura);
-        return b && i ? ligacoesQueFaltam(p, [[b.uid, 'pos', i.uid, 'batPos'], [b.uid, 'neg', i.uid, 'batNeg']]) : [];
+        return b && i ? ligacoesQueFaltam(p, [[b.uid, 'pos', i.uid, 'batPos']]) : [];
       },
     },
     {
@@ -457,19 +464,33 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       parte: MONTAR,
       titulo: 'Ponha o fusível no cabo positivo, ainda fora do lugar',
       texto:
-        'O fusível é o ponto fraco de propósito: ele queima quando passa corrente demais, antes de o cabo esquentar e pegar fogo. Fica no cabo positivo, o mais perto possível da bateria. Arraste o fusível do catálogo e solte em cima do cabo positivo. Ele entra fora do porta-fusível (a base em que o fusível encaixa): assim a corrente ainda não passa. Ele vai para o lugar só na hora de ligar.',
-      dica: 'Na vida real, o fusível é instalado antes de o cabo ser ligado ao inversor, e o manual do controlador manda não pôr o fusível no lugar enquanto se faz a fiação. Ele precisa ser menor do que o cabo aguenta; se não for, o consultor avisa. Este anúncio vem sem o porta-fusível, que é comprado à parte.',
+        'O fusível é o ponto fraco de propósito: ele queima quando passa corrente demais, antes de o cabo esquentar e pegar fogo. Fica no cabo positivo, o mais perto possível da bateria. Arraste o fusível do catálogo e solte em cima do cabo positivo. Ele entra fora do porta-fusível (a base em que o fusível encaixa): assim a corrente ainda não passa. Ele vai para o lugar só na hora de ligar, com o inversor desligado.',
+      dica: 'Na vida real, o fusível vai no cabo antes de o cabo ser apertado no inversor. Aqui o cabo vem antes porque o fusível é solto em cima dele; fora do porta-fusível, é como se o cabo ainda não chegasse ao inversor. O manual do controlador manda não pôr o fusível no lugar enquanto se faz a fiação. Ele precisa ser menor do que o cabo aguenta; se não for, o consultor avisa. Este anúncio vem sem o porta-fusível, que é comprado à parte.',
       itemId: 'prot-fusivel-anl-100',
-      feito: (p, _d, c) =>
-        cabosDoBanco(p, c, ehInversorDeVerdade, BAT).some((par) => temProtecao(par.pos, c, 'fusivel') || temProtecao(par.pos, c, 'disjuntorCC')),
-      onde: (p, c) => positivosDoInversor(p, c).map((cabo) => realceDoCabo(cabo.uid)),
+      feito: (p, _d, c) => cabosPositivosAoInversor(p, c).some((cabo) => temProtecao(cabo, c, 'fusivel') || temProtecao(cabo, c, 'disjuntorCC')),
+      onde: (p, c) => cabosPositivosAoInversor(p, c).map((cabo) => realceDoCabo(cabo.uid)),
+    },
+    {
+      id: 'cabo-negativo',
+      parte: MONTAR,
+      titulo: 'Ligue o cabo negativo da bateria ao inversor',
+      texto:
+        'Agora puxe o segundo cabo, do negativo (−) da bateria até o BAT− do inversor. Negativo com negativo. Com o fusível fora do lugar, a corrente ainda não passa: o circuito da bateria só fecha na parte de ligar.',
+      dica: 'Na vida real, este é o último terminal: antes de apertá-lo, confira a polaridade com o multímetro. A cor do cabo ajuda, mas não garante. Ferramenta isolada e um polo de cada vez.',
+      categoria: 'cabo',
+      feito: (p, _d, c) => cabosDoBanco(p, c, ehInversorDeVerdade, BAT).length > 0,
+      onde: (p, c) => {
+        const b = primeiro(p, c, bateriaDeChumbo12);
+        const i = primeiro(p, c, inversor12DeOndaPura);
+        return b && i ? ligacoesQueFaltam(p, [[b.uid, 'neg', i.uid, 'batNeg']]) : [];
+      },
     },
     {
       id: 'controlador',
       parte: MONTAR,
       titulo: 'Instale o controlador de carga e ligue na bateria',
       texto:
-        'A placa não pode ser ligada direto na bateria: sem controle, ela sobrecarrega a bateria e a estraga. O controlador de carga fica entre as duas e corta a carga na hora certa. Arraste-o para a parede do fundo e ligue o BAT+ dele no + da bateria e o BAT− no −. Depois proteja esse cabo positivo: arraste o disjuntor CC de 80 A, da aba Proteções, para cima dele. O disjuntor é uma chave que desliga sozinha com corrente demais e se liga de novo pela alavanca; ele entra aberto, sem deixar a corrente passar.',
+        'A placa não pode ser ligada direto na bateria: sem controle, ela sobrecarrega a bateria e a estraga. O controlador de carga fica entre as duas e corta a carga na hora certa. Arraste-o para a parede do fundo e ligue o BAT+ dele no + da bateria. Proteja esse cabo positivo antes de ligar o segundo: arraste o disjuntor CC de 80 A, da aba Proteções, para cima dele. Só então ligue o BAT− no −. O disjuntor é uma chave que desliga sozinha com corrente demais e se liga de novo pela alavanca; ele entra aberto, sem deixar a corrente passar.',
       dica: 'O controlador é ligado primeiro na bateria e só depois na placa: é pela bateria que ele descobre se o sistema é de 12 ou de 24 V. Todo cabo que sai do polo positivo da bateria precisa de proteção própria, perto dela. O controlador carrega com até 30 A, e a proteção fica acima disso com folga: no catálogo, a menor que serve é a de 80 A, que ainda protege este cabo de 35 mm² (ele aguenta 155 A). Na compra, um disjuntor CC de 40 A, se o manual do controlador indicar, faz o mesmo papel.',
       itemId: 'ctl-pwm-30a',
       feito: (p, _d, c) =>
@@ -479,11 +500,11 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
         const b = primeiro(p, c, bateriaDeChumbo12);
         if (!ctl) return [superficie('parede-quartinho-fundo')];
         if (!b) return [];
-        const faltam = ligacoesQueFaltam(p, [[b.uid, 'pos', ctl.uid, 'batPos'], [b.uid, 'neg', ctl.uid, 'batNeg']]);
-        if (faltam.length > 0) return faltam;
-        // Cabos ligados: falta a proteção no positivo.
+        // Na ordem: cabo positivo, disjuntor nele, cabo negativo.
         const positivo = caboEntre(p, b.uid, 'pos', ctl.uid, 'batPos');
-        return positivo ? [realceDoCabo(positivo.uid)] : [];
+        if (!positivo) return ligacoesQueFaltam(p, [[b.uid, 'pos', ctl.uid, 'batPos']]);
+        if (chavesDeCorrente(positivo, c).length === 0) return [realceDoCabo(positivo.uid)];
+        return ligacoesQueFaltam(p, [[b.uid, 'neg', ctl.uid, 'batNeg']]);
       },
     },
     {
@@ -516,14 +537,16 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       parte: LIGAR,
       titulo: 'Ponha o fusível da bateria no lugar',
       texto:
-        'Agora é ligar, sempre nesta ordem: bateria primeiro, depois a placa, o inversor e, por último, o aparelho. Clique no fusível, no cabo positivo entre a bateria e o inversor, para pô-lo no porta-fusível (ou clique no cabo e use "Pôr o fusível"). O inversor continua apagado: o botão dele ainda está desligado.',
+        'Agora é ligar, sempre nesta ordem: bateria primeiro, depois a placa, o inversor e, por último, o aparelho. O inversor está desligado, e é assim que o fusível vai para o lugar: ele só se põe e só se tira sem corrente passando. Clique no fusível, no cabo positivo entre a bateria e o inversor, para pô-lo no porta-fusível (ou clique no cabo e use "Pôr o fusível"). O inversor continua apagado: o botão dele ainda está desligado.',
       dica: 'Na vida real, ao fechar o circuito da bateria pode saltar uma faísca pequena no último contato: é o inversor se carregando por dentro, e é normal. Faísca grande, estalo forte ou cheiro de queimado não são: desligue e confira a polaridade.',
       feito: (p, _d, c) => positivosDoInversor(p, c).some((cabo) => protegidoEFechado(cabo, c)),
       onde: (p, c) => positivosDoInversor(p, c).map((cabo) => realceDoCabo(cabo.uid)),
-      agora: (p, c) =>
-        positivosDoInversor(p, c).some((cabo) => algumaQueimada(cabo, c))
-          ? 'O fusível está queimado. Clique no cabo e use "Trocar o fusível": o novo entra fora do porta-fusível, e aí você o põe no lugar.'
-          : null,
+      agora: (p, c) => {
+        if (positivosDoInversor(p, c).some((cabo) => algumaQueimada(cabo, c)))
+          return 'O fusível está queimado. Desligue o inversor, clique no cabo e use "Trocar o fusível": o novo entra fora do porta-fusível, e aí você o põe no lugar.';
+        if (dispositivosQue(p, c, inversor12DeOndaPura).some((d) => d.ligado)) return 'O inversor está ligado: desligue-o pelo botão de ligar antes de pôr o fusível.';
+        return null;
+      },
     },
     {
       id: 'fechar-controlador',
@@ -702,7 +725,8 @@ export const ERROS_GUIADOS: ErroGuiado[] = [
     porQue:
       'O controlador precisa da bateria para saber a tensão do sistema e para ter para onde mandar a energia da placa. Os manuais de controlador (Epever e Victron) mandam ligar a bateria primeiro e a placa por último. Simplificação do simulador: alguns controladores aguentam ficar sem bateria; aqui vale o pior caso.',
     deVerdade: 'No simulador, consertar é de graça. De verdade, seria um controlador novo, e peça elétrica que queima pode pegar fogo.',
-    licao: 'Bateria primeiro, placa por último. Para desligar, a placa sai antes e a bateria por último.',
+    licao:
+      'Bateria primeiro, placa por último. Para desligar, a placa sai antes (pelo disjuntor dela; sem disjuntor, coberta ou sem sol) e a bateria por último.',
     passos: [
       {
         id: 'abrir',
@@ -732,7 +756,7 @@ export const ERROS_GUIADOS: ErroGuiado[] = [
       `Você vai ligar um micro-ondas de ${inteiro(potenciaDoItem(MICROONDAS))} W num inversor de ${inteiro(potenciaDoItem('inv-aiker-500-12v-110'))} W. ` +
       'Ele corta a saída e fica em falha por sobrecarga (carga acima do que aguenta): os outros aparelhos param junto.',
     porQue:
-      'Acima do limite de potência, o inversor corta a saída para não se estragar. O manual do inversor (Voltronic Axpert) chama isso de falha de sobrecarga e diz que, de fábrica, ele não religa sozinho: é preciso desligar e ligar de novo.',
+      'Acima do limite de potência, o inversor corta a saída para não se estragar. No simulador, o inversor fica em falha até ser religado (desligar e ligar de novo), como o manual de um inversor híbrido (Voltronic Axpert) descreve para a falha de sobrecarga. O seu pode religar sozinho: confira no manual.',
     deVerdade: 'Este erro não queima nada: o inversor se protege sozinho. Mas a saída só volta quando ele é religado.',
     licao: 'A soma dos aparelhos ligados ao mesmo tempo precisa caber no inversor. Em sobrecarga, desligue algum aparelho e religue o inversor.',
     passos: [
@@ -789,8 +813,8 @@ export const ERROS_GUIADOS: ErroGuiado[] = [
         id: 'desligar',
         titulo: 'Desligue antes de mexer',
         texto:
-          'Antes de mexer em cabo, desligue na ordem inversa da de ligar: o aparelho, depois o inversor (botão de ligar) e por último o fusível da bateria (clique nele). O controlador e a placa ficam como estão.',
-        dica: 'Na vida real, os polos da bateria nunca ficam sem tensão: um polo de cada vez, com ferramenta isolada.',
+          'Antes de mexer em cabo, desligue na ordem inversa da de ligar: o aparelho, depois o inversor (botão de ligar) e por último o fusível da bateria (clique nele), já sem corrente passando. O controlador e a placa ficam como estão: neste quartinho o controlador tem cabo e disjuntor próprios até a bateria, e tirar o fusível do inversor não o deixa sem bateria. Se o controlador passasse pelo mesmo fusível, a placa teria de sair antes.',
+        dica: 'Na vida real, os polos da bateria nunca ficam sem tensão, e com a placa ligada há tensão nos fios dela mesmo com tudo desligado: um polo de cada vez, com ferramenta isolada.',
         feito: (p, c) => {
           const inv = inversorDoTutorial(p, c);
           return (
@@ -860,7 +884,7 @@ export const ERROS_GUIADOS: ErroGuiado[] = [
         id: 'desfazer',
         titulo: 'Desfaça a inversão',
         texto:
-          'Apague os dois cabos trocados e ligue de novo do jeito certo: + da bateria no BAT+ e − no BAT−. Ponha o fusível no cabo positivo; ele entra fora do porta-fusível.',
+          'Apague os dois cabos trocados. Depois ligue do jeito certo, na ordem da montagem: o cabo do + da bateria ao BAT+, o fusível nesse cabo (ele entra fora do porta-fusível) e, por último, o cabo do − ao BAT−.',
         itemId: 'prot-fusivel-anl-100',
         feito: (p, c) => {
           const { pos, neg } = cabosTrocados(p, c);
@@ -873,15 +897,18 @@ export const ERROS_GUIADOS: ErroGuiado[] = [
           const b = primeiro(p, c, bateriaDeChumbo12);
           const i = inversorDoTutorial(p, c);
           if (!b || !i) return [];
-          const faltam = ligacoesQueFaltam(p, [[b.uid, 'pos', i.uid, 'batPos'], [b.uid, 'neg', i.uid, 'batNeg']]);
-          return faltam.length > 0 ? faltam : positivosDoInversor(p, c).map((cabo) => realceDoCabo(cabo.uid));
+          // Na ordem: cabo positivo, fusível nele, cabo negativo.
+          const positivo = caboEntre(p, b.uid, 'pos', i.uid, 'batPos');
+          if (!positivo) return ligacoesQueFaltam(p, [[b.uid, 'pos', i.uid, 'batPos']]);
+          if (chavesDeCorrente(positivo, c).length === 0) return [realceDoCabo(positivo.uid)];
+          return ligacoesQueFaltam(p, [[b.uid, 'neg', i.uid, 'batNeg']]);
         },
       },
       {
         id: 'consertar',
         titulo: 'Conserte e ligue de novo',
         texto:
-          'Clique no inversor e use "Consertar". Depois ligue na ordem: ponha o fusível no lugar, ligue o inversor e, por último, o aparelho.',
+          'Clique no inversor e use "Consertar". Depois ligue na ordem: com o inversor ainda desligado, ponha o fusível no lugar; então ligue o inversor e, por último, o aparelho.',
         dica: 'O conserto não corrige a ligação: se a bateria continuasse invertida, o inversor queimaria de novo ao fechar o fusível.',
         feito: (p, c, x) => x.tutorialEmDia && dispositivosQue(p, c, inversor12DeOndaPura).every((d) => d.queimado === undefined),
         onde: (p, c) => {

@@ -10,16 +10,17 @@ import { cenarioPlanoNoPapel, cenarioTutorial } from './nucleo/cenarios';
 import { analisarCircuito } from './nucleo/circuito';
 import { ajustarParedesInternas } from './nucleo/comodos';
 import { analisarConsultor, modulosDaProtecao } from './nucleo/consultor';
-import { estadoInicial, passoSimulacao } from './nucleo/eletrica';
+import { estadoInicial } from './nucleo/eletrica';
 import { estimar } from './nucleo/estimativas';
 import { baixarClimaDoDia } from './dados/openMeteo';
 import { registrarClimaReal, temClimaReal } from './nucleo/climaReal';
 import { irradianciaNasPlacas, localDoProjeto, localPorId } from './nucleo/irradiancia';
 import { converterProjeto } from './nucleo/migracao';
 import {
-  type AlvoDeConserto, aplicarConsequencias, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao, circuitoDoCabo,
-  type CodigoDeConsequencia, type Consequencia, consertar as consertarNoProjeto, correntesDeOperacao, estadoDaProtecao,
-  inversorOperando, type Manobra, projetoVivo, type RecusaDeEnergizar, sequenciaDeDesenergizar, sequenciaDeEnergizar,
+  type AlvoDeConserto, analiseDeOperacao, aplicarConsequencias, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao,
+  type AvisoDeDesenergizar, circuitoDoCabo, type CodigoDeConsequencia, type Consequencia, consertar as consertarNoProjeto,
+  correntesDeOperacao, estadoDaProtecao, inversorOperando, type Manobra, passoDeOperacao, planoDeDesenergizar, projetoVivo,
+  type RecusaDeEnergizar, sequenciaDeEnergizar,
 } from './nucleo/operacao';
 import { calcularOrcamento } from './nucleo/orcamento';
 import { podeLigar, terminaisDe } from './nucleo/terminais';
@@ -305,6 +306,7 @@ let ultimoPasso: { placas: ReadonlyMap<string, CondicaoPlaca>; horaLocal: number
 /**
  * Um passo do núcleo, de `dtHoras`, com as condições do instante `msUtc`. `viva` é a análise do que está energizado
  * (operar.md, seção 4): a simulação não enxerga o que está atrás de proteção aberta, e o botão do inversor conta.
+ * Com o inversor sem banco e um controlador com bateria e fileira viva, o passo é o do controlador carregando a bateria.
  */
 function passo(projeto: Projeto, viva: AnaliseCircuito, sim: EstadoSim, msUtc: number, dtHoras: number, semRede: boolean): SaidaPasso {
   projetoDoAmbiente = projeto;
@@ -314,7 +316,7 @@ function passo(projeto: Projeto, viva: AnaliseCircuito, sim: EstadoSim, msUtc: n
   ultimoPasso = { placas, horaLocal };
   const uidDoInversor = viva.sistema?.inversor;
   const inversor = uidDoInversor === undefined ? undefined : projeto.dispositivos.find((d) => d.uid === uidDoInversor);
-  return passoSimulacao(projeto, CATALOGO, viva, sim, {
+  return passoDeOperacao(projeto, CATALOGO, viva, sim, {
     dtHoras,
     redeDisponivel: !semRede,
     horaLocal,
@@ -335,9 +337,18 @@ export function analiseViva(): AnaliseCircuito {
   return vivaGuardada;
 }
 
+/**
+ * A análise que a simulação do instante usa (operar.md, seção 4). É a análise viva, a não ser com o inversor sem banco e
+ * um controlador com bateria e fileira viva: aí é a análise "só do controlador", com o banco e as fileiras dele. Os
+ * visores leem daqui qual controlador e qual banco estão em uso.
+ */
+export function analiseDaSimulacao(): AnaliseCircuito {
+  return analiseDeOperacao(estado.projeto, CATALOGO, analiseViva());
+}
+
 /** Corrente que passa em cada cabo neste instante, em ampères, por `uid` do cabo. Cabo interrompido fica com 0. */
 export function correntesDeOperacaoAgora(): Map<string, number> {
-  return correntesDeOperacao(estado.projeto, CATALOGO, analiseViva(), estado.simulacao.saida, ultimoPasso.horaLocal);
+  return correntesDeOperacao(estado.projeto, CATALOGO, analiseViva(), estado.simulacao.saida, ultimoPasso.horaLocal, ultimoPasso.placas);
 }
 
 const projetoDeAbertura = projetoInicial();
@@ -516,11 +527,19 @@ function cicloDeConsequencias(iniciais: readonly Consequencia[], antesDeMudar?: 
   return aplicadas;
 }
 
-/** Guarda os eventos das consequências (os 20 últimos) e avisa 'operacao'. */
-function registrarEventos(consequencias: readonly Consequencia[]): void {
-  if (consequencias.length === 0) return;
+/**
+ * Guarda os eventos das consequências (os 20 últimos) e avisa 'operacao'. Com `semRepetir` (desfazer e refazer), a peça
+ * que queima de novo sem passo novo não ganha evento repetido: fica de fora a consequência com o mesmo código e os
+ * mesmos `uids` de um dos últimos eventos (tantos quantas são as consequências de agora).
+ */
+function registrarEventos(consequencias: readonly Consequencia[], semRepetir = false): void {
   const sim = estado.simulacao;
-  sim.eventos = [...sim.eventos, ...consequencias.map(({ codigo, uids, msUtc }) => ({ codigo, uids: [...uids], msUtc }))].slice(-LIMITE_EVENTOS);
+  const ultimos = semRepetir ? sim.eventos.slice(-consequencias.length) : [];
+  const repetido = (c: Consequencia): boolean =>
+    ultimos.some((e) => e.codigo === c.codigo && e.uids.length === c.uids.length && e.uids.every((uid, i) => uid === c.uids[i]));
+  const novos = consequencias.filter((c) => !repetido(c));
+  if (novos.length === 0) return;
+  sim.eventos = [...sim.eventos, ...novos.map(({ codigo, uids, msUtc }) => ({ codigo, uids: [...uids], msUtc }))].slice(-LIMITE_EVENTOS);
   avisar('operacao');
 }
 
@@ -645,7 +664,7 @@ function guardarNoHistorico(): void {
  * consequências da operação: o dano entra no projeto sem ponto de retorno próprio, ou seja, no mesmo passo do desfazer
  * da ação. Sem `daAcao` (arraste em andamento, comprimento medido pela cena), a ligação não mudou e nada é conferido.
  */
-function depoisDeMudar(recortes: Recorte[], daAcao?: readonly Consequencia[]): void {
+function depoisDeMudar(recortes: Recorte[], daAcao?: readonly Consequencia[], semRepetirEvento = false): void {
   sanear(estado.projeto);
   limparSelecaoOrfa();
   for (const r of recortes) avisar(r);
@@ -660,7 +679,7 @@ function depoisDeMudar(recortes: Recorte[], daAcao?: readonly Consequencia[]): v
       avisar('projeto');
     }
     avisar('simulacao');
-    registrarEventos(aplicadas);
+    registrarEventos(aplicadas, semRepetirEvento);
   }
   agendarDerivados();
   agendarGravacao();
@@ -668,19 +687,26 @@ function depoisDeMudar(recortes: Recorte[], daAcao?: readonly Consequencia[]): v
 
 /**
  * Muda o projeto. `daAcao` traz as consequências que dependem da própria ação (arco ao apagar ou ao abrir), avaliadas
- * antes dela; elas e as do estado do momento entram no mesmo passo do desfazer.
+ * antes dela; `fn` pode devolver outras, achadas enquanto mudava (arco em uma manobra do meio de uma sequência). Elas e
+ * as do estado do momento entram no mesmo passo do desfazer.
  */
-function mudar(recortes: Recorte[], opcoes: OpcoesMudanca | undefined, fn: (p: Projeto) => void, daAcao: readonly Consequencia[] = []): void {
+function mudar(
+  recortes: Recorte[], opcoes: OpcoesMudanca | undefined, fn: (p: Projeto) => readonly Consequencia[] | void,
+  daAcao: readonly Consequencia[] = [],
+): void {
   const arraste = opcoes?.historico === false;
   if (!arraste) guardarNoHistorico();
-  fn(estado.projeto);
-  depoisDeMudar(recortes, arraste ? undefined : daAcao);
+  const daMudanca = fn(estado.projeto) ?? [];
+  depoisDeMudar(recortes, arraste ? undefined : [...daAcao, ...daMudanca]);
 }
 
-/** Troca o projeto inteiro (abrir, desfazer, refazer). O que o estado do momento estragar entra sem ponto de retorno próprio. */
-function trocarProjeto(novo: Projeto): void {
+/**
+ * Troca o projeto inteiro (abrir, desfazer, refazer). O que o estado do momento estragar entra sem ponto de retorno
+ * próprio. Com `semRepetirEvento` (desfazer e refazer), o dano que só se repete não grava evento novo.
+ */
+function trocarProjeto(novo: Projeto, semRepetirEvento = false): void {
   estado.projeto = novo;
-  depoisDeMudar(['casa', 'dispositivos', 'cabos'], []);
+  depoisDeMudar(['casa', 'dispositivos', 'cabos'], [], semRepetirEvento);
   conferirClimaReal();
 }
 
@@ -840,20 +866,51 @@ function semFalha(d: Dispositivo): Dispositivo {
   return resto;
 }
 
-/** Aplica as manobras no projeto, na ordem dada. Apertar o botão do inversor limpa a falha. Proteção queimada não muda. */
-function manobrar(projeto: Projeto, manobras: readonly Manobra[]): void {
+/** Põe a proteção de índice `indice` do cabo no estado dado. Proteção queimada não muda. */
+function definirEstadoDaProtecao(projeto: Projeto, caboUid: string, indice: number, novo: EstadoProtecao): void {
+  projeto.cabos = projeto.cabos.map((c) => {
+    if (c.uid !== caboUid || estadoDaProtecao(c, indice) === 'queimada') return c;
+    const estados = estadosDe(c);
+    estados[indice] = novo;
+    return { ...c, estados };
+  });
+}
+
+/**
+ * Aplica as manobras no projeto, na ordem dada. Apertar o botão do inversor limpa a falha. Proteção queimada não muda.
+ * Abrir um disjuntor CA em cabo de corrente contínua com corrente passando abre arco (`arco-no-disjuntor-ca`): ele não
+ * chega a abrir, fica queimado, e a consequência é devolvida para entrar no mesmo passo do desfazer. A corrente é a do
+ * momento de cada manobra: na ordem certa de desligar, o inversor já saiu quando a proteção da bateria abre.
+ */
+function manobrar(projeto: Projeto, manobras: readonly Manobra[]): Consequencia[] {
+  const arcos: Consequencia[] = [];
+  /** Antes da primeira mudança, as correntes são as que a tela mostra; depois, as do projeto como as manobras o deixaram. */
+  let mudou = false;
+  const correntesDoMomento = (): Map<string, number> => {
+    if (!mudou) return correntesDeOperacaoAgora();
+    const viva = analisarCircuito(projetoVivo(projeto, CATALOGO), CATALOGO);
+    const sim = estado.simulacao;
+    const saida = passo(projeto, viva, sim.estadoSim, estado.tempo.msUtc, 0, sim.quedaDeLuz.ativa);
+    return correntesDeOperacao(projeto, CATALOGO, viva, saida, ultimoPasso.horaLocal, ultimoPasso.placas);
+  };
   for (const m of manobras) {
     if (m.tipo === 'inversor') {
       projeto.dispositivos = projeto.dispositivos.map((d) => (d.uid === m.uid ? semFalha({ ...d, ligado: m.ligado }) : d));
-    } else {
-      projeto.cabos = projeto.cabos.map((c) => {
-        if (c.uid !== m.cabo || estadoDaProtecao(c, m.indice) === 'queimada') return c;
-        const estados = estadosDe(c);
-        estados[m.indice] = m.estado;
-        return { ...c, estados };
-      });
+      mudou = true;
+      continue;
     }
+    const cabo = projeto.cabos.find((c) => c.uid === m.cabo);
+    const item = CATALOGO.get(cabo?.protecoes[m.indice] ?? '');
+    const abreDisjuntorCa = m.estado === 'aberta' && cabo !== undefined && item?.categoria === 'protecao' && item.tipo === 'disjuntorCA'
+      && estadoDaProtecao(cabo, m.indice) === 'fechada';
+    const arco = abreDisjuntorCa
+      ? arcoNoDisjuntorCa(projeto, CATALOGO, { tipo: 'abrir-protecao', cabo: m.cabo, indice: m.indice }, correntesDoMomento(), estado.tempo.msUtc)
+      : null;
+    if (arco) arcos.push(arco);
+    definirEstadoDaProtecao(projeto, m.cabo, m.indice, arco ? 'queimada' : m.estado);
+    mudou = true;
   }
+  return arcos;
 }
 
 export interface Encaixe {
@@ -1088,13 +1145,8 @@ export const acoes = {
     if (!cabo || item?.categoria !== 'protecao' || item.tipo === 'dps') return;
     const atual = estadoDaProtecao(cabo, indice);
     if (atual === 'queimada') return;
-    const arco = atual === 'fechada'
-      ? arcoNoDisjuntorCa(estado.projeto, CATALOGO, { tipo: 'abrir-protecao', cabo: caboUid, indice }, correntesDeOperacaoAgora(), estado.tempo.msUtc)
-      : null;
-    mudar(['cabos'], undefined, (p) => {
-      // Com arco, o disjuntor não chega a abrir: a consequência o deixa queimado.
-      if (!arco) manobrar(p, [{ tipo: 'protecao', cabo: caboUid, indice, estado: atual === 'fechada' ? 'aberta' : 'fechada' }]);
-    }, arco ? [arco] : []);
+    // Com arco, o disjuntor não chega a abrir: `manobrar` o deixa queimado e devolve a consequência.
+    mudar(['cabos'], undefined, (p) => manobrar(p, [{ tipo: 'protecao', cabo: caboUid, indice, estado: atual === 'fechada' ? 'aberta' : 'fechada' }]));
   },
 
   /**
@@ -1102,8 +1154,14 @@ export const acoes = {
    * Não corrige a causa: se a ligação continua errada, a peça queima de novo assim que for energizada.
    */
   consertar(alvo: AlvoDeConserto): void {
+    acoes.consertarVarios([alvo]);
+  },
+
+  /** Conserta vários alvos de uma vez (a peça, o cabo e a proteção de um mesmo acidente), em um passo só do desfazer. */
+  consertarVarios(alvos: readonly AlvoDeConserto[]): void {
+    if (alvos.length === 0) return;
     mudar(['dispositivos', 'cabos'], undefined, (p) => {
-      const consertado = consertarNoProjeto(p, alvo);
+      const consertado = alvos.reduce<Projeto>((atual, alvo) => consertarNoProjeto(atual, alvo), p);
       p.dispositivos = consertado.dispositivos;
       p.cabos = consertado.cabos;
     });
@@ -1112,7 +1170,8 @@ export const acoes = {
   /**
    * "Ligar o sistema" (operar.md, seção 6): fecha as proteções da bateria, depois as das placas, liga o inversor, fecha as
    * da saída e, por último, as da entrada da rede. Os aparelhos ficam como estão. É um passo só do desfazer.
-   * Com erro de polaridade ou de curto na montagem, não faz nada e devolve a recusa, com o texto para a tela.
+   * Com erro de polaridade ou de curto na montagem, ou com o controlador sem como receber a bateria (proteção da bateria
+   * dele queimada), não faz nada e devolve a recusa, com o texto para a tela.
    */
   energizar(): RecusaDeEnergizar | null {
     const analise = analisarCircuito(estado.projeto, CATALOGO);
@@ -1123,11 +1182,18 @@ export const acoes = {
     return null;
   },
 
-  /** "Desligar o sistema": a ordem inversa. Entrada da rede, saída, inversor, placas e, por último, a bateria. Um passo só do desfazer. */
-  desenergizar(): void {
+  /**
+   * "Desligar o sistema": a ordem inversa. Entrada da rede, saída, inversor, placas e, por último, a bateria. Um passo só
+   * do desfazer. Controlador com as placas ligadas direto, sem chave nenhuma para abri-las, não fica sem bateria (queimaria
+   * com o sol): a proteção da bateria dele continua fechada e a ação devolve o aviso, com o texto para a tela. Nulo
+   * quando desligou tudo.
+   */
+  desenergizar(): AvisoDeDesenergizar | null {
     const analise = analisarCircuito(estado.projeto, CATALOGO);
-    const manobras = [...chavesDaEntrada(estado.projeto, analise, 'aberta'), ...sequenciaDeDesenergizar(estado.projeto, CATALOGO, analise)];
+    const plano = planoDeDesenergizar(estado.projeto, CATALOGO, analise);
+    const manobras = [...chavesDaEntrada(estado.projeto, analise, 'aberta'), ...plano.manobras];
     if (manobras.length > 0) mudar(['dispositivos', 'cabos'], undefined, (p) => manobrar(p, manobras));
+    return plano.aviso;
   },
 
   /** Horário de uso de um aparelho. Nulo volta ao típico do catálogo. */
@@ -1497,14 +1563,14 @@ export const acoes = {
     const anterior = passado.pop();
     if (!anterior) return;
     futuro.push(JSON.stringify(estado.projeto));
-    trocarProjeto(JSON.parse(anterior) as Projeto);
+    trocarProjeto(JSON.parse(anterior) as Projeto, true);
   },
 
   refazer(): void {
     const seguinte = futuro.pop();
     if (!seguinte) return;
     passado.push(JSON.stringify(estado.projeto));
-    trocarProjeto(JSON.parse(seguinte) as Projeto);
+    trocarProjeto(JSON.parse(seguinte) as Projeto, true);
   },
 
   // ---- Seleção, edição da casa, tempo e visão
@@ -1541,13 +1607,13 @@ export const acoes = {
   avancarTempo(minutos: number): void {
     if (!(minutos > 0)) return;
     const sim = estado.simulacao;
-    const viva = analiseViva();
+    const diaAntes = diaLocalDe(estado.projeto, estado.tempo.msUtc);
     let resta = minutos;
     let agora = estado.tempo.msUtc;
     while (resta > 1e-9) {
       const dtMin = Math.min(PASSO_MAXIMO_MIN, resta);
       const meio = agora + (dtMin * 60_000) / 2;
-      const saida = passo(estado.projeto, viva, sim.estadoSim, meio, dtMin / 60, sim.quedaDeLuz.ativa);
+      const saida = passo(estado.projeto, analiseViva(), sim.estadoSim, meio, dtMin / 60, sim.quedaDeLuz.ativa);
       agora += dtMin * 60_000;
       resta -= dtMin;
       sim.estadoSim = saida.estado;
@@ -1556,10 +1622,15 @@ export const acoes = {
         sim.quedaDeLuz.apagouMsUtc = agora;
       }
       registrarNoHistorico(agora, saida);
+      // Sobrecarga no meio de uma chamada longa (o aparelho entrou no horário de uso): o inversor entra em falha neste
+      // subpasso, não só se a sobrecarga durar até o último. Os subpassos seguintes já correm com ele em falha.
+      if (saida.avisos.includes('sobrecarga')) {
+        estado.tempo.msUtc = agora;
+        conferirOperacaoDoRelogio(true);
+      }
     }
-    const diaAntes = diaLocalDe(estado.projeto, estado.tempo.msUtc);
     estado.tempo.msUtc = agora;
-    // Consequências da operação, uma vez por chamada, com a saída do último passo: o erro armado à noite acontece quando o sol nasce.
+    // As demais consequências da operação, uma vez por chamada, com a saída do último passo: o erro armado à noite acontece quando o sol nasce.
     conferirOperacaoDoRelogio(true);
     conferirClimaReal();
     avisar('tempo');

@@ -102,6 +102,22 @@ export function ligarOSistema(): void {
   if (recusa) mostrarMensagem(recusa.texto, true);
 }
 
+/** O texto de um aviso `{ codigo, uids, texto }` devolvido por uma ação; nulo quando ela não devolve nada. */
+function textoDoAviso(aviso: unknown): string | null {
+  if (typeof aviso !== 'object' || aviso === null || !('texto' in aviso)) return null;
+  return typeof aviso.texto === 'string' && aviso.texto.trim() !== '' ? aviso.texto : null;
+}
+
+/**
+ * "Desligar o sistema" (operar.md, seção 6): abre as chaves na ordem inversa. Quando algo fica ligado (por exemplo,
+ * placas sem disjuntor continuam ligadas ao controlador, que fica na bateria), o núcleo devolve um aviso e a tela o mostra.
+ */
+export function desligarOSistema(): void {
+  const aviso: unknown = acoes.desenergizar();
+  const texto = textoDoAviso(aviso);
+  if (texto) mostrarMensagem(texto);
+}
+
 /**
  * "Ligar o sistema" e "Desligar o sistema" (operar.md, seção 6), no menu "Projeto" (na barra do alto não cabe em 1280 px): visível quando há inversor no projeto. Mostra o que faz sentido
  * agora: se ainda há manobra de ligar a fazer, "Ligar"; se não, "Desligar". Com erro de polaridade ou de curto na montagem,
@@ -122,12 +138,12 @@ function montarBotaoDoSistema(): void {
     botao.dataset.acao = ligar ? 'ligar-sistema' : 'desligar-sistema';
     botao.title = ligar
       ? 'Fecha as proteções e liga o inversor na ordem certa: bateria, placas, inversor, saída. Os aparelhos não entram.'
-      : 'Desliga na ordem inversa: saída, inversor, placas e, por último, a bateria.';
+      : 'Desliga na ordem: saída, inversor, placas e bateria. Placas sem disjuntor continuam ligadas ao controlador.';
   };
   botao.addEventListener('click', () => {
     // A análise dos derivados pode estar um instante atrasada depois de uma manobra: confere de novo na hora do clique.
     if (!faltaLigar(analisarCircuito(estado.projeto, CATALOGO))) {
-      acoes.desenergizar();
+      desligarOSistema();
       return;
     }
     ligarOSistema();
