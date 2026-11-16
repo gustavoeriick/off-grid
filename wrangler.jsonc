@@ -1,0 +1,13 @@
+// Publicação no Cloudflare: o simulador é um site estático (a pasta dist/, gerada por `npm run build`).
+// Não há código de Worker: o Cloudflare só serve os arquivos.
+// O envio é feito pelo Cloudflare a cada commit na master (Workers Builds, ligado ao repositório no GitHub):
+//   comando de build:  npm run build
+//   comando de deploy: npx wrangler deploy
+{
+  "name": "off-grid",
+  "compatibility_date": "2026-11-16",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist"
+  }
+}
