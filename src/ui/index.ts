@@ -20,6 +20,7 @@ import { montarPaineis } from './paineis';
 import { montarSelecionado } from './selecionado';
 import { montarProjetos } from './projetos';
 import { montarTopo } from './topo';
+import { montarVisores } from './visores';
 import { LADOS, LIMITES_VARANDA, avisoDoQuartinho, deslocamentoMaximo, inclinacaoMaxima, limitarVaranda, limitarVarandas, medidaDaFachada, novaVaranda, profundidadeMaxima } from '../cena/regrasDaCasa';
 
 const MS_HORA = 3_600_000;
@@ -78,6 +79,7 @@ export function montarInterface(): void {
   montarSelecionado();
   montarPaineis();
   montarTopo();
+  montarVisores();
   montarProjetos();
   montarCampoDoComodo();
   montarAvancoDoTempo();

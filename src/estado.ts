@@ -39,6 +39,24 @@ export const PECA_NOVA_NASCE_DESLIGADA = true;
 
 export type ModoVisao = 'completa' | 'sem-telhado' | 'terreo';
 
+/**
+ * Como os visores (os números ao vivo de cada peça) aparecem na cena (operar.md, seção 7.2):
+ * `ampliado`, sempre à vista acima da peça; `real`, só na face da peça, no tamanho de verdade; `ao-clicar`, o ampliado
+ * da peça selecionada; `ao-passar`, o ampliado da peça sob o ponteiro e o da selecionada.
+ */
+export type ModoDosVisores = 'ampliado' | 'real' | 'ao-clicar' | 'ao-passar';
+export type TamanhoDosVisores = 'pequeno' | 'medio' | 'grande';
+
+/** Ajuste "Visores". Fica gravado no navegador, não no projeto. */
+export interface AjusteDosVisores {
+  modo: ModoDosVisores;
+  /** Tamanho do visor ampliado. */
+  tamanho: TamanhoDosVisores;
+}
+
+export const MODOS_DOS_VISORES: readonly ModoDosVisores[] = ['ampliado', 'real', 'ao-clicar', 'ao-passar'];
+export const TAMANHOS_DOS_VISORES: readonly TamanhoDosVisores[] = ['pequeno', 'medio', 'grande'];
+
 export type Selecao =
   | { tipo: 'dispositivo'; uid: string }
   | { tipo: 'cabo'; uid: string }
@@ -116,6 +134,8 @@ export interface EstadoApp {
     velocidade: number;
   };
   visao: ModoVisao;
+  /** Ajuste "Visores": como os números ao vivo aparecem na cena. Não entra no projeto nem no desfazer. */
+  visores: AjusteDosVisores;
   selecao: Selecao;
   /** Modo "Editar casa": quartinho, varandas, paredes internas e cômodos respondem ao ponteiro; os equipamentos não. */
   edicaoCasa: { ativa: boolean; andar: 0 | 1 };
@@ -131,10 +151,11 @@ export interface EstadoApp {
  * 'casa' (medidas, orientação, varandas, paredes internas, cômodos, quartinho), 'dispositivos' e 'cabos'.
  * 'derivados' avisa quando análise, estimativas, sugestões e orçamento foram recalculados.
  * 'operacao' avisa quando a lista `simulacao.eventos` cresce: algo queimou, desarmou ou entrou em falha.
+ * 'visores' avisa quando o ajuste "Visores" muda (modo ou tamanho).
  */
-export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima' | 'destaques' | 'projetos' | 'operacao';
+export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima' | 'destaques' | 'projetos' | 'operacao' | 'visores';
 
-const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima', 'destaques', 'projetos', 'operacao'];
+const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima', 'destaques', 'projetos', 'operacao', 'visores'];
 const ouvintes = Object.fromEntries(EVENTOS.map((e) => [e, new Set<() => void>()])) as Record<Evento, Set<() => void>>;
 
 /** 21/06/2026 ao meio-dia no Rio (UTC − 3). */
@@ -145,6 +166,9 @@ const CHAVE_V1 = 'offgrid.projeto.v1';
 const CHAVE_INVALIDO = 'offgrid.projeto.invalido';
 /** O projeto da casa, guardado enquanto o tutorial está aberto. */
 const CHAVE_CASA = 'offgrid.projeto.casa';
+/** O ajuste "Visores", gravado à parte do projeto. */
+const CHAVE_VISORES = 'offgrid.visores';
+const VISORES_PADRAO: AjusteDosVisores = { modo: 'ampliado', tamanho: 'medio' };
 const ESPERA_DERIVADOS_MS = 150;
 const ESPERA_GRAVAR_MS = 500;
 const LIMITE_HISTORICO = 50;
@@ -281,6 +305,19 @@ function projetoInicial(): Projeto {
   return cenarioPlanoNoPapel();
 }
 
+/** O ajuste "Visores" gravado no navegador. Sem gravação, ou com valor desconhecido, vale o padrão de cada campo. */
+function visoresIniciais(): AjusteDosVisores {
+  try {
+    const lido = JSON.parse(armazenamento()?.getItem(CHAVE_VISORES) ?? 'null') as Partial<AjusteDosVisores> | null;
+    return {
+      modo: MODOS_DOS_VISORES.find((m) => m === lido?.modo) ?? VISORES_PADRAO.modo,
+      tamanho: TAMANHOS_DOS_VISORES.find((t) => t === lido?.tamanho) ?? VISORES_PADRAO.tamanho,
+    };
+  } catch {
+    return { ...VISORES_PADRAO };
+  }
+}
+
 // ---------------------------------------------------------------- Simulação no tempo (seção 11 da especificação da cena)
 
 const PASSO_MAXIMO_MIN = 5;
@@ -374,6 +411,7 @@ export const estado: EstadoApp = {
   projeto: projetoDeAbertura,
   tempo: { msUtc: INSTANTE_INICIAL, velocidade: 0 },
   visao: 'completa',
+  visores: visoresIniciais(),
   selecao: null,
   edicaoCasa: { ativa: false, andar: 0 },
   derivados: calcularDerivados(projetoDeAbertura, INSTANTE_INICIAL),
@@ -1114,6 +1152,38 @@ export const acoes = {
   },
 
   /**
+   * Lugar do visor ampliado de uma peça (operar.md, seção 7.2): o deslocamento a partir do centro dela, em coordenadas
+   * da casa, onde a pessoa o soltou. Nulo devolve o visor ao lugar padrão, acima da peça. É arrumação da montagem: não
+   * muda a ligação, o orçamento nem cálculo nenhum. Um arraste é um passo só do desfazer (`marcarHistorico` e `historico: false`).
+   */
+  moverVisor(uid: string, deslocamento: Vec3 | null, opcoes?: OpcoesMudanca): void {
+    const d = estado.projeto.dispositivos.find((x) => x.uid === uid);
+    if (!d) return;
+    if (deslocamento === null) {
+      if (d.visor === undefined) return;
+    } else if (deslocamento.length !== 3 || !deslocamento.every((v) => Number.isFinite(v))) return;
+    mudar(['dispositivos'], opcoes, (p) => {
+      p.dispositivos = p.dispositivos.map((x) => {
+        if (x.uid !== uid) return x;
+        const { visor: _visor, ...resto } = x;
+        return deslocamento === null ? resto : { ...resto, visor: [deslocamento[0], deslocamento[1], deslocamento[2]] };
+      });
+    });
+  },
+
+  /** "Todos no lugar padrão": devolve todos os visores arrastados para cima da peça de cada um, em um passo só do desfazer. */
+  visoresNoLugarPadrao(): void {
+    if (!estado.projeto.dispositivos.some((d) => d.visor !== undefined)) return;
+    mudar(['dispositivos'], undefined, (p) => {
+      p.dispositivos = p.dispositivos.map((x) => {
+        if (x.visor === undefined) return x;
+        const { visor: _visor, ...resto } = x;
+        return resto;
+      });
+    });
+  },
+
+  /**
    * Remove o dispositivo e os cabos ligados a ele. Um quadro removido solta os cabos que passavam por ele.
    * Apagar uma placa com corrente passando abre arco no conector (evento `arco-no-conector`).
    */
@@ -1681,6 +1751,22 @@ export const acoes = {
   definirVisao(visao: ModoVisao): void {
     estado.visao = visao;
     avisar('visao');
+  },
+
+  /** Ajuste "Visores": troca o modo, o tamanho ou os dois. Grava no navegador (não no projeto) e avisa 'visores'. */
+  definirVisores(parcial: Partial<AjusteDosVisores>): void {
+    const novo: AjusteDosVisores = {
+      modo: MODOS_DOS_VISORES.find((m) => m === parcial.modo) ?? estado.visores.modo,
+      tamanho: TAMANHOS_DOS_VISORES.find((t) => t === parcial.tamanho) ?? estado.visores.tamanho,
+    };
+    if (novo.modo === estado.visores.modo && novo.tamanho === estado.visores.tamanho) return;
+    estado.visores = novo;
+    try {
+      armazenamento()?.setItem(CHAVE_VISORES, JSON.stringify(novo));
+    } catch {
+      // Sem espaço ou sem permissão: o ajuste vale até a página fechar.
+    }
+    avisar('visores');
   },
 };
 

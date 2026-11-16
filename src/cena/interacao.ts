@@ -3,6 +3,8 @@
 //
 // Fase 8 (docs/especificacao/operar.md, seção 8): um clique em uma proteção abre ou fecha a chave dela, e um clique no
 // botão de ligar de um inversor ou de um aparelho liga ou desliga. Tarefa 8.3.
+// Ajustes A1 e A2 (operar.md, seção 7.2): o visor ampliado é arrastado com o ponteiro e volta ao lugar padrão com um
+// duplo clique; o que está por baixo dele não recebe o clique. A tecla V esconde ou mostra todos os visores.
 //
 // A cena não muda o projeto direto: tudo aqui termina em uma ação de `src/estado.ts`.
 // Eventos que a interface emite na `window`:
@@ -17,7 +19,7 @@ import { CATALOGO } from '../catalogo';
 import type { Item, Protecao } from '../catalogo/tipos';
 import { acoes, assinar, type Encaixe, estado, motivoParaNaoLigar } from '../estado';
 import { estadoDaProtecao } from '../nucleo/operacao';
-import type { Acao, PontaCabo, TipoTerminal } from '../nucleo/tipos';
+import type { Acao, PontaCabo, TipoTerminal, Vec3 } from '../nucleo/tipos';
 import { type CamadaDeCabos, corDoCabo } from './cabos';
 import { type CamadaDeDispositivos, RAIO_DE_CLIQUE } from './dispositivos';
 import { ehGrampo, superficieAceita } from './encaixe';
@@ -54,6 +56,11 @@ export interface Interacao {
   superficiesDoArraste(): string[];
   /** Verdadeiro se há uma chave de proteção ou um botão de ligar sob o ponto da janela: o clique ali é uma manobra. */
   manobraEm(x: number, y: number): boolean;
+  /**
+   * Duplo clique em um ponto da janela. Sobre um visor ampliado, devolve-o ao lugar padrão (acima da peça) e responde
+   * verdadeiro: quem aproxima a câmera no duplo clique não deve fazê-lo.
+   */
+  duploClique(x: number, y: number): boolean;
   destruir(): void;
 }
 
@@ -64,7 +71,9 @@ type Alvo =
   /** Proteção com chave: o clique abre ou fecha (fusível ou disjuntor). */
   | { tipo: 'chave'; cabo: string; indice: number }
   /** Botão de ligar de um inversor ou de um aparelho. */
-  | { tipo: 'botao'; uid: string };
+  | { tipo: 'botao'; uid: string }
+  /** Visor ampliado de uma peça: só responde ao arraste e ao duplo clique. */
+  | { tipo: 'visor'; uid: string };
 
 /** Placa levada ao terreno: giro em torno da vertical e inclinação do suporte. Nulo usa o padrão (face para o norte, latitude do local). */
 interface NoChao {
@@ -82,6 +91,11 @@ type Modo =
   | { tipo: 'catalogo'; item: Item; giro: number; chao: NoChao; candidato: Candidato | null; cabo: string | null }
   | { tipo: 'protecao'; item: Protecao; cabo: string | null }
   | { tipo: 'mover'; uid: string; item: Item; giro: number; chao: NoChao; desvio: [number, number]; marcado: boolean; candidato: Candidato | null }
+  /**
+   * Visor ampliado sendo arrastado. Ele anda no `plano` que passa pelo lugar em que estava e fica de frente para a
+   * câmera; `desvio` é do centro dele até o ponto em que foi agarrado, no mundo.
+   */
+  | { tipo: 'visor'; uid: string; plano: THREE.Plane; desvio: THREE.Vector3; marcado: boolean }
   /**
    * Cabo sendo puxado. `fixo` é o cabo começado com um clique no terminal, sem arrastar: ele segue o ponteiro com o botão solto,
    * a câmera continua livre (girar, deslizar, aproximar, trocar a visão) e um clique no terminal de destino o liga.
@@ -236,12 +250,21 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     return null;
   }
 
-  /** O que está sob o ponteiro: terminal, depois a chave ou o botão de ligar, depois a peça ou o cabo que estiver mais perto da câmera. */
+  /**
+   * O que está sob o ponteiro: o visor ampliado (ele é desenhado por cima de tudo, menos do botão de ligar, e o que
+   * está por baixo dele não responde); depois o terminal, a chave ou o botão de ligar, e a peça ou o cabo que estiver
+   * mais perto da câmera.
+   */
   function alvoSob(): Alvo | null {
-    const terminal = terminalSob(false);
-    if (terminal) return terminal;
     const peca = raio.intersectObjects(c.dispositivos.caixasDeClique(), false)[0];
     const pecaAVista = peca && distanciaDaSuperficie() >= peca.distance - 0.02 ? peca : null;
+    const visor = c.operacao.visorEm(mira[0], mira[1]);
+    if (visor) {
+      const sobreOVisor = manobraSob(pecaAVista ?? null);
+      return sobreOVisor?.tipo === 'botao' ? sobreOVisor : { tipo: 'visor', uid: visor };
+    }
+    const terminal = terminalSob(false);
+    if (terminal) return terminal;
     const manobra = manobraSob(pecaAVista ?? null);
     if (manobra) return manobra;
     const cabo = caboSob();
@@ -410,8 +433,11 @@ export function criarInteracao(c: PartesDaCena): Interacao {
   function limparPairar(): void {
     mostrarTerminal(null);
     mostrarNomeDaPeca(null);
+    c.operacao.apontar(null);
     c.canvas.style.cursor = '';
   }
+
+  const DICA_DO_VISOR = 'Arraste para mudar o visor de lugar. Duplo clique: volta para cima da peça.';
 
   function pairar(x: number, y: number): void {
     // Em "Editar casa" quem cuida do ponteiro, do cursor e da dica é edicao.ts.
@@ -424,8 +450,11 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     const alvo = alvoSob();
     mostrarTerminal(alvo?.tipo === 'terminal' ? alvo : null);
     mostrarNomeDaPeca(alvo?.tipo === 'dispositivo' ? alvo.uid : null);
-    c.canvas.style.cursor = alvo?.tipo === 'terminal' ? 'crosshair' : alvo?.tipo === 'dispositivo' ? 'grab' : alvo ? 'pointer' : '';
-    if (alvo?.tipo === 'chave') mostrarDica(c.operacao.dicaDaChave(alvo.cabo, alvo.indice), x, y);
+    // A peça apontada (ela, um terminal dela, o botão dela ou o visor dela): no modo "ao passar o ponteiro", mostra o visor.
+    c.operacao.apontar(alvo?.tipo === 'terminal' ? alvo.disp : alvo?.tipo === 'dispositivo' || alvo?.tipo === 'botao' || alvo?.tipo === 'visor' ? alvo.uid : null);
+    c.canvas.style.cursor = alvo?.tipo === 'terminal' ? 'crosshair' : alvo?.tipo === 'dispositivo' ? 'grab' : alvo?.tipo === 'visor' ? 'move' : alvo ? 'pointer' : '';
+    if (alvo?.tipo === 'visor') mostrarDica(DICA_DO_VISOR, x, y);
+    else if (alvo?.tipo === 'chave') mostrarDica(c.operacao.dicaDaChave(alvo.cabo, alvo.indice), x, y);
     else if (alvo?.tipo === 'botao') mostrarDica(c.operacao.dicaDoBotao(alvo.uid), x, y);
     else if (alvo?.tipo === 'terminal') mostrarDica('Arraste até outro terminal para puxar um cabo. Ou clique aqui e depois no outro terminal: assim dá para mexer a câmera no caminho.', x, y);
     else if (alvo?.tipo === 'cabo') {
@@ -589,6 +618,44 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     c.canvas.style.cursor = 'grabbing';
   }
 
+  // ---------------------------------------------------------------- Arrastar o visor ampliado
+
+  function comecarVisor(uid: string, x: number, y: number): void {
+    const lugar = c.operacao.visorNoMundo(uid);
+    mirar(x, y);
+    const plano = lugar ? new THREE.Plane().setFromNormalAndCoplanarPoint(c.camera.getWorldDirection(new THREE.Vector3()), lugar) : null;
+    const toque = plano ? raio.ray.intersectPlane(plano, new THREE.Vector3()) : null;
+    if (!lugar || !plano || !toque) {
+      modo = { tipo: 'alheio' };
+      return;
+    }
+    modo = { tipo: 'visor', uid, plano, desvio: toque.sub(lugar), marcado: false };
+    limparPairar();
+    // Enquanto é arrastado, o visor continua à mostra no modo "ao passar o ponteiro".
+    c.operacao.apontar(uid);
+    c.canvas.style.cursor = 'move';
+  }
+
+  /** Leva o visor para o ponto do plano sob o ponteiro e guarda o lugar como deslocamento a partir do centro da peça, em coordenadas da casa. */
+  function atualizarVisor(m: Modo & { tipo: 'visor' }, x: number, y: number): void {
+    const d = estado.projeto.dispositivos.find((k) => k.uid === m.uid);
+    if (!d) return;
+    // O ponteiro vale até a borda da cena: o visor não é largado fora dela.
+    const r = c.canvas.getBoundingClientRect();
+    mirar(THREE.MathUtils.clamp(x, r.left + 4, r.right - 4), THREE.MathUtils.clamp(y, r.top + 4, r.bottom - 4));
+    const ponto = raio.ray.intersectPlane(m.plano, new THREE.Vector3());
+    if (!ponto) return;
+    const naCasa = paraACasa(ponto.sub(m.desvio));
+    const arredondar = (v: number): number => Math.round(v * 1e4) / 1e4;
+    const novo: Vec3 = [arredondar(naCasa.x - d.pos[0]), arredondar(naCasa.y - d.pos[1]), arredondar(naCasa.z - d.pos[2])];
+    if (d.visor && novo.every((v, i) => v === d.visor![i])) return;
+    if (!m.marcado) {
+      m.marcado = true;
+      acoes.marcarHistorico();
+    }
+    acoes.moverVisor(m.uid, novo, { historico: false });
+  }
+
   // ---------------------------------------------------------------- Cabos
 
   const elastico = new THREE.Mesh(
@@ -739,6 +806,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       acoes.cancelarArraste();
       c.cabos.adiarComprimentos(false);
     }
+    if (m.tipo === 'visor' && m.marcado) acoes.cancelarArraste();
     encerrar();
     return true;
   }
@@ -752,7 +820,9 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       else if (m.alvo?.tipo === 'botao') apertarBotao(m.alvo.uid);
       else if (m.alvo?.tipo === 'dispositivo') acoes.selecionar({ tipo: 'dispositivo', uid: m.alvo.uid });
       else if (m.alvo?.tipo === 'cabo') acoes.selecionar({ tipo: 'cabo', uid: m.alvo.uid });
-      else if (estado.selecao && !estado.edicaoCasa.ativa) acoes.selecionar(null);
+      else if (m.alvo?.tipo === 'visor') {
+        // Clique no visor, sem arrastar: nada muda, nem a seleção (no modo "ao clicar" é ela que mantém o visor à mostra).
+      } else if (estado.selecao && !estado.edicaoCasa.ativa) acoes.selecionar(null);
     } else if (m.tipo === 'catalogo') {
       atualizarCatalogo(m, x, y);
       if (ehGrampo(m.item)) {
@@ -775,6 +845,8 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       atualizarMover(m, x, y);
       // Os comprimentos dos cabos da peça saem agora, de uma vez.
       c.cabos.adiarComprimentos(false);
+    } else if (m.tipo === 'visor') {
+      atualizarVisor(m, x, y);
     } else if (m.tipo === 'cabo') {
       if (m.fixo) {
         // Cabo começado com clique: soltar o botão depois de girar a câmera não acaba com ele; um clique no vazio, sim.
@@ -820,6 +892,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     else if (m.tipo === 'catalogo') atualizarCatalogo(m, x, y);
     else if (m.tipo === 'protecao') atualizarProtecao(m, x, y);
     else if (m.tipo === 'mover') atualizarMover(m, x, y);
+    else if (m.tipo === 'visor') atualizarVisor(m, x, y);
     else if (m.tipo === 'cabo') atualizarCabo(m, x, y);
   }
 
@@ -878,6 +951,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     if (m.tipo === 'apertado') {
       if (Math.hypot(e.clientX - m.x, e.clientY - m.y) <= LIMIAR_DE_ARRASTE) return;
       if (m.alvo?.tipo === 'dispositivo') comecarAMover(m.alvo.uid, m.x, m.y);
+      else if (m.alvo?.tipo === 'visor') comecarVisor(m.alvo.uid, m.x, m.y);
       else {
         modo = { tipo: 'alheio' };
         limparPairar();
@@ -1001,6 +1075,14 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       }
       return;
     }
+    if ((e.key === 'v' || e.key === 'V') && !e.repeat) {
+      // Esconde ou mostra todos os visores, sem mudar o modo do ajuste "Visores".
+      const escondidos = c.operacao.alternarVisores();
+      const r = c.canvas.getBoundingClientRect();
+      const [x, y] = ultimo && sobreACena(ultimo[0], ultimo[1]) ? ultimo : [r.left + r.width / 2 - 120, r.top + 60];
+      avisar(escondidos ? 'Visores escondidos. A tecla V mostra de novo.' : 'Visores à mostra de novo.', x, y, 'neutro');
+      return;
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && estado.selecao && (modo.tipo === 'ocioso' || (modo.tipo === 'cabo' && modo.fixo))) {
       e.preventDefault();
       if (modo.tipo !== 'ocioso') encerrar();
@@ -1077,6 +1159,13 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       if (modo.tipo !== 'ocioso' || estado.edicaoCasa.ativa || !sobreACena(x, y) || !mirar(x, y)) return false;
       const alvo = alvoSob();
       return alvo?.tipo === 'chave' || alvo?.tipo === 'botao';
+    },
+    duploClique(x, y) {
+      if (modo.tipo !== 'ocioso' || estado.edicaoCasa.ativa || !sobreACena(x, y) || !mirar(x, y)) return false;
+      const alvo = alvoSob();
+      if (alvo?.tipo !== 'visor') return false;
+      acoes.moverVisor(alvo.uid, null);
+      return true;
     },
     destruir() {
       cancelarAssinaturas.forEach((f) => f());

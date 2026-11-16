@@ -1770,7 +1770,7 @@ button:disabled {
   pointer-events: none;
 }
 
-.ajuda-camera span {
+.ajuda-camera > span {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1782,6 +1782,68 @@ button:disabled {
   pointer-events: auto;
   padding: 1px 8px;
   font-size: 11.5px;
+}
+
+/* Com o menu "Visores" aberto, a barra passa à frente dos cartões que ficam sobre a cena. */
+.ajuda-camera.com-menu {
+  z-index: 40;
+}
+
+/* Menu "Visores", na barra de ajuda da cena: como os números ao vivo de cada peça aparecem. */
+.menu-visores {
+  position: relative;
+  flex: none;
+}
+
+#botao-visores[aria-expanded='true'] {
+  background: #eef2f6;
+}
+
+.menu-visores .menu-lista {
+  width: 300px;
+  color: var(--texto, #1f2933);
+  pointer-events: auto;
+}
+
+.menu-visores .menu-lista button {
+  padding: 5px 8px 5px 24px;
+  font-size: 12.5px;
+  white-space: normal;
+  position: relative;
+}
+
+/* O modo em uso leva a marca e o negrito: não depende só de cor. */
+.menu-visores .menu-lista button[aria-pressed='true'] {
+  font-weight: 700;
+  background: #eef2f6;
+}
+
+.menu-visores .menu-lista button[aria-pressed='true']::before {
+  content: '✓';
+  position: absolute;
+  left: 8px;
+}
+
+.menu-visores .menu-titulo {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.menu-visores .tamanho-dos-visores {
+  display: flex;
+  gap: 4px;
+  padding: 2px 8px 4px;
+}
+
+.menu-visores .tamanho-dos-visores button {
+  flex: 1;
+  padding: 4px 6px 4px 20px;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.menu-visores .tamanho-dos-visores button[aria-pressed='true']::before {
+  left: 6px;
 }
 
 /* Janela menor que o mínimo (1200 × 700): a página rola, em vez de cortar a coluna da direita e a barra de baixo. */

@@ -1,9 +1,13 @@
-// Lugar dos visores ampliados na tela: ao lado ou acima da peça, sem cair sobre ela nem um sobre o outro.
-// Especificação: docs/especificacao/operar.md, seção 7.
+// Lugar dos visores ampliados na tela: sempre acima da peça, ou onde a pessoa o soltou.
+// Especificação: docs/especificacao/operar.md, seção 7.2.
 //
 // Conta pura, em pixels da tela (origem no canto de cima, à esquerda). Quem mede as peças e desenha é `operar.ts`.
-// Este é o ponto único de onde sai a posição do visor: os ajustes A1 e A2 do plano (visores configuráveis e
-// arrastar o visor) entram aqui, como mais um candidato ou como um lugar fixo no pedido.
+// Este é o ponto único de onde sai a posição do visor.
+//
+// - Lugar padrão: acima da peça, centrado, com folga. Se cairia sobre outro visor (ou sobre uma proteção, que o visor
+//   taparia), sobe até passar dele: empilha para cima, sem ir para os lados.
+// - Visor arrastado: fica onde a pessoa o soltou. Não é reposicionado; os visores no lugar padrão desviam dele.
+// - Todos ficam inteiros dentro da tela.
 
 export interface Retangulo {
   x: number;
@@ -19,29 +23,18 @@ export interface PedidoDeLugar {
   /** Medidas do visor na tela. */
   largura: number;
   altura: number;
-  /** Candidato escolhido no quadro anterior. Nulo se o visor não estava na tela. */
-  anterior: number | null;
-}
-
-/** O que o visor deve evitar, sem ser proibido. */
-export interface Estorvo {
-  ret: Retangulo;
-  /** Custo de cobrir metade do estorvo, ou mais. */
-  peso: number;
-  /**
-   * `coberto`: o visor ficaria por cima dele (peça, botão, proteção); o custo cresce com a parte do estorvo coberta.
-   * `cobre`: ele ficaria por cima do visor (painel da página); o custo cresce com a parte do visor coberta.
-   * Nos dois casos o custo cresce sem degrau, de zero até o peso (com metade coberta): um degrau faria o visor
-   * trocar de lugar e voltar quando a câmera passa devagar pelo ponto em que ele encosta no estorvo.
-   */
-  tipo: 'coberto' | 'cobre';
-  /** Peça a que pertence: o visor dela não o conta (a peça dele é tratada à parte). */
-  dono?: string;
+  /** Centro do visor na tela, quando a pessoa o arrastou. Ausente: lugar padrão, acima da peça. */
+  fixo?: readonly [x: number, y: number];
+  /** Quanto o visor tinha subido no quadro anterior (`nivel` do lugar escolhido). Nulo ou ausente se não estava na tela. */
+  anterior?: number | null;
 }
 
 export interface LugarEscolhido {
   ret: Retangulo;
-  candidato: number;
+  /** Quantas vezes o visor subiu para desviar de outro visor ou de uma proteção. Zero: logo acima da peça. */
+  nivel: number;
+  /** Verdadeiro para o visor que está onde a pessoa o soltou. */
+  arrastado: boolean;
 }
 
 /** Folga entre o visor e a peça dele, entre dois visores, e entre o visor e a borda da tela. */
@@ -49,56 +42,24 @@ export const FOLGA_DA_PECA_PX = 14;
 export const FOLGA_ENTRE_VISORES_PX = 8;
 export const MARGEM_DA_TELA_PX = 8;
 /**
- * Quanto um lugar novo precisa ser melhor que o atual para o visor mudar: é o que o impede de tremer. Fica abaixo da
- * menor diferença entre dois candidatos (6), para o visor voltar ao lugar preferido assim que ele fica livre.
+ * O visor que subiu para desviar só desce quando o lugar de baixo fica livre com esta folga a mais: é o que o impede
+ * de subir e descer quando a câmera passa devagar pelo ponto em que dois visores se encostam.
  */
-const APEGO = 5;
-/** O lugar atual tolera esta sobreposição com outro visor antes de ser largado. */
-const TOLERANCIA_PX = 4;
+const APEGO_PX = 10;
 
-interface Candidato {
-  /** Canto de cima, à esquerda, a partir da caixa da peça e das medidas do visor. */
-  em(p: Retangulo, l: number, a: number): [x: number, y: number];
-  /** Custo fixo: a ordem de preferência. */
-  custo: number;
+/** O que o visor no lugar padrão não deve tapar: uma proteção ou um terminal. */
+export interface Estorvo {
+  ret: Retangulo;
+  /** Peça a que pertence: o visor dela não o conta (ele já fica acima da peça dele). */
+  dono?: string;
 }
 
-const G = FOLGA_DA_PECA_PX;
-const meioX = (p: Retangulo): number => p.x + p.largura / 2;
-const meioY = (p: Retangulo): number => p.y + p.altura / 2;
-const acima = (linha: number, desvio: number, custo: number): Candidato => ({
-  em: (p, l, a) => [meioX(p) - l / 2 + desvio * l, p.y - G - a - linha * (a + FOLGA_ENTRE_VISORES_PX)],
-  custo,
-});
-
-/** Lugares possíveis, do preferido ao último recurso. A ordem da lista é o número do candidato: não reordenar. */
-const CANDIDATOS: readonly Candidato[] = [
-  acima(0, 0, 0),
-  acima(0, 0.5, 6),
-  acima(0, -0.5, 6),
-  // Ao lado, na altura do meio da peça.
-  { em: (p, l, a) => [p.x + p.largura + G, meioY(p) - a / 2], custo: 10 },
-  { em: (p, l, a) => [p.x - G - l, meioY(p) - a / 2], custo: 10 },
-  // Empilhado: uma linha acima.
-  acima(1, 0, 12),
-  acima(0, 1.05, 14),
-  acima(0, -1.05, 14),
-  // Na diagonal de cima.
-  { em: (p, l, a) => [p.x + p.largura + G, p.y - a * 0.6], custo: 16 },
-  { em: (p, l, a) => [p.x - G - l, p.y - a * 0.6], custo: 16 },
-  acima(1, 0.6, 18),
-  acima(1, -0.6, 18),
-  acima(2, 0, 24),
-  acima(1, 1.2, 26),
-  acima(1, -1.2, 26),
-  acima(2, 0.7, 30),
-  acima(2, -0.7, 30),
-  acima(3, 0, 36),
-  // Abaixo: só quando não sobra lugar em cima nem dos lados.
-  { em: (p, l, a) => [meioX(p) - l / 2, p.y + p.altura + G], custo: 40 },
-  { em: (p, l, a) => [meioX(p) - l / 2 + l, p.y + p.altura + G], custo: 46 },
-  { em: (p, l, a) => [meioX(p) - l / 2 - l, p.y + p.altura + G], custo: 46 },
-];
+/** A cena, em pixels. `topo` é a faixa do alto que um painel da página cobre (a barra de ajuda da câmera): o visor fica abaixo dela. */
+export interface TelaDosVisores {
+  largura: number;
+  altura: number;
+  topo?: number;
+}
 
 /** Área em que dois retângulos se sobrepõem, com `folga` somada em volta do primeiro (negativa encolhe). */
 export function sobreposicao(a: Retangulo, b: Retangulo, folga = 0): number {
@@ -110,48 +71,60 @@ export function sobreposicao(a: Retangulo, b: Retangulo, folga = 0): number {
 const limitar = (v: number, min: number, max: number): number => (max < min ? min : Math.min(max, Math.max(min, v)));
 
 /**
- * Escolhe o lugar de cada visor, na ordem dos pedidos (que deve ser sempre a mesma: quem vem antes escolhe antes).
- * Nenhum visor fica sobre a peça dele nem sobre outro visor, enquanto houver candidato que o permita; todos ficam
- * dentro da tela. O lugar do quadro anterior é mantido até outro ser claramente melhor.
+ * Sobe o visor a partir de `y` até ele não cair sobre outro visor (com a folga entre visores) nem sobre um estorvo.
+ * Na primeira conferência vale a folga a mais de `apego` (a de quem já estava em cima); depois de subir, não.
  */
-export function escolherLugares(pedidos: readonly PedidoDeLugar[], estorvos: readonly Estorvo[], tela: { largura: number; altura: number }): Map<string, LugarEscolhido> {
+function subir(x: number, y: number, l: number, a: number, visores: readonly Retangulo[], estorvos: readonly Retangulo[], apego: number): { y: number; nivel: number } {
+  let nivel = 0;
+  for (let volta = 0; volta <= visores.length + estorvos.length; volta++) {
+    const ret: Retangulo = { x, y, largura: l, altura: a };
+    const mais = nivel === 0 ? apego : 0;
+    let topo = Infinity;
+    for (const b of visores) if (sobreposicao(ret, b, FOLGA_ENTRE_VISORES_PX + mais) > 0) topo = Math.min(topo, b.y);
+    for (const b of estorvos) if (sobreposicao(ret, b, mais) > 0) topo = Math.min(topo, b.y);
+    if (topo === Infinity) break;
+    // Meio pixel a mais: a conta de ponto flutuante não deixa o visor encostado contar como sobreposto.
+    y = topo - FOLGA_ENTRE_VISORES_PX - a - 0.5;
+    nivel++;
+  }
+  return { y, nivel };
+}
+
+/**
+ * Escolhe o lugar de cada visor. Os arrastados ficam onde estão (só são trazidos para dentro da tela). Os demais, na
+ * ordem dos pedidos (que deve ser sempre a mesma: quem vem depois sobe mais), ficam acima da peça de cada um e sobem
+ * o que for preciso para não cair sobre um visor já posto nem sobre o que está em `evitar` (proteções e terminais). Se
+ * para desviar de `evitar` o visor sairia da tela, `evitar` deixa de valer; se ainda assim sairia, ele para na borda de cima.
+ */
+export function escolherLugares(pedidos: readonly PedidoDeLugar[], evitar: readonly Estorvo[], tela: TelaDosVisores): Map<string, LugarEscolhido> {
   const escolhidos = new Map<string, LugarEscolhido>();
   const postos: Retangulo[] = [];
+  const M = MARGEM_DA_TELA_PX;
+  const topo = M + Math.max(0, tela.topo ?? 0);
   for (const pedido of pedidos) {
+    if (!pedido.fixo) continue;
+    const { largura: l, altura: a } = pedido;
+    const ret: Retangulo = {
+      x: limitar(pedido.fixo[0] - l / 2, M, tela.largura - l - M),
+      y: limitar(pedido.fixo[1] - a / 2, topo, tela.altura - a - M),
+      largura: l,
+      altura: a,
+    };
+    escolhidos.set(pedido.id, { ret, nivel: 0, arrastado: true });
+    postos.push(ret);
+  }
+  for (const pedido of pedidos) {
+    if (pedido.fixo) continue;
     const { largura: l, altura: a, peca } = pedido;
-    const area = Math.max(1, l * a);
-    let melhor: LugarEscolhido | null = null;
-    let menor = Infinity;
-    CANDIDATOS.forEach((cand, i) => {
-      const [x0, y0] = cand.em(peca, l, a);
-      const x = limitar(x0, MARGEM_DA_TELA_PX, tela.largura - l - MARGEM_DA_TELA_PX);
-      const y = limitar(y0, MARGEM_DA_TELA_PX, tela.altura - a - MARGEM_DA_TELA_PX);
-      const ret: Retangulo = { x, y, largura: l, altura: a };
-      const atual = pedido.anterior === i;
-      // Empurrado pela borda da tela, o lugar vale menos: o visor se afasta de onde devia estar.
-      let custo = cand.custo + 0.5 * (Math.abs(x - x0) + Math.abs(y - y0)) - (atual ? APEGO : 0);
-      // Sobre a própria peça ou sobre outro visor: só se não houver outra saída.
-      const naPeca = sobreposicao(ret, peca, atual ? 0 : G / 2);
-      if (naPeca > 0) custo += 5000 + (100 * naPeca) / area;
-      for (const outro of postos) {
-        const s = sobreposicao(ret, outro, atual ? -TOLERANCIA_PX : FOLGA_ENTRE_VISORES_PX);
-        if (s > 0) custo += 10000 + (100 * s) / area;
-      }
-      for (const e of estorvos) {
-        if (e.dono === pedido.id) continue;
-        const s = sobreposicao(ret, e.ret);
-        if (s <= 0) continue;
-        const parte = e.tipo === 'cobre' ? s / area : s / Math.max(1, e.ret.largura * e.ret.altura);
-        custo += e.peso * Math.min(1, 2 * parte);
-      }
-      if (custo < menor) {
-        menor = custo;
-        melhor = { ret, candidato: i };
-      }
-    });
-    if (!melhor) continue;
-    escolhidos.set(pedido.id, melhor);
-    postos.push((melhor as LugarEscolhido).ret);
+    const x = limitar(peca.x + peca.largura / 2 - l / 2, M, tela.largura - l - M);
+    const base = Math.min(peca.y - FOLGA_DA_PECA_PX - a, tela.altura - a - M);
+    const apego = (pedido.anterior ?? 0) > 0 ? APEGO_PX : 0;
+    const estorvos = evitar.filter((e) => e.dono !== pedido.id).map((e) => e.ret);
+    let lugar = subir(x, base, l, a, postos, estorvos, apego);
+    if (lugar.y < topo && estorvos.length > 0) lugar = subir(x, base, l, a, postos, [], apego);
+    const ret: Retangulo = { x, y: Math.max(topo, lugar.y), largura: l, altura: a };
+    escolhidos.set(pedido.id, { ret, nivel: lugar.nivel, arrastado: false });
+    postos.push(ret);
   }
   return escolhidos;
 }

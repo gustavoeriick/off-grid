@@ -106,6 +106,8 @@ export interface Dispositivo {
   uso: Uso | null;
   /** Placa no chão, sobre suporte: inclinação em graus a partir da horizontal. Ausente nas demais peças. */
   inclinacaoGraus?: number;
+  /** Deslocamento do visor ampliado em relação ao centro da peça, quando o usuário o arrastou. Ausente: lugar padrão, acima da peça. */
+  visor?: Vec3;
 }
 
 /** Estado de uma proteção instalada em um cabo. Fusível aberto é fusível fora do porta-fusível. */

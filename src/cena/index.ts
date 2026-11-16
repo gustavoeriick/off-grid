@@ -116,7 +116,8 @@ export interface OffgridGlobal {
   textoDoVisor?: (uid: string) => string | null;
   /**
    * Auxiliar de verificação: selos de queimado na cena (`uid` da peça ou do cabo, ou `{cabo}:{indice}` da proteção), partículas
-   * de efeito vivas, visores ampliados à mostra e o lugar de cada um na janela, em pixels, com a ponta do fio sobre a peça.
+   * de efeito vivas, visores ampliados à mostra e o lugar de cada um na janela, em pixels, com a ponta do fio sobre a peça
+   * e se foi arrastado; os visores pequenos colados (modo "tamanho real"), o ajuste "Visores" em uso e se a tecla V os escondeu.
    */
   operacaoNaCena?: () => ReturnType<CamadaDeOperacao['resumo']>;
   /**
@@ -537,6 +538,8 @@ export function criarCena(container: HTMLElement): Cena {
     if (estado.edicaoCasa.ativa || e.target !== renderizador.domElement) return;
     // Dois cliques seguidos em uma chave ou em um botão de ligar são duas manobras, e não um pedido de aproximar a câmera.
     if (interacao.manobraEm(e.clientX, e.clientY)) return;
+    // Duplo clique em um visor ampliado devolve o visor ao lugar padrão; a câmera fica onde está.
+    if (interacao.duploClique(e.clientX, e.clientY)) return;
     const r = renderizador.domElement.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return;
     camera.updateMatrixWorld();

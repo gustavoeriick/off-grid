@@ -2025,8 +2025,19 @@ async function principal() {
     await esperar(900);
     await og(() => localStorage.removeItem('offgrid.boasvindas.vista'));
     await og(() => sessionStorage.clear());
+    // O ajuste "Visores" é do navegador: escolhido pelo menu antes de recarregar, tem de continuar depois (operar.md, seção 7.2).
+    await pagina.locator('#botao-visores').click();
+    await pagina.locator('[data-modo-dos-visores="ao-passar"]').click();
+    await pagina.locator('[data-tamanho-dos-visores="grande"]').click();
     await pagina.reload();
     await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true, null, { timeout: 30000 });
+    conferir(JSON.stringify((await estado()).visores) === '{"modo":"ao-passar","tamanho":"grande"}', `recarregar a página deveria manter o ajuste "Visores": ${JSON.stringify((await estado()).visores)}`);
+    await pagina.locator('#botao-visores').click();
+    conferir((await pagina.locator('[data-modo-dos-visores="ao-passar"]').getAttribute('aria-pressed')) === 'true', 'o menu "Visores" deveria marcar o modo gravado');
+    await pagina.locator('[data-modo-dos-visores="ampliado"]').click();
+    await pagina.locator('[data-tamanho-dos-visores="medio"]').click();
+    await pagina.keyboard.press('Escape');
+    conferir(await pagina.locator('#lista-visores').isHidden(), 'Esc deveria fechar o menu "Visores"');
     await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
     conferir(await pagina.locator('#boas-vindas').isVisible(), 'o cartão "Por onde começar" deveria aparecer de novo');
     conferir((await pagina.locator('#boas-vindas button').first().textContent()) === 'Fazer o tutorial', 'o botão principal do cartão deveria ser "Fazer o tutorial"');
@@ -2305,6 +2316,128 @@ async function principal() {
     await pagina.locator('#botao-vista-inicial').click();
     await esperar(1000);
     await captura('86-tutorial-resumo');
+
+    // ---- Visores, com o sistema ligado (ajustes A1 e A2; operar.md, seção 7.2): lugar padrão, arrastar com o mouse,
+    // desfazer, duplo clique, os quatro modos pelo menu "Visores" e a tecla V.
+    {
+      const naCena = () => og(() => window.__offgrid.operacaoNaCena());
+      const pecaDe = async (uid) => (await projeto()).dispositivos.find((x) => x.uid === uid);
+      const cameraAgora = async () => JSON.stringify(await og(() => window.__offgrid.camera()));
+      const escolherModo = async (modo) => {
+        await pagina.locator('#botao-visores').click();
+        await pagina.locator(`[data-modo-dos-visores="${modo}"]`).click();
+        await pagina.keyboard.press('Escape');
+        await esperar(300);
+        const c = await naCena();
+        conferir(c.modoDosVisores === modo, `o menu "Visores" deveria pôr o modo ${modo}: ${c.modoDosVisores}`);
+        return c;
+      };
+      await paraDentro();
+      let v = await naCena();
+      const comVisor = v.visoresFlutuando;
+      conferir(v.modoDosVisores === 'ampliado' && comVisor.length === 3 && comVisor.includes(inversor) && comVisor.includes(ctl), `com o sistema ligado, bateria, controlador e inversor deveriam estar com o visor ampliado à vista: ${JSON.stringify(comVisor)}`);
+      for (const l of v.lugaresDosVisores) {
+        conferir(!l.arrastado && l.y + l.altura <= l.ponta[1], `o visor de ${l.uid} deveria nascer acima da peça dele: ${JSON.stringify(l)}`);
+        for (const o of v.lugaresDosVisores) {
+          const sobre = o.uid !== l.uid && l.x < o.x + o.largura && o.x < l.x + l.largura && l.y < o.y + o.altura && o.y < l.y + l.altura;
+          conferir(!sobre, `os visores de ${l.uid} e ${o.uid} não deveriam se sobrepor: ${JSON.stringify([l, o])}`);
+        }
+      }
+      await captura('86c-visores-no-lugar-padrao');
+
+      // Arrastar o visor do controlador com o mouse, para a parede ao lado: o lugar vai para o projeto e nada mais muda.
+      const arrastada = ctl;
+      const de = v.lugaresDosVisores.find((l) => l.uid === arrastada);
+      const pecaAntes = await pecaDe(arrastada);
+      const cameraAntes = await cameraAgora();
+      const pega = [de.x + de.largura / 2, de.y + de.altura / 2];
+      const [dx, dy] = [190, -90];
+      const s = await levar(pega, [pega[0] + dx, pega[1] + dy]);
+      conferir(s.modo === 'visor', `apertar e arrastar sobre o visor deveria arrastar o visor: ${JSON.stringify(s)}`);
+      await soltar();
+      let peca = await pecaDe(arrastada);
+      conferir(Array.isArray(peca.visor) && peca.visor.length === 3 && peca.visor.every((n) => Number.isFinite(n)), `o lugar do visor arrastado deveria ir para o projeto: ${JSON.stringify(peca.visor)}`);
+      conferir(JSON.stringify({ ...peca, visor: undefined }) === JSON.stringify(pecaAntes), 'arrastar o visor não deveria mexer na peça');
+      conferir((await estado()).selecao === null && (await cameraAgora()) === cameraAntes, 'arrastar o visor não deveria selecionar nada nem girar a câmera');
+      v = await naCena();
+      let solto = v.lugaresDosVisores.find((l) => l.uid === arrastada);
+      conferir(solto.arrastado && Math.abs(solto.x - (de.x + dx)) < 8 && Math.abs(solto.y - (de.y + dy)) < 8, `o visor deveria ficar onde foi solto: ${JSON.stringify({ de, solto })}`);
+      conferir(v.lugaresDosVisores.every((l) => l.uid === arrastada || !l.arrastado), 'só o visor arrastado deveria sair do lugar padrão');
+      // Nenhum visor fica escondido atrás do cartão do passo a passo.
+      const cartao = await painel().boundingBox();
+      for (const l of v.lugaresDosVisores) {
+        const sob = l.x < cartao.x + cartao.width && cartao.x < l.x + l.largura && l.y < cartao.y + cartao.height && cartao.y < l.y + l.altura;
+        conferir(!sob, `o visor de ${l.uid} não deveria ficar atrás do cartão do passo a passo: ${JSON.stringify({ l, cartao })}`);
+      }
+      await captura('86d-visor-arrastado');
+
+      // Um arraste é um passo só do desfazer.
+      await pagina.keyboard.press('Control+z');
+      await esperar(300);
+      conferir(!('visor' in (await pecaDe(arrastada))), 'desfazer deveria devolver o visor ao lugar padrão');
+      await pagina.keyboard.press('Control+y');
+      await esperar(300);
+      conferir(JSON.stringify((await pecaDe(arrastada)).visor) === JSON.stringify(peca.visor), 'refazer deveria devolver o visor para onde foi solto');
+
+      // Duplo clique no visor: volta para cima da peça, e a câmera não se aproxima.
+      solto = (await naCena()).lugaresDosVisores.find((l) => l.uid === arrastada);
+      await pagina.mouse.dblclick(solto.x + solto.largura / 2, solto.y + solto.altura / 2);
+      await esperar(400);
+      peca = await pecaDe(arrastada);
+      conferir(!('visor' in peca) && JSON.stringify(peca) === JSON.stringify(pecaAntes), `o duplo clique deveria devolver o visor ao lugar padrão: ${JSON.stringify(peca.visor)}`);
+      conferir((await cameraAgora()) === cameraAntes, 'o duplo clique no visor não deveria aproximar a câmera');
+      conferir((await naCena()).lugaresDosVisores.every((l) => !l.arrastado), 'depois do duplo clique nenhum visor deveria estar arrastado');
+
+      // Os quatro modos, pelo menu.
+      await pagina.locator('#botao-visores').click();
+      await captura('86e-menu-visores');
+      await pagina.keyboard.press('Escape');
+      v = await escolherModo('real');
+      console.log(`visores no modo "tamanho real": colados em ${JSON.stringify(v.visoresColados)}`);
+      conferir(v.visoresFlutuando.length === 0, `no modo "tamanho real" nenhum visor ampliado deveria aparecer: ${JSON.stringify(v.visoresFlutuando)}`);
+      v = await escolherModo('ao-clicar');
+      conferir(v.visoresFlutuando.length === 0 && v.visoresColados.length === 0, `no modo "ao clicar", sem seleção, nenhum visor deveria aparecer: ${JSON.stringify(v)}`);
+      await og((u) => window.__offgrid.acoes.selecionar({ tipo: 'dispositivo', uid: u }), inversor);
+      await esperar(300);
+      v = await naCena();
+      conferir(v.visoresFlutuando.join() === inversor, `no modo "ao clicar", só o visor da peça selecionada deveria aparecer: ${JSON.stringify(v.visoresFlutuando)}`);
+      await og(() => window.__offgrid.acoes.selecionar(null));
+      await esperar(300);
+      conferir((await naCena()).visoresFlutuando.length === 0, 'tirar a seleção deveria esconder o visor');
+      v = await escolherModo('ao-passar');
+      conferir(v.visoresFlutuando.length === 0, `no modo "ao passar o ponteiro", sem o ponteiro em peça nenhuma, nenhum visor deveria aparecer: ${JSON.stringify(v.visoresFlutuando)}`);
+      let apontada = null;
+      for (const uid of comVisor) {
+        const pt = await og((u) => window.__offgrid.telaDe(u), uid);
+        await pagina.mouse.move(pt[0], pt[1], { steps: 4 });
+        await esperar(350);
+        if ((await naCena()).visoresFlutuando.join() === uid) {
+          apontada = uid;
+          break;
+        }
+      }
+      conferir(apontada !== null, 'no modo "ao passar o ponteiro", o visor deveria aparecer com o ponteiro sobre a peça');
+      await captura('86f-visor-ao-passar-o-ponteiro');
+      const cena = await pagina.locator('#cena canvas').boundingBox();
+      await pagina.mouse.move(cena.x + 30, cena.y + cena.height - 30, { steps: 4 });
+      await esperar(900);
+      conferir((await naCena()).visoresFlutuando.length === 0, 'com o ponteiro fora da peça, o visor deveria sumir');
+      v = await escolherModo('ampliado');
+      conferir(v.visoresFlutuando.length === 3, `de volta ao modo "ampliado", os três visores deveriam aparecer: ${JSON.stringify(v.visoresFlutuando)}`);
+
+      // Tecla V: esconde e mostra todos, sem mudar o modo.
+      await pagina.keyboard.press('v');
+      await esperar(300);
+      v = await naCena();
+      conferir(v.visoresEscondidos === true && v.visoresFlutuando.length === 0 && v.modoDosVisores === 'ampliado', `a tecla V deveria esconder todos os visores sem mudar o modo: ${JSON.stringify(v.visoresFlutuando)}`);
+      await pagina.keyboard.press('v');
+      await esperar(300);
+      v = await naCena();
+      conferir(v.visoresEscondidos === false && v.visoresFlutuando.length === 3, 'a tecla V de novo deveria mostrar os visores');
+      await pagina.mouse.move(cena.x + 30, cena.y + cena.height - 30);
+      await pagina.locator('#botao-vista-inicial').click();
+      await esperar(600);
+    }
 
     // Um passo desfeito durante o teste cancela o teste e o painel volta ao passo da vez.
     await botaoDoPainel('testar-bateria').click();

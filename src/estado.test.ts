@@ -1035,3 +1035,115 @@ describe('operar o sistema', () => {
     acoes.sairDoTutorial();
   });
 });
+
+// Ajustes A1 e A2 (operar.md, seção 7.2): lugar do visor ampliado no projeto e o ajuste "Visores" fora dele.
+describe('visores', () => {
+  beforeEach(() => {
+    if (emTutorial()) acoes.sairDoTutorial();
+    acoes.novoProjeto();
+    recalcularAgora();
+    acoes.definirVisores({ modo: 'ampliado', tamanho: 'medio' });
+  });
+
+  const comVisor = (): string[] => estado.projeto.dispositivos.filter((d) => ['bateria', 'inversor', 'controlador'].includes(CATALOGO.get(d.itemId)?.categoria ?? '')).map((d) => d.uid);
+  const peca = (uid: string) => estado.projeto.dispositivos.find((d) => d.uid === uid)!;
+
+  it('arrastar o visor é um passo só do desfazer; nulo volta ao lugar padrão; a peça não sai do lugar', () => {
+    const [uid] = comVisor();
+    const antes = JSON.stringify(estado.projeto);
+    const orcamento = estado.derivados.orcamento.total;
+    // Um arraste: o ponto de retorno é marcado uma vez e cada passo entra sem histórico.
+    acoes.marcarHistorico();
+    acoes.moverVisor(uid!, [0.1, 0.2, 0], { historico: false });
+    acoes.moverVisor(uid!, [0.3, 0.4, -0.1], { historico: false });
+    expect(peca(uid!).visor).toEqual([0.3, 0.4, -0.1]);
+    expect(JSON.stringify({ ...peca(uid!), visor: undefined })).toBe(JSON.stringify(JSON.parse(antes).dispositivos.find((d: { uid: string }) => d.uid === uid)));
+    recalcularAgora();
+    expect(estado.derivados.orcamento.total).toBe(orcamento);
+    expect(estado.simulacao.eventos).toHaveLength(0);
+    acoes.desfazer();
+    expect(JSON.stringify(estado.projeto)).toBe(antes);
+    acoes.refazer();
+    expect(peca(uid!).visor).toEqual([0.3, 0.4, -0.1]);
+    // De volta ao padrão: o campo some do projeto. Outro passo do desfazer.
+    acoes.moverVisor(uid!, null);
+    expect('visor' in peca(uid!)).toBe(false);
+    expect(JSON.stringify(estado.projeto)).toBe(antes);
+    acoes.desfazer();
+    expect(peca(uid!).visor).toEqual([0.3, 0.4, -0.1]);
+  });
+
+  it('pedido sem efeito não gasta passo do desfazer: peça que não existe, número inválido, visor que já está no padrão', () => {
+    const [uid] = comVisor();
+    acoes.alterarCasa({ beiral: 0.9 });
+    const texto = JSON.stringify(estado.projeto);
+    acoes.moverVisor('nao-existe', [1, 1, 1]);
+    acoes.moverVisor(uid!, [Number.NaN, 0, 0]);
+    acoes.moverVisor(uid!, null);
+    acoes.visoresNoLugarPadrao();
+    expect(JSON.stringify(estado.projeto)).toBe(texto);
+    acoes.desfazer();
+    expect(estado.projeto.casa.beiral).not.toBe(0.9);
+  });
+
+  it('"Todos no lugar padrão" devolve todos em um passo só; cancelar o arraste devolve o visor', () => {
+    const uids = comVisor();
+    expect(uids.length).toBeGreaterThanOrEqual(2);
+    acoes.moverVisor(uids[0]!, [0.2, 0.2, 0.2]);
+    acoes.moverVisor(uids[1]!, [-0.2, 0.5, 0]);
+    const arrastados = JSON.stringify(estado.projeto);
+    acoes.visoresNoLugarPadrao();
+    expect(estado.projeto.dispositivos.some((d) => 'visor' in d)).toBe(false);
+    acoes.desfazer();
+    expect(JSON.stringify(estado.projeto)).toBe(arrastados);
+    acoes.marcarHistorico();
+    acoes.moverVisor(uids[0]!, [1, 1, 1], { historico: false });
+    acoes.cancelarArraste();
+    expect(JSON.stringify(estado.projeto)).toBe(arrastados);
+  });
+
+  it('o lugar do visor vai na exportação, volta na importação e na cópia, acompanha a troca de lugar da peça e some com ela', () => {
+    const [uid, outro] = comVisor();
+    acoes.moverVisor(uid!, [0.25, 0.5, -0.125]);
+    const arquivo = JSON.parse(acoes.exportarProjeto());
+    expect(arquivo.dispositivos.find((d: { uid: string }) => d.uid === uid).visor).toEqual([0.25, 0.5, -0.125]);
+    // Mover a peça não mexe no deslocamento: o visor vai junto com ela.
+    const d = peca(uid!);
+    acoes.moverDispositivo(uid!, { pos: [d.pos[0] + 0.3, d.pos[1], d.pos[2]], quat: d.quat, superficie: d.superficie!, giro: d.giro });
+    expect(peca(uid!).visor).toEqual([0.25, 0.5, -0.125]);
+    acoes.removerDispositivo(uid!);
+    expect(estado.projeto.dispositivos.some((x) => x.uid === uid)).toBe(false);
+    expect(estado.projeto.dispositivos.some((x) => 'visor' in x)).toBe(false);
+    // Importado e copiado, o campo continua; projeto sem o campo continua sem ele.
+    acoes.importarProjeto(arquivo);
+    expect(peca(uid!).visor).toEqual([0.25, 0.5, -0.125]);
+    expect('visor' in peca(outro!)).toBe(false);
+    const copia = acoes.criarProjeto('Cópia com visor', 'copia')!;
+    expect(peca(uid!).visor).toEqual([0.25, 0.5, -0.125]);
+    for (const p of acoes.listarProjetos().filter((x) => !x.atual)) acoes.apagarProjeto(p.id);
+    expect(acoes.listarProjetos().map((p) => p.id)).toEqual([copia]);
+  });
+
+  it('o ajuste "Visores" não entra no projeto nem no desfazer, avisa só quando muda e recusa valor desconhecido', () => {
+    let avisos = 0;
+    const cancelar = assinar('visores', () => avisos++);
+    const texto = JSON.stringify(estado.projeto);
+    expect(estado.visores).toEqual({ modo: 'ampliado', tamanho: 'medio' });
+    acoes.definirVisores({ modo: 'ao-clicar' });
+    acoes.definirVisores({ tamanho: 'grande' });
+    expect(estado.visores).toEqual({ modo: 'ao-clicar', tamanho: 'grande' });
+    acoes.definirVisores({ modo: 'ao-clicar' });
+    acoes.definirVisores({ modo: 'gigante' as never, tamanho: 'enorme' as never });
+    expect(estado.visores).toEqual({ modo: 'ao-clicar', tamanho: 'grande' });
+    expect(avisos).toBe(2);
+    expect(JSON.stringify(estado.projeto)).toBe(texto);
+    expect(texto).not.toContain('visores');
+    acoes.alterarCasa({ beiral: 0.9 });
+    acoes.desfazer();
+    expect(estado.visores.modo).toBe('ao-clicar');
+    // Trocar de projeto não muda o ajuste: ele é do navegador.
+    acoes.novoProjeto();
+    expect(estado.visores).toEqual({ modo: 'ao-clicar', tamanho: 'grande' });
+    cancelar();
+  });
+});

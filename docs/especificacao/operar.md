@@ -61,6 +61,8 @@ interface Dispositivo {
   queimado?: Dano;
   /** Inversor desligado sozinho por sobrecarga, esperando ser religado. */
   falha?: 'sobrecarga';
+  /** Deslocamento do visor ampliado em relação ao centro da peça, quando o usuário o arrastou. Ausente: lugar padrão, acima da peça (seção 7.2). */
+  visor?: Vec3;
 }
 
 type CodigoDano =
@@ -87,6 +89,8 @@ type Acao =
 As duas ações novas de `Acao` são as das sugestões `peca-queimada` e `sistema-desligado` do consultor. `acoes.aplicarAcao` as executa com `acoes.consertar` e `acoes.energizar`.
 
 `ligado` do inversor passa a valer. A migração de projeto antigo não muda nada: os campos novos ficam ausentes.
+
+`visor` é arrumação da montagem (seção 7.2): vai na exportação, na importação e na cópia do projeto como os outros campos, e não entra em orçamento, análise nem simulação. Projeto sem o campo funciona igual.
 
 ## 4. O que está vivo (`src/nucleo/operacao.ts`)
 
@@ -208,6 +212,43 @@ Regras (`src/nucleo/tensaoDeRepouso.ts`):
 - O visor escreve "≈" na frente. O número é o da bateria parada: carregando, a tensão de verdade fica acima; alimentando aparelhos, abaixo. O simulador não calcula esse desvio.
 - A conferência cruzada disponível: o manual Moura VRLA MVA (V5, 2024) dá em texto 12,84 V com 100 % e 12,24 V com 50 % para a selada, próximo da tabela usada.
 - O painel da bateria e o glossário dizem de onde vêm os números e que, no lítio, a tensão quase não muda entre 25 % e 100 % (os fabricantes Battle Born e LiTime dizem que tensão não é bom indicador de carga no lítio; por isso bateria de lítio usa medidor próprio).
+
+### 7.2 Lugar, arraste e ajuste dos visores
+
+Ajustes A1 e A2 do plano, pedidos pelo Gustavo em 16/11/2026. Os números de cada visor são desenhados uma vez e aparecem em até três lugares: no visor **da face** da peça (onde o modelo tem um), no visor **ampliado**, que flutua de frente para a câmera, e no visor **colado** (só no modo "tamanho real", nas peças sem visor na face).
+
+**Lugar padrão do ampliado.** Nasce sempre acima da peça dele, centrado, com 14 px de folga, e é desenhado por cima de cabos, proteções e peças ("mais para a frente"). Não escolhe lado nem diagonal. Se cairia sobre outro visor, o que vem depois na ordem das peças do projeto sobe até passar dele, com 8 px de folga: empilha para cima. Sobe do mesmo jeito para não tapar uma proteção nem um terminal de outra peça (são peças da cena e, sob o visor, não receberiam o clique) e para não ficar escondido atrás de um cartão que a página põe sobre a cena (o passo a passo, os avisos); se para isso sairia da cena, essas duas regras deixam de valer para ele. Fica sempre inteiro dentro da cena e abaixo da barra de ajuda da câmera. O visor que subiu só desce quando o lugar de baixo fica livre com 10 px a mais de folga, e a troca de lugar é um deslize de 180 ms: a câmera andando devagar não o faz pular. A conta é pura, em pixels, em `src/cena/lugarDosVisores.ts`.
+
+**Fio.** Um fio fino, escuro com borda clara, liga a borda do visor ampliado a um ponto dentro da peça dele, com uma bolinha na ponta. Some quando o visor encosta na peça.
+
+**Atrás de parede.** O ampliado só aparece se nada da casa (parede, piso, laje, porta, telhado à mostra no modo de visão) fica entre a câmera e a peça: olha-se o meio da peça, o meio da frente e o meio do topo, e basta um livre. Peça escondida pelo modo de visão não tem visor.
+
+**Arraste (A2).** O visor ampliado é arrastado com o ponteiro e fica onde foi solto, ligado à peça pelo fio. O arraste anda no plano que passa pelo lugar em que o visor estava e fica de frente para a câmera. O lugar é gravado no projeto, em `Dispositivo.visor`: o deslocamento em 3D do centro da peça até o centro do visor, em coordenadas da casa, em metros. Por isso não depende da câmera e acompanha a peça quando ela é movida e quando a casa gira. O visor arrastado não é reposicionado pela regra de não sobrepor (a escolha é da pessoa); os que estão no lugar padrão desviam dele. Se o ponto gravado cai fora da cena, o visor é desenhado encostado na borda.
+
+- `acoes.moverVisor(uid, deslocamento | null, opcoes?)`: um arraste é um passo só do desfazer (`acoes.marcarHistorico()` no primeiro movimento e `historico: false` em cada passo, como o arraste de peça; Esc cancela com `acoes.cancelarArraste()`). `null` devolve ao lugar padrão e tira o campo do projeto. Pedido sem efeito (peça que não existe, número inválido, visor que já está no padrão) não gasta passo do desfazer.
+- `acoes.visoresNoLugarPadrao()`: devolve todos de uma vez, em um passo só do desfazer. É o comando "Todos no lugar padrão" do menu.
+- **Duplo clique** no visor devolve-o ao lugar padrão. A câmera não se aproxima.
+- **Ponteiro:** sobre o visor ampliado, o cursor é o de mover e a dica diz "Arraste para mudar o visor de lugar. Duplo clique: volta para cima da peça.". O que está por baixo do visor (peça, cabo, terminal, proteção) não recebe o clique; o arraste do visor não move a peça, não gira a câmera e não muda a seleção, e um clique nele sem arrastar não faz nada. O botão ⏻ é desenhado por cima do visor e continua valendo. Com um cabo ou uma peça do catálogo já sendo arrastados, o visor não atrapalha: o terminal e a superfície sob ele continuam valendo como destino.
+- Em "Editar casa" o visor não responde ao ponteiro.
+
+**Ajuste "Visores" (A1).** `estado.visores = { modo, tamanho }`, trocado por `acoes.definirVisores(parcial)`, que avisa o evento `'visores'`. Fica gravado no navegador, na chave `offgrid.visores`; não entra no projeto nem no desfazer, e valor desconhecido na gravação vale o padrão.
+
+| Modo | O que aparece |
+|---|---|
+| `ampliado` (padrão) | O visor ampliado de toda peça à vista, até 16 m da câmera. Some quando o visor da face fica legível (de frente e com 120 px de largura na tela, ou mais) e só volta abaixo de 100 px: a folga evita o pisca-pisca no limite do zoom |
+| `real` | Só o visor na face da peça, no tamanho de verdade; para ler, aproxima-se a câmera. A peça sem visor na face (bateria de chumbo) ganha o visor colado no alto da frente dela: 7 cm de largura, sem passar de 60 % da largura nem da altura da peça (**escolha do simulador**, do tamanho de um mostrador pequeno de verdade). Sem fio e sem arraste |
+| `ao-clicar` | Nada flutuando. O ampliado da peça selecionada aparece; tirar a seleção esconde |
+| `ao-passar` | O ampliado da peça sob o ponteiro (ela, um terminal dela, o botão ⏻ dela ou o próprio visor) e o da peça selecionada. Fica 450 ms depois de o ponteiro sair, para dar tempo de ir da peça até o visor |
+
+Em `ao-clicar` e `ao-passar` o ampliado aparece sempre que pedido, a qualquer distância e mesmo com o visor da face legível; continua sumindo atrás de parede.
+
+**Tamanho do ampliado:** `pequeno` (0,75 vez), `medio` (o de antes: 26 cm de largura no mundo, entre 140 e 210 px na tela) e `grande` (1,35 vez). O visor apagado continua menor (0,65 vez).
+
+**Tecla V** (fora de campo de texto): esconde ou mostra todos os visores ampliados e colados, sem mudar o modo; o visor da face, que é parte da peça, continua. Uma dica curta diz o que aconteceu. Trocar o ajuste pelo menu mostra de novo. Não fica gravado.
+
+**Controle:** botão "Visores ▾" na barra de ajuda que fica sobre a cena, ao lado de "Vista inicial" (a barra do alto não tem espaço em 1280 px). O menu tem os quatro modos, os três tamanhos, "Todos no lugar padrão" e as notas sobre arrastar, duplo clique e a tecla V. Fecha ao clicar fora e com Esc; escolher um modo não fecha, para ver o efeito na cena.
+
+Para a verificação, `window.__offgrid.operacaoNaCena()` devolve também `visoresColados`, `modoDosVisores`, `tamanhoDosVisores`, `visoresEscondidos` e, em cada item de `lugaresDosVisores`, `arrastado`.
 
 ## 8. Tela
 

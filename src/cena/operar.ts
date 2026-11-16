@@ -5,9 +5,10 @@
 //   O desenho do estado (alavanca, fusível) é de `protecoes.ts`, aplicado pelas camadas de cabos e de dispositivos.
 // - Botão de ligar: um botão redondo, sempre de frente, no canto de cima de cada inversor e de cada aparelho.
 // - Visores: números ao vivo no controlador, no inversor e na bateria. O mesmo desenho aparece na face da peça
-//   (onde o modelo tem visor) e, quando esse fica pequeno demais na tela, ampliado ao lado ou acima dela, ligado a ela
-//   por um fio fino. O ampliado é desenhado por cima das peças e dos cabos, não cai sobre a peça dele nem sobre outro
-//   visor (o lugar sai de `lugarDosVisores.ts`) e some quando uma parede, um piso ou um telhado esconde a peça.
+//   (onde o modelo tem visor) e ampliado, acima dela, ligado a ela por um fio fino. O ampliado é desenhado por cima das
+//   peças e dos cabos, nasce sempre acima da peça dele (o lugar sai de `lugarDosVisores.ts`), pode ser arrastado para
+//   outro lugar (`Dispositivo.visor`) e some quando uma parede, um piso ou um telhado esconde a peça. O ajuste
+//   "Visores" (`estado.visores`) escolhe quando o ampliado aparece e de que tamanho (operar.md, seção 7.2).
 // - Queimado: selo "QUEIMADO" sobre a peça, o cabo ou a proteção, enquanto durar; fumaça, faísca e estalo no evento.
 //
 // A camada só lê o estado. Quem chama as ações é a interação com o ponteiro (`interacao.ts`).
@@ -15,7 +16,7 @@
 import * as THREE from 'three';
 import { CATALOGO } from '../catalogo';
 import type { Protecao } from '../catalogo/tipos';
-import { analiseDaSimulacao, assinar, correntesDeOperacaoAgora, estado, type EventoDeOperacao, horaLocalDe } from '../estado';
+import { analiseDaSimulacao, assinar, correntesDeOperacaoAgora, estado, type EventoDeOperacao, horaLocalDe, type ModoDosVisores, type TamanhoDosVisores } from '../estado';
 import { estadoDaProtecao } from '../nucleo/operacao';
 import type { Dispositivo } from '../nucleo/tipos';
 import { emUso, usoDe } from '../nucleo/uso';
@@ -60,6 +61,25 @@ export interface LugarNaJanela {
   altura: number;
   /** Ponta do fio, sobre a peça. */
   ponta: [x: number, y: number];
+  /** Verdadeiro para o visor que está onde a pessoa o soltou (`Dispositivo.visor`). */
+  arrastado: boolean;
+}
+
+/** Para a verificação: o que a camada de operação tem na cena. */
+export interface ResumoDaOperacao {
+  /** Selos de queimado: `uid` da peça ou do cabo, ou `{cabo}:{indice}` da proteção. */
+  selos: string[];
+  /** Partículas de efeito vivas. */
+  particulas: number;
+  /** `uid` das peças com o visor ampliado à vista. */
+  visoresFlutuando: string[];
+  lugaresDosVisores: LugarNaJanela[];
+  /** `uid` das peças sem visor na face que, no modo "tamanho real", estão com o visor pequeno colado à mostra. */
+  visoresColados: string[];
+  /** O ajuste "Visores" em uso e se a tecla V escondeu todos. */
+  modoDosVisores: ModoDosVisores;
+  tamanhoDosVisores: TamanhoDosVisores;
+  visoresEscondidos: boolean;
 }
 
 export interface CamadaDeOperacao {
@@ -82,27 +102,46 @@ export interface CamadaDeOperacao {
   telaDoBotao(uid: string): [x: number, y: number] | null;
   /** Texto do visor de uma peça: as linhas separadas por " | ". Vazio com o visor apagado; nulo se a peça não tem visor. */
   textoDoVisor(uid: string): string | null;
-  /** Para a verificação: selos de queimado na cena e partículas de efeito vivas. */
-  resumo(): { selos: string[]; particulas: number; visoresFlutuando: string[]; lugaresDosVisores: LugarNaJanela[] };
+  /** Peça cujo visor ampliado está sob um ponto da janela, em pixels. Nulo se não há visor ampliado ali. */
+  visorEm(x: number, y: number): string | null;
+  /** Onde está o visor ampliado de uma peça, em coordenadas do mundo. Nulo se ele não está à mostra. */
+  visorNoMundo(uid: string): THREE.Vector3 | null;
+  /** Peça que o ponteiro aponta (ela ou o visor dela): no modo "ao passar o ponteiro", é a que mostra o visor. */
+  apontar(uid: string | null): void;
+  /** Tecla V: esconde ou mostra todos os visores, sem mudar o modo. Devolve verdadeiro se ficaram escondidos. */
+  alternarVisores(): boolean;
+  /** Para a verificação: selos de queimado, partículas de efeito vivas e os visores à mostra. */
+  resumo(): ResumoDaOperacao;
   destruir(): void;
 }
 
 /** O visor é lido de novo, no máximo, a cada tanto: o de verdade também não pisca a cada instante. */
 const INTERVALO_DOS_VISORES_MS = 120;
-/** Visor ampliado: largura no mundo, limites na tela e a distância da câmera a partir da qual some. */
+/** Visor ampliado: largura no mundo, limites na tela e a distância da câmera a partir da qual some (no modo "ampliado"). */
 const VISOR_FLUTUANTE = { largura: 0.26, minimoPx: 140, maximoPx: 210, alcance: 16 } as const;
+/** Tamanho do visor ampliado, em relação ao médio. */
+const FATOR_DO_TAMANHO: Record<TamanhoDosVisores, number> = { pequeno: 0.75, medio: 1, grande: 1.35 };
+/**
+ * Visor pequeno colado na peça que não tem visor na face (bateria de chumbo, controlador PWM), no modo "tamanho real":
+ * largura de um visor de verdade, sem passar desta parte da largura e da altura da frente da peça.
+ */
+const VISOR_COLADO = { largura: 0.07, parteDaPeca: 0.6, margem: 0.08 } as const;
+/** No modo "ao passar o ponteiro", o visor fica este tempo depois de o ponteiro sair: dá para ir da peça até o visor. */
+const ESPERA_DO_PONTEIRO_MS = 450;
 /** Fio que liga o visor ampliado à peça dele: espessura e diâmetro da ponta, na tela. */
 const FIO = { espessuraPx: 4, pontaPx: 9, minimoPx: 5 } as const;
 /** Tempo que o visor ampliado leva para ir de um lugar a outro, quando muda de lugar. */
 const MUDANCA_DE_LUGAR_MS = 180;
-/** Quanto o visor ampliado deve evitar cobrir cada coisa (custo de `lugarDosVisores.ts`). */
-const PESO = { pecaComVisor: 25, aparelho: 10, botao: 30, protecao: 30, painel: 60 } as const;
-/** Meio lado, na tela, da área que uma proteção ocupa para o visor ampliado a evitar. */
+/** Meio lado, na tela, da área que uma proteção e um terminal ocupam para o visor ampliado no lugar padrão não os tapar. */
 const MEIA_PROTECAO_PX = 14;
-/** De quanto em quanto tempo são lidos os painéis da página que ficam sobre a cena. */
-const INTERVALO_DOS_PAINEIS_MS = 400;
-/** Com o visor da face da peça com esta largura na tela, ou mais, o ampliado não aparece. */
-const VISOR_LEGIVEL_PX = 120;
+const MEIO_TERMINAL_PX = 9;
+/** De quanto em quanto tempo são lidos a barra de ajuda e os cartões que a página põe sobre a cena. */
+const INTERVALO_DA_FAIXA_MS = 400;
+/**
+ * No modo "ampliado", o ampliado some quando o visor da face fica legível: de frente para a câmera e com esta largura
+ * na tela. Só volta abaixo de limites mais folgados, para não piscar com a câmera parada bem no limite do zoom.
+ */
+const VISOR_LEGIVEL = { somePx: 120, voltaPx: 100, someDeFrente: 0.35, voltaDeFrente: 0.28 } as const;
 /** Botão de ligar: diâmetro no mundo e limites na tela. */
 const BOTAO = { diametro: 0.07, minimoPx: 24, maximoPx: 40 } as const;
 /** Selo de queimado: altura no mundo e limites na tela. */
@@ -125,8 +164,12 @@ interface Visor {
   /** Fio do visor ampliado até a peça, e a ponta dele sobre a peça. */
   fio: THREE.Mesh;
   ponta: THREE.Sprite;
-  /** Lugar do visor ampliado no último quadro: candidato escolhido e retângulo na tela. Nulo se não estava à mostra. */
-  candidato: number | null;
+  /** Peça sem visor na face: visor pequeno colado nela, à mostra só no modo "tamanho real". */
+  colado: THREE.Mesh | null;
+  /** O visor da face estava legível no último quadro (com a folga de `VISOR_LEGIVEL`). */
+  legivel: boolean;
+  /** Lugar do visor ampliado no último quadro: 'fixo' (arrastado) ou quanto subiu, e o retângulo na tela. Nulo se não estava à mostra. */
+  lugar: 'fixo' | number | null;
   ret: Retangulo | null;
   pontaNaTela: [number, number];
   /** Centro do visor ampliado em relação ao meio do topo da caixa da peça na tela, como foi desenhado. */
@@ -371,6 +414,21 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       face.raycast = semRaio;
       grupo.add(face);
     }
+    let colado: THREE.Mesh | null = null;
+    if (!lugar) {
+      // Peça sem visor de verdade: no modo "tamanho real" ela ganha um visor pequeno colado no alto da frente.
+      const [W, H, D] = peca.modelo.dimensoes;
+      const proporcao = VISOR_ALTURA_PX / VISOR_LARGURA_PX;
+      const largura = Math.min(VISOR_COLADO.largura, VISOR_COLADO.parteDaPeca * W, (VISOR_COLADO.parteDaPeca * H) / proporcao);
+      const altura = largura * proporcao;
+      colado = new THREE.Mesh(geoFace, new THREE.MeshBasicMaterial({ map: textura, transparent: true, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+      colado.name = 'visor-colado';
+      colado.position.set(0, H / 2 - altura / 2 - VISOR_COLADO.margem * H, D / 2 + 0.003);
+      colado.scale.set(largura, altura, 1);
+      colado.raycast = semRaio;
+      colado.visible = false;
+      grupo.add(colado);
+    }
     // O mesmo desenho, ampliado e sempre de frente: é o que se lê da distância de trabalho. É desenhado sem teste de
     // profundidade, por cima da peça dele, dos cabos e das outras peças; o lugar na tela é posto a cada quadro por
     // `arrumarVisores`, que também o esconde quando uma parede, um piso ou um telhado tapa a peça.
@@ -393,11 +451,12 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
     grupo.add(fio, ponta, flutuante);
     if (c.dispositivos.escondida(d.uid)) {
       if (face) esconder(face, true);
+      if (colado) esconder(colado, true);
       for (const o of [flutuante, fio, ponta]) esconder(o, true);
     }
     return {
       uid: d.uid, itemId: d.itemId, grupo, pincel, textura, face, larguraDaFace: lugar?.largura ?? 0, flutuante, fio, ponta,
-      candidato: null, ret: null, pontaNaTela: [0, 0], desvio: [0, 0], mudanca: null, vista: { chave: '', livre: true }, conteudo: null, desenhado: '',
+      colado, legivel: false, lugar: null, ret: null, pontaNaTela: [0, 0], desvio: [0, 0], mudanca: null, vista: { chave: '', livre: true }, conteudo: null, desenhado: '',
     };
   }
 
@@ -407,6 +466,10 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       (v.face.material as THREE.Material).dispose();
     }
     for (const o of [v.flutuante, v.fio, v.ponta]) o.parent?.remove(o);
+    if (v.colado) {
+      v.colado.parent?.remove(v.colado);
+      (v.colado.material as THREE.Material).dispose();
+    }
     v.flutuante.material.dispose();
     v.textura.dispose();
     visores.delete(v.uid);
@@ -582,8 +645,13 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
   const alvoDaVista = new THREE.Vector3();
   let listaDeTapumes: THREE.Mesh[] = [];
   let tapumesDaVersao = -1;
-  let paineis: Retangulo[] = [];
-  let paineisLidosEm = -Infinity;
+  let faixa = 0;
+  let cartoes: Retangulo[] = [];
+  let faixaLidaEm = -Infinity;
+  /** Tecla V: todos os visores escondidos, sem mudar o modo. */
+  let escondidos = false;
+  /** Peça sob o ponteiro, a que ele acabou de deixar e até quando o visor dessa ainda fica (modo "ao passar o ponteiro"). */
+  const ponteiro: { uid: string | null; anterior: string | null; ate: number } = { uid: null, anterior: null, ate: -Infinity };
 
   interface CaixaNaTela {
     ret: Retangulo;
@@ -675,99 +743,160 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
     return livre;
   }
 
-  /** Painéis da página que ficam por cima da cena (a ajuda da câmera, o cartão do passo a passo), em pixels da cena. */
-  function paineisSobreACena(agora: number, L: number, A: number): Retangulo[] {
-    if (Math.abs(agora - paineisLidosEm) < INTERVALO_DOS_PAINEIS_MS) return paineis;
-    paineisLidosEm = agora;
-    paineis = [];
+  /**
+   * Altura, a partir do alto da cena, da barra de ajuda da câmera que a página põe sobre ela: um visor ali ficaria
+   * por baixo da barra. Zero se a barra não está à mostra. Lida de tempos em tempos.
+   */
+  function faixaDaAjuda(agora: number): number {
+    lerAPagina(agora);
+    return faixa;
+  }
+
+  /**
+   * Cartões da página que ficam por cima da cena (o passo a passo, os avisos), em pixels da cena: o visor no lugar
+   * padrão sobe para não ficar escondido atrás de um deles.
+   */
+  function cartoesSobreACena(agora: number): Retangulo[] {
+    lerAPagina(agora);
+    return cartoes;
+  }
+
+  function lerAPagina(agora: number): void {
+    if (Math.abs(agora - faixaLidaEm) < INTERVALO_DA_FAIXA_MS) return;
+    faixaLidaEm = agora;
+    faixa = 0;
+    cartoes = [];
     const moldura = c.canvas.parentElement;
     const pai = moldura?.parentElement;
-    if (!moldura || !pai) return paineis;
+    if (!moldura || !pai) return;
     const r = c.canvas.getBoundingClientRect();
-    const tela = { x: 0, y: 0, largura: L, altura: A };
+    const tela = { x: 0, y: 0, largura: r.width, altura: r.height };
     for (const el of Array.from(pai.children)) {
       if (el === moldura || !(el instanceof HTMLElement) || el.hidden) continue;
       const q = el.getBoundingClientRect();
       if (q.width < 1 || q.height < 1) continue;
+      if (el.classList.contains('ajuda-camera')) {
+        faixa = Math.max(0, q.bottom - r.top);
+        continue;
+      }
       const ret = { x: q.left - r.left, y: q.top - r.top, largura: q.width, altura: q.height };
-      if (sobreposicao(ret, tela) > 0) paineis.push(ret);
+      if (sobreposicao(ret, tela) > 0) cartoes.push(ret);
     }
-    return paineis;
   }
 
   function esconderAmpliado(v: Visor): void {
     v.flutuante.visible = false;
     v.fio.visible = false;
     v.ponta.visible = false;
-    v.candidato = null;
+    v.lugar = null;
     v.ret = null;
     v.mudanca = null;
   }
 
+  /** Deslocamento do visor arrastado, se o projeto traz um que se aproveite. */
+  function deslocamentoDoVisor(d: Dispositivo | undefined): readonly [number, number, number] | null {
+    const v = d?.visor;
+    return Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(n)) ? v : null;
+  }
+
+  /** O visor da face basta: está de frente para a câmera e largo o bastante na tela. Com folga entre sumir e voltar. */
+  function legivelNaFace(v: Visor): boolean {
+    if (!v.face) return false;
+    v.face.getWorldPosition(noMundo);
+    paraACamera.copy(c.camera.position).sub(noMundo);
+    const distancia = paraACamera.length();
+    paraACamera.normalize();
+    normal.set(0, 0, 1).transformDirection(v.face.matrixWorld);
+    const deFrente = normal.dot(paraACamera);
+    const px = (v.larguraDaFace * deFrente) / metrosPorPixel(distancia);
+    v.legivel = v.legivel
+      ? deFrente > VISOR_LEGIVEL.voltaDeFrente && px >= VISOR_LEGIVEL.voltaPx
+      : deFrente > VISOR_LEGIVEL.someDeFrente && px >= VISOR_LEGIVEL.somePx;
+    return v.legivel;
+  }
+
   /**
-   * Visores ampliados: quais aparecem, de que tamanho e em que lugar da tela. O lugar é escolhido em pixels
-   * (`lugarDosVisores.ts`) e levado para o mundo à profundidade da peça. Devolve verdadeiro enquanto algum visor está
-   * a caminho de um lugar novo (a cena precisa de quadros).
+   * Visores ampliados: quais aparecem (pelo ajuste "Visores"), de que tamanho e em que lugar da tela. O lugar padrão
+   * é escolhido em pixels (`lugarDosVisores.ts`) e levado para o mundo à profundidade da peça; o do visor arrastado é
+   * o ponto do mundo guardado em `Dispositivo.visor`. Devolve verdadeiro enquanto a cena precisa de quadros: algum
+   * visor está a caminho de um lugar novo, ou espera o ponteiro voltar.
    */
   function arrumarVisores(agora: number, L: number, A: number): boolean {
     const tela = { x: 0, y: 0, largura: L, altura: A };
+    const { modo, tamanho } = estado.visores;
+    const selecionada = estado.selecao?.tipo === 'dispositivo' ? estado.selecao.uid : null;
+    const esperando = modo === 'ao-passar' && !escondidos && ponteiro.anterior !== null && agora < ponteiro.ate;
     const pedidos: PedidoDeLugar[] = [];
-    const estorvos: Estorvo[] = [];
-    const medidos = new Map<string, { v: Visor; caixa: CaixaNaTela; porPixel: number }>();
+    const medidos = new Map<string, { v: Visor; porPixel: number; profundidade: number }>();
+    let mudouOQueSeVe = false;
+    c.casa.updateWorldMatrix(true, false);
     for (const v of visores.values()) {
+      const antes = v.flutuante.visible;
+      if (v.colado) {
+        const colado = modo === 'real' && !escondidos;
+        if (v.colado.visible !== colado) mudouOQueSeVe = true;
+        v.colado.visible = colado;
+      }
       let mostrar = false;
       const peca = c.dispositivos.pecaNaCena(v.uid);
       const caixa = peca && !c.dispositivos.escondida(v.uid) ? caixaNaTela(v.grupo, peca.modelo.volume, L, A) : null;
-      if (peca && caixa && sobreposicao(caixa.ret, tela) > 0) {
-        estorvos.push({ ret: caixa.ret, peso: PESO.pecaComVisor, tipo: 'coberto', dono: v.uid });
-        let legivelNaFace = false;
-        if (v.face) {
-          // O visor da face basta quando está de frente para a câmera e largo o bastante na tela.
-          v.face.getWorldPosition(noMundo);
-          paraACamera.copy(c.camera.position).sub(noMundo);
-          const distancia = paraACamera.length();
-          paraACamera.normalize();
-          normal.set(0, 0, 1).transformDirection(v.face.matrixWorld);
-          const deFrente = normal.dot(paraACamera);
-          legivelNaFace = deFrente > 0.35 && (v.larguraDaFace * deFrente) / metrosPorPixel(distancia) >= VISOR_LEGIVEL_PX;
-        }
-        mostrar = !legivelNaFace && caixa.profundidade <= VISOR_FLUTUANTE.alcance && pecaAVista(v, peca.modelo.volume);
+      if (peca && caixa && !escondidos && modo !== 'real' && sobreposicao(caixa.ret, tela) > 0) {
+        // "Ampliado": sempre, a não ser de muito longe ou com o visor da face já legível. "Ao clicar" e "ao passar o
+        // ponteiro": sempre que pedido, pela seleção ou pelo ponteiro.
+        const pedido = modo === 'ampliado' ? !legivelNaFace(v) && caixa.profundidade <= VISOR_FLUTUANTE.alcance
+          : v.uid === selecionada || (modo === 'ao-passar' && (ponteiro.uid === v.uid || (esperando && ponteiro.anterior === v.uid)));
+        mostrar = pedido && pecaAVista(v, peca.modelo.volume);
         if (mostrar) {
-          const porPixel = metrosPorPixel(caixa.profundidade);
           // Apagado, o visor ampliado fica menor: diz que a peça está sem energia sem tomar o lugar dos que têm números.
-          const largura = THREE.MathUtils.clamp(VISOR_FLUTUANTE.largura / porPixel, VISOR_FLUTUANTE.minimoPx, VISOR_FLUTUANTE.maximoPx) * (v.conteudo?.aceso === false ? 0.65 : 1);
-          pedidos.push({ id: v.uid, peca: caixa.ret, largura, altura: (largura * VISOR_ALTURA_PX) / VISOR_LARGURA_PX, anterior: v.candidato });
-          medidos.set(v.uid, { v, caixa, porPixel });
+          const largura = THREE.MathUtils.clamp(VISOR_FLUTUANTE.largura / metrosPorPixel(caixa.profundidade), VISOR_FLUTUANTE.minimoPx, VISOR_FLUTUANTE.maximoPx)
+            * FATOR_DO_TAMANHO[tamanho] * (v.conteudo?.aceso === false ? 0.65 : 1);
+          const altura = (largura * VISOR_ALTURA_PX) / VISOR_LARGURA_PX;
+          const d = dispositivoDe(v.uid);
+          const desl = deslocamentoDoVisor(d);
+          if (d && desl) {
+            // Arrastado: o ponto guardado, em coordenadas da casa, a partir do centro da peça.
+            noMundo.set(d.pos[0] + desl[0], d.pos[1] + desl[1], d.pos[2] + desl[2]).applyMatrix4(c.casa.matrixWorld);
+            const fixo = pontoNaCena(noMundo, L, A);
+            const profundidade = -noMundo.applyMatrix4(c.camera.matrixWorldInverse).z;
+            if (fixo) {
+              pedidos.push({ id: v.uid, peca: caixa.ret, largura, altura, fixo });
+              medidos.set(v.uid, { v, porPixel: metrosPorPixel(profundidade), profundidade });
+            } else mostrar = false;
+          } else {
+            pedidos.push({ id: v.uid, peca: caixa.ret, largura, altura, anterior: typeof v.lugar === 'number' ? v.lugar : null });
+            medidos.set(v.uid, { v, porPixel: metrosPorPixel(caixa.profundidade), profundidade: caixa.profundidade });
+          }
         }
       }
       if (!mostrar) esconderAmpliado(v);
+      if (antes !== mostrar) mudouOQueSeVe = true;
     }
-    if (pedidos.length === 0) return false;
+    // O que apareceu ou sumiu sem a câmera se mexer (ponteiro, seleção, tecla V) precisa de um quadro novo.
+    if (mudouOQueSeVe) c.pedirQuadroLeve();
+    if (pedidos.length === 0) return esperando;
 
-    // O que o visor evita cobrir: os aparelhos, os botões de ligar e as proteções; e os painéis da página, que o cobririam.
+    // O visor no lugar padrão sobe para não tapar uma proteção nem um terminal de outra peça: são peças da cena, não
+    // dá para desenhá-las por cima dele, e sob o visor elas não receberiam o clique nem o cabo.
+    const evitar: Estorvo[] = [];
+    const evitarEm = (ponto: THREE.Vector3, meia: number, dono?: string): void => {
+      const p = pontoNaCena(ponto, L, A);
+      if (!p || p[0] < -meia || p[1] < -meia || p[0] > L + meia || p[1] > A + meia) return;
+      evitar.push({ ret: { x: p[0] - meia, y: p[1] - meia, largura: 2 * meia, altura: 2 * meia }, ...(dono === undefined ? {} : { dono }) });
+    };
+    for (const ret of cartoesSobreACena(agora)) evitar.push({ ret });
+    for (const ch of listaDeChaves()) evitarEm(ch.peca.getWorldPosition(noMundo), MEIA_PROTECAO_PX);
     for (const d of estado.projeto.dispositivos) {
-      if (visores.has(d.uid) || c.dispositivos.escondida(d.uid)) continue;
-      const peca = c.dispositivos.pecaNaCena(d.uid);
       const grupo = c.dispositivos.grupoDe(d.uid);
-      if (!grupo || peca?.item.categoria !== 'aparelho') continue;
-      const caixa = caixaNaTela(grupo, peca.modelo.volume, L, A);
-      if (caixa && sobreposicao(caixa.ret, tela) > 0) estorvos.push({ ret: caixa.ret, peso: PESO.aparelho, tipo: 'coberto' });
+      const peca = c.dispositivos.pecaNaCena(d.uid);
+      if (!grupo || !peca || c.dispositivos.escondida(d.uid)) continue;
+      grupo.updateWorldMatrix(true, false);
+      for (const t of peca.modelo.terminais) evitarEm(noMundo.set(t.pos[0], t.pos[1], t.pos[2]).applyMatrix4(grupo.matrixWorld), MEIO_TERMINAL_PX, d.uid);
     }
-    for (const b of botoes.values()) {
-      if (c.dispositivos.escondida(b.uid)) continue;
-      const p = pontoNaCena(b.sprite.getWorldPosition(noMundo), L, A);
-      if (p) estorvos.push({ ret: { x: p[0] - b.raioPx, y: p[1] - b.raioPx, largura: 2 * b.raioPx, altura: 2 * b.raioPx }, peso: PESO.botao, tipo: 'coberto' });
-    }
-    for (const ch of listaDeChaves()) {
-      const p = pontoNaCena(ch.peca.getWorldPosition(noMundo), L, A);
-      if (p) estorvos.push({ ret: { x: p[0] - MEIA_PROTECAO_PX, y: p[1] - MEIA_PROTECAO_PX, largura: 2 * MEIA_PROTECAO_PX, altura: 2 * MEIA_PROTECAO_PX }, peso: PESO.protecao, tipo: 'coberto' });
-    }
-    for (const ret of paineisSobreACena(agora, L, A)) estorvos.push({ ret, peso: PESO.painel, tipo: 'cobre' });
 
-    const lugares = escolherLugares(pedidos, estorvos, { largura: L, altura: A });
+    const lugares = escolherLugares(pedidos, evitar, { largura: L, altura: A, topo: faixaDaAjuda(agora) });
     let mudando = false;
     for (const pedido of pedidos) {
-      const { v, caixa, porPixel } = medidos.get(pedido.id)!;
+      const { v, porPixel, profundidade } = medidos.get(pedido.id)!;
       const lugar = lugares.get(pedido.id);
       if (!lugar) {
         esconderAmpliado(v);
@@ -779,9 +908,12 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       const refY = pedido.peca.y;
       let dx = lugar.ret.x + largura / 2 - refX;
       let dy = lugar.ret.y + altura / 2 - refY;
-      // Mudou de lugar: desliza do lugar em que estava até o novo, em vez de saltar.
-      if (v.candidato !== null && v.candidato !== lugar.candidato) v.mudanca = { dx: v.desvio[0] - dx, dy: v.desvio[1] - dy, inicio: agora };
-      v.candidato = lugar.candidato;
+      // Subiu, desceu ou voltou ao lugar padrão: desliza do lugar em que estava até o novo, em vez de saltar.
+      // O arrastado não desliza: está na mão da pessoa.
+      const novoLugar = lugar.arrastado ? 'fixo' : lugar.nivel;
+      if (novoLugar === 'fixo') v.mudanca = null;
+      else if (v.lugar !== null && v.lugar !== novoLugar) v.mudanca = { dx: v.desvio[0] - dx, dy: v.desvio[1] - dy, inicio: agora };
+      v.lugar = novoLugar;
       if (v.mudanca) {
         const t = (agora - v.mudanca.inicio) / MUDANCA_DE_LUGAR_MS;
         if (t < 0 || t >= 1) v.mudanca = null;
@@ -797,8 +929,9 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       const cy = refY + dy;
       const ret = { x: cx - largura / 2, y: cy - altura / 2, largura, altura };
       v.ret = ret;
-      // Tudo no plano que passa pelo meio da peça, de frente para a câmera: ali um pixel mede `porPixel` metros.
-      const z = canto.set(0, 0, -caixa.profundidade).applyMatrix4(c.camera.projectionMatrix).z;
+      // Tudo no plano que passa pelo lugar do visor (o meio da peça, ou o ponto em que foi solto), de frente para a
+      // câmera: ali um pixel mede `porPixel` metros.
+      const z = canto.set(0, 0, -profundidade).applyMatrix4(c.camera.projectionMatrix).z;
       porNaTela(v.flutuante, cx, cy, z, L, A);
       v.flutuante.scale.set(largura * porPixel, altura * porPixel, 1);
       v.flutuante.visible = true;
@@ -819,7 +952,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       porNaTela(v.ponta, qx, qy, z, L, A);
       v.ponta.scale.setScalar(FIO.pontaPx * porPixel);
     }
-    return mudando;
+    return mudando || esperando;
   }
 
   function ajustar(agora: number): boolean {
@@ -1001,6 +1134,12 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
     assinar('cabos', sujarEstrutura),
     assinar('casa', sujarEstrutura),
     assinar('visao', sujarEstrutura),
+    // Trocar o ajuste mostra de novo o que a tecla V escondeu: a escolha tem de aparecer na cena.
+    assinar('visores', () => {
+      escondidos = false;
+      c.pedirQuadroLeve();
+    }),
+    assinar('selecao', () => c.pedirQuadroLeve()),
     assinar('simulacao', () => {
       visoresSujos = true;
     }),
@@ -1053,6 +1192,36 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       const conteudo = visores.get(uid)?.conteudo;
       return conteudo ? textoDoConteudo(conteudo) : null;
     },
+    visorEm(x, y) {
+      const r = c.canvas.getBoundingClientRect();
+      let achado: string | null = null;
+      // O último da lista é o desenhado por cima.
+      for (const v of visores.values()) {
+        if (!v.flutuante.visible || !v.ret) continue;
+        const px = x - r.left - v.ret.x;
+        const py = y - r.top - v.ret.y;
+        if (px >= 0 && py >= 0 && px <= v.ret.largura && py <= v.ret.altura) achado = v.uid;
+      }
+      return achado;
+    },
+    visorNoMundo(uid) {
+      const v = visores.get(uid);
+      return v && v.flutuante.visible ? v.flutuante.getWorldPosition(new THREE.Vector3()) : null;
+    },
+    apontar(uid) {
+      if (uid === ponteiro.uid) return;
+      if (ponteiro.uid !== null) {
+        ponteiro.anterior = ponteiro.uid;
+        ponteiro.ate = performance.now() + ESPERA_DO_PONTEIRO_MS;
+      }
+      ponteiro.uid = uid;
+      c.pedirQuadroLeve();
+    },
+    alternarVisores() {
+      escondidos = !escondidos;
+      c.pedirQuadroLeve();
+      return escondidos;
+    },
     resumo() {
       emDia();
       // Para quem pergunta, os visores já chegaram ao lugar: a mudança de lugar em curso, ou a que começa agora, é dada por terminada.
@@ -1069,7 +1238,11 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
         visoresFlutuando: [...visores.values()].filter((v) => v.flutuante.visible).map((v) => v.uid),
         lugaresDosVisores: [...visores.values()]
           .filter((v) => v.flutuante.visible && v.ret)
-          .map((v) => ({ uid: v.uid, x: r.left + v.ret!.x, y: r.top + v.ret!.y, largura: v.ret!.largura, altura: v.ret!.altura, ponta: [r.left + v.pontaNaTela[0], r.top + v.pontaNaTela[1]] as [number, number] })),
+          .map((v) => ({ uid: v.uid, x: r.left + v.ret!.x, y: r.top + v.ret!.y, largura: v.ret!.largura, altura: v.ret!.altura, ponta: [r.left + v.pontaNaTela[0], r.top + v.pontaNaTela[1]] as [number, number], arrastado: v.lugar === 'fixo' })),
+        visoresColados: [...visores.values()].filter((v) => v.colado?.visible && !c.dispositivos.escondida(v.uid)).map((v) => v.uid),
+        modoDosVisores: estado.visores.modo,
+        tamanhoDosVisores: estado.visores.tamanho,
+        visoresEscondidos: escondidos,
       };
     },
     destruir() {

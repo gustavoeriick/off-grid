@@ -73,10 +73,29 @@
 
       <main id="centro">
         <div id="cena"></div>
-        <p id="ajuda-camera" class="ajuda-camera">
+        <div id="ajuda-camera" class="ajuda-camera">
           <span>Girar: arrastar · Deslizar: botão direito · Aproximar: roda do mouse · Centralizar: duplo clique</span>
           <button type="button" id="botao-vista-inicial" title="Volta a câmera para a vista de quando o simulador abre">Vista inicial</button>
-        </p>
+          <div class="menu-visores" id="menu-visores">
+            <button type="button" id="botao-visores" aria-haspopup="true" aria-expanded="false" title="Escolhe como aparecem os visores: as telinhas com os números ao vivo do controlador, do inversor e da bateria">Visores ▾</button>
+            <div class="menu-lista" id="lista-visores" role="group" aria-label="Visores" hidden>
+              <p class="menu-nota menu-titulo">Visor é a telinha com os números ao vivo de cada peça. Quando aparece:</p>
+              <button type="button" data-modo-dos-visores="ampliado" aria-pressed="true" title="O visor grande fica sempre à vista, acima da peça, ligado a ela por um fio">Ampliado: sempre à vista, acima da peça</button>
+              <button type="button" data-modo-dos-visores="real" aria-pressed="false" title="Só o visor da própria peça, do tamanho de verdade. Para ler, aproxime a câmera com a roda do mouse">Tamanho real: só na peça (aproxime a câmera para ler)</button>
+              <button type="button" data-modo-dos-visores="ao-clicar" aria-pressed="false" title="Nada flutuando. Clique em uma peça para ver o visor ampliado dela; clique fora para esconder">Ao clicar: só o da peça selecionada</button>
+              <button type="button" data-modo-dos-visores="ao-passar" aria-pressed="false" title="O visor ampliado aparece enquanto o ponteiro está sobre a peça, e também o da peça selecionada">Ao passar o ponteiro sobre a peça</button>
+              <p class="menu-nota">Tamanho do visor ampliado:</p>
+              <div class="tamanho-dos-visores" role="group" aria-label="Tamanho do visor ampliado">
+                <button type="button" data-tamanho-dos-visores="pequeno" aria-pressed="false">Pequeno</button>
+                <button type="button" data-tamanho-dos-visores="medio" aria-pressed="true">Médio</button>
+                <button type="button" data-tamanho-dos-visores="grande" aria-pressed="false">Grande</button>
+              </div>
+              <p class="menu-nota">Arraste um visor ampliado para mudar de lugar; duplo clique nele devolve para cima da peça.</p>
+              <button type="button" id="botao-visores-no-padrao" title="Devolve todos os visores que você arrastou para cima da peça de cada um. Ctrl+Z desfaz">Todos no lugar padrão</button>
+              <p class="menu-nota">A tecla V esconde ou mostra todos os visores de uma vez.</p>
+            </div>
+          </div>
+        </div>
         <p id="faixa-edicao" class="faixa-edicao" role="status" hidden>Editando a casa. Arraste o quartinho, as paredes e as bolinhas azuis das varandas. Clique em “+ Varanda” para criar uma varanda, arraste no piso para desenhar uma parede e clique no piso para dar nome ao cômodo. Esc sai.</p>
         <div id="barra-obstaculos" class="barra-obstaculos" role="group" aria-label="Ferramentas de Editar casa" hidden>
           <div class="botoes" id="seletor-andar" role="group" aria-label="Andar em edição" hidden>
