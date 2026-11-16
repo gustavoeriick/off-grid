@@ -215,6 +215,16 @@ export const PORQUE: Record<string, PorQue> = {
       'A bateria é a fonte mais perigosa do sistema: em um curto ela entrega centenas de ampères, e é isso que derrete o cabo. O fusível do inversor só protege o cabo do inversor. O cabo do controlador de carga é outro cabo saindo do mesmo polo positivo, em geral mais fino, e precisa da proteção dele, perto da bateria. O valor fica acima da corrente do controlador, com pelo menos 10% de folga para não abrir em uso normal, e sempre igual ou abaixo do que o cabo aguenta. O simulador escolhe a menor proteção do catálogo que atende; o manual do controlador costuma indicar o valor certo para ele.',
     termos: ['fusivel', 'disjuntor-cc', 'curto-circuito'],
   },
+  'peca-queimada': {
+    texto:
+      'No simulador, o erro de operação estraga a peça, para você ver a consequência sem pagar por ela. O conserto aqui é um clique; de verdade, é uma peça nova. Consertar não corrige a causa: se a ligação ou a ordem das chaves continuar errada, a peça queima de novo ao ser energizada. As consequências vêm dos manuais de inversor e de controlador de carga; onde os manuais divergem, o simulador mostra o pior caso.',
+    termos: ['fusivel', 'disjuntor-cc', 'curto-circuito'],
+  },
+  'sistema-desligado': {
+    texto:
+      'A ordem de ligar existe para cada peça acordar já vendo a bateria. O controlador de carga usa a bateria para reconhecer a tensão do sistema, e os manuais mandam ligá-la primeiro e as placas por último. O inversor só liga depois de a bateria estar bem ligada, e os aparelhos entram por fim, um de cada vez, para o inversor não receber todos os picos de partida juntos. Para desligar, a ordem é a inversa: as placas saem antes da bateria.',
+    termos: ['controlador-de-carga', 'inversor', 'disjuntor-cc'],
+  },
   'protecao-de-ca-em-cc': {
     texto:
       'Ao abrir um circuito com corrente, forma-se um arco elétrico entre os contatos. Em corrente alternada, a corrente passa por zero 120 vezes por segundo, e o arco se apaga sozinho em uma dessas passagens. Em corrente contínua ela nunca passa por zero, e o arco continua aceso se o disjuntor não foi feito para apagá-lo. O disjuntor CC é construído para isso e muitas vezes tem polaridade marcada, que precisa ser seguida.',

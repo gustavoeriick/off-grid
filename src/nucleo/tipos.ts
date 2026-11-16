@@ -391,7 +391,11 @@ export type Acao =
   | { tipo: 'mais-placa'; rotulo: string }
   | { tipo: 'mais-bateria'; rotulo: string }
   | { tipo: 'desligar'; rotulo: string; dispositivo: string }
-  | { tipo: 'ver-catalogo'; rotulo: string; categoria: Categoria };
+  | { tipo: 'ver-catalogo'; rotulo: string; categoria: Categoria }
+  /** Fase 8: conserta uma peça, um cabo ou uma proteção queimada (especificacao/operar.md, seção 5). */
+  | { tipo: 'consertar'; rotulo: string; alvo: { tipo: 'dispositivo'; uid: string } | { tipo: 'cabo'; uid: string } | { tipo: 'protecao'; cabo: string; indice: number } }
+  /** Fase 8: fecha as proteções e liga o inversor na ordem certa (seção 6). */
+  | { tipo: 'energizar'; rotulo: string };
 
 export interface Sugestao {
   /** Identificador da regra, como em docs/especificacao/consultor.md. */

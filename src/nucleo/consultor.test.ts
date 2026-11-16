@@ -919,3 +919,94 @@ describe('`sem-protecao-do-controlador`', () => {
     expect(regras(consultar(cenarioPlanoCorrigido()))).not.toContain('sem-protecao-do-controlador');
   });
 });
+
+describe('`peca-queimada`', () => {
+  const corrigido = (): Projeto => cenarioPlanoCorrigido();
+  const idDe = (p: Projeto, categoria: string): string => p.dispositivos.find((d) => CATALOGO.get(d.itemId)?.categoria === categoria)!.uid;
+
+  it('projeto sem os campos novos: nenhuma sugestão desta regra', () => {
+    expect(regras(consultar(corrigido()))).not.toContain('peca-queimada');
+  });
+
+  it('dispositivo queimado: erro com texto do dano e ação de consertar, antes dos outros erros', () => {
+    const p = corrigido();
+    const uid = idDe(p, 'inversor');
+    p.dispositivos.find((d) => d.uid === uid)!.queimado = { codigo: 'bateria-invertida', msUtc: 1 };
+    const lista = consultar(p);
+    const s = da(lista, 'peca-queimada');
+    expect(s.nivel).toBe('erro');
+    expect(s.titulo).toBe(`${CATALOGO.get(p.dispositivos.find((d) => d.uid === uid)!.itemId)!.nome} queimou`);
+    expect(s.texto).toContain('polos trocados');
+    expect(s.alvos).toEqual([uid]);
+    expect(s.acao).toEqual({ tipo: 'consertar', rotulo: 'Consertar', alvo: { tipo: 'dispositivo', uid } });
+    expect(lista[0].regra).toBe('peca-queimada');
+  });
+
+  it('cabo queimado: ação de consertar o cabo', () => {
+    const p = corrigido();
+    p.cabos[0]!.queimado = { codigo: 'curto-na-bateria', msUtc: 1 };
+    const s = da(consultar(p), 'peca-queimada');
+    expect(s.alvos).toEqual([p.cabos[0]!.uid]);
+    expect(s.texto).toContain('curto-circuito na bateria');
+    expect(s.acao).toEqual({ tipo: 'consertar', rotulo: 'Consertar', alvo: { tipo: 'cabo', uid: p.cabos[0]!.uid } });
+  });
+
+  it('fusível queimado: texto fixo e "Trocar o fusível"', () => {
+    const p = corrigido();
+    const cabo = p.cabos.find((c) => c.protecoes.some((id) => (CATALOGO.get(id) as { tipo?: string })?.tipo === 'fusivel'))!;
+    const indice = cabo.protecoes.findIndex((id) => (CATALOGO.get(id) as { tipo?: string })?.tipo === 'fusivel');
+    cabo.estados = cabo.protecoes.map((_, i) => (i === indice ? 'queimada' : 'fechada'));
+    const s = da(consultar(p), 'peca-queimada');
+    expect(s.texto).toBe('O fusível queimou: ele abriu o circuito para proteger o cabo.');
+    expect(s.acao).toEqual({ tipo: 'consertar', rotulo: 'Trocar o fusível', alvo: { tipo: 'protecao', cabo: cabo.uid, indice } });
+  });
+
+  it('uma sugestão por peça queimada', () => {
+    const p = corrigido();
+    p.cabos[0]!.queimado = { codigo: 'curto-na-bateria', msUtc: 1 };
+    p.cabos[1]!.queimado = { codigo: 'curto-na-bateria', msUtc: 1 };
+    expect(regras(consultar(p)).filter((r) => r === 'peca-queimada')).toHaveLength(2);
+  });
+});
+
+describe('`sistema-desligado`', () => {
+  it('cenários prontos (tudo fechado e ligado): não aparece', () => {
+    expect(regras(consultar(cenarioPlanoCorrigido()))).not.toContain('sistema-desligado');
+    expect(regras(consultar(cenarioPlanoNoPapel()))).not.toContain('sistema-desligado');
+  });
+
+  it('inversor desligado em sistema sem erro: dica com a ação de ligar', () => {
+    const p = cenarioPlanoCorrigido();
+    p.dispositivos.find((d) => CATALOGO.get(d.itemId)?.categoria === 'inversor')!.ligado = false;
+    const lista = consultar(p);
+    expect(lista.some((s) => s.nivel === 'erro')).toBe(false);
+    const s = da(lista, 'sistema-desligado');
+    expect(s.nivel).toBe('dica');
+    expect(s.titulo).toBe('O sistema está montado, mas desligado');
+    expect(s.texto).toBe('Ligue na ordem certa: primeiro a bateria, depois as placas, depois o inversor e por último a saída para os aparelhos.');
+    expect(s.acao).toEqual({ tipo: 'energizar', rotulo: 'Ligar o sistema' });
+  });
+
+  it('proteção aberta: aparece; com erro no projeto (peça queimada): não aparece', () => {
+    const p = cenarioPlanoCorrigido();
+    const cabo = p.cabos.find((c) => c.protecoes.length > 0)!;
+    cabo.estados = cabo.protecoes.map(() => 'aberta');
+    expect(regras(consultar(p))).toContain('sistema-desligado');
+    p.cabos[0]!.queimado = { codigo: 'curto-na-bateria', msUtc: 1 };
+    expect(regras(consultar(p))).not.toContain('sistema-desligado');
+  });
+
+  it('sem sistema ou com a ligação recusada (bateria invertida): não aparece', () => {
+    expect(regras(consultar(montar({ b: BELIFOU }, [])))).not.toContain('sistema-desligado');
+    const p = cenarioPlanoCorrigido();
+    p.dispositivos.find((d) => CATALOGO.get(d.itemId)?.categoria === 'inversor')!.ligado = false;
+    const inv = p.dispositivos.find((d) => CATALOGO.get(d.itemId)?.categoria === 'inversor')!.uid;
+    for (const c of p.cabos) {
+      for (const ponta of [c.de, c.para]) {
+        if (ponta.disp === inv && ponta.terminal === 'batPos') ponta.terminal = 'batNeg';
+        else if (ponta.disp === inv && ponta.terminal === 'batNeg') ponta.terminal = 'batPos';
+      }
+    }
+    expect(regras(consultar(p))).not.toContain('sistema-desligado');
+  });
+});

@@ -92,7 +92,11 @@ const LIMITE_EM_SERIE = 40;
 const LIMITE_DE_CADEIAS = 200;
 
 /** Todas as cadeias de peças em série (placas ou baterias) da rede `inicio` à rede `fim`, do positivo para o negativo. */
-function cadeias(projeto: Projeto, catalogo: Catalogo, categoria: 'placa' | 'bateria', rede: Rede, inicio: string, fim: string): string[][] {
+function cadeias(
+  projeto: Projeto, catalogo: Catalogo, categoria: 'placa' | 'bateria', rede: Rede, inicio: string, fim: string,
+  /** Aceita `inicio` igual a `fim`: é o que acontece quando um curto une os dois barramentos. */
+  mesmaRede = false,
+): string[][] {
   const pecas = projeto.dispositivos.filter((d) => catalogo.get(d.itemId)?.categoria === categoria);
   const achadas: string[][] = [];
   const caminho: string[] = [];
@@ -112,7 +116,7 @@ function cadeias(projeto: Projeto, catalogo: Catalogo, categoria: 'placa' | 'bat
       usadas.delete(p.uid);
     }
   };
-  if (inicio !== fim) buscar(inicio);
+  if (inicio !== fim || mesmaRede) buscar(inicio);
   return achadas;
 }
 
@@ -346,25 +350,36 @@ export function avaliarOperacao(
   }
 
   // ---- Curto na bateria: a análise viva acusa.
-  const curtos = new Map<string, { pos: string; neg: string }>();
+  // Cada laço tem uma ponta positiva, uma negativa e a peça que o nomeia (`uid`): a bateria, ou a primeira do ramo em série.
+  const curtos = new Map<string, { uid: string; pos: string; neg: string }>();
+  const acharCurto = (uid: string, primeira: string, ultima: string): void => {
+    const pos = chave(primeira, 'pos');
+    const neg = chave(ultima, 'neg');
+    curtos.set(`${pos}>${neg}`, { uid, pos, neg });
+  };
   for (const problema of analiseViva.problemas) {
     if (problema.codigo !== 'curto-bateria') continue;
     const rede = montarRedes(vivo);
     for (const uid of problema.dispositivos) {
       const item = itemDe(vivo, catalogo, uid);
       if (item?.categoria === 'bateria') {
-        curtos.set(uid, { pos: chave(uid, 'pos'), neg: chave(uid, 'neg') });
+        acharCurto(uid, uid, uid);
       } else if (item?.categoria === 'inversor') {
         // Curto entre BAT+ e BAT− do inversor: cada bateria ligada ao barramento fecha um laço com os cabos do curto.
         const barramento = rede(uid, 'batPos');
         for (const b of vivo.dispositivos) {
           if (itemDe(vivo, catalogo, b.uid)?.categoria !== 'bateria') continue;
-          if (rede(b.uid, 'pos') === barramento && rede(b.uid, 'neg') === barramento) curtos.set(b.uid, { pos: chave(b.uid, 'pos'), neg: chave(b.uid, 'neg') });
+          if (rede(b.uid, 'pos') === barramento && rede(b.uid, 'neg') === barramento) acharCurto(b.uid, b.uid, b.uid);
+        }
+        // Baterias em série: o curto une o barramento a ele mesmo (P = N), e a análise viva não devolve ramo. Os ramos
+        // são achados como em `bateriaPresente`, da rede do BAT+ à do BAT−, e o laço vai do pos da primeira ao neg da última.
+        for (const ramo of cadeias(vivo, catalogo, 'bateria', rede, barramento, rede(uid, 'batNeg'), true)) {
+          acharCurto(ramo[0], ramo[0], ramo[ramo.length - 1]);
         }
       }
     }
   }
-  for (const [uid, { pos, neg }] of curtos) {
+  for (const { uid, pos, neg } of curtos.values()) {
     const laco = caminhoMaisCurto(vivo, pos, neg);
     if (!laco || laco.length === 0) continue;
     let escolhida: { cabo: Cabo; indice: number; correnteA: number; tipo: Protecao['tipo'] } | null = null;
@@ -468,7 +483,9 @@ export type AcaoDeOperacao =
 
 /**
  * `arco-no-conector`: apagar um cabo das placas, ou a placa, com corrente passando. `correntes` são as correntes de
- * operação de antes da ação. Queima a placa da ponta do cabo (as duas, em uma emenda entre placas). Nulo se não há arco.
+ * operação de antes da ação. Ao apagar um cabo, queima a placa da ponta dele (as duas, em uma emenda entre placas). Ao
+ * apagar uma placa, queima a peça da outra ponta de cada cabo com corrente dela, quando for uma placa; se não for, fica
+ * só o evento, sem mudança. Nulo se não há arco.
  */
 export function arcoNoConector(
   projetoAntes: Projeto,
@@ -484,17 +501,24 @@ export function arcoNoConector(
   if (acao.tipo === 'apagar-cabo') {
     const cabo = projetoAntes.cabos.find((c) => c.uid === acao.cabo);
     if (!cabo || (correntes.get(cabo.uid) ?? 0) <= 0) return null;
-    placas = [...new Set([cabo.de.disp, cabo.para.disp])].filter(ePlaca);
-  } else if (acao.tipo === 'apagar-dispositivo') {
-    const passando = projetoAntes.cabos.some(
-      (c) => (c.de.disp === acao.uid || c.para.disp === acao.uid) && (correntes.get(c.uid) ?? 0) > 0,
-    );
-    if (passando && ePlaca(acao.uid)) placas = [acao.uid];
+    placas = [...new Set([cabo.de.disp, cabo.para.disp])].filter(ePlaca).filter(inteira);
+    if (placas.length === 0) return null;
+    return {
+      codigo: 'arco-no-conector', uids: [acao.cabo, ...placas], msUtc,
+      mudancas: placas.map((uid): Mudanca => ({ tipo: 'peca-queimada', uid, dano })),
+    };
   }
-  placas = placas.filter(inteira);
-  if (placas.length === 0) return null;
-  const uids = acao.tipo === 'apagar-cabo' ? [acao.cabo, ...placas] : placas;
-  return { codigo: 'arco-no-conector', uids, msUtc, mudancas: placas.map((uid): Mudanca => ({ tipo: 'peca-queimada', uid, dano })) };
+  if (acao.tipo !== 'apagar-dispositivo' || !ePlaca(acao.uid)) return null;
+  // A placa apagada some: queima a peça da outra ponta de cada cabo com corrente, se for uma placa (o outro conector da emenda).
+  const comCorrente = projetoAntes.cabos.filter((c) => (c.de.disp === acao.uid || c.para.disp === acao.uid) && (correntes.get(c.uid) ?? 0) > 0);
+  if (comCorrente.length === 0) return null;
+  placas = [...new Set(comCorrente.map((c) => (c.de.disp === acao.uid ? c.para.disp : c.de.disp)))]
+    .filter((uid) => uid !== acao.uid && ePlaca(uid))
+    .filter(inteira);
+  return {
+    codigo: 'arco-no-conector', uids: [acao.uid, ...placas], msUtc,
+    mudancas: placas.map((uid): Mudanca => ({ tipo: 'peca-queimada', uid, dano })),
+  };
 }
 
 /**

@@ -12,7 +12,7 @@ O consultor é a parte do simulador que olha a montagem e diz o que está errado
 - **`alvos`**: os `uid` dos dispositivos e cabos envolvidos, para a cena destacar.
 - **`acao`**, quando existe: o conserto de um clique.
 
-Ordem da lista: primeiro os erros, depois os alertas, depois as dicas; dentro de cada nível, a ordem das tabelas. Sem `analise.sistema`, só vale a regra `sem-inversor`.
+Ordem da lista: primeiro os erros, depois os alertas, depois as dicas; dentro de cada nível, a ordem das tabelas. Sem `analise.sistema`, só vale a regra `sem-inversor` (e `peca-queimada`, da fase 8).
 
 Nos textos, o que está entre chaves é calculado. Os números seguem as convenções de tela: vírgula decimal, tensão e corrente com uma casa.
 
@@ -120,6 +120,25 @@ Escolha da peça nas ações:
 
 No texto de `autonomia-curta`, o aparelho citado é a carga ligada de maior `mediaW`. Em `geracao-menor-que-o-consumo`, as placas que faltam são `(consumo − geração) / (geração por placa)`, arredondado para cima.
 
+### Regras de operação (fase 8, `operar.md`)
+
+| Regra | Nível | Quando | Título | Texto | Ação |
+|---|---|---|---|---|---|
+| `peca-queimada` | erro | Uma sugestão para cada dispositivo com `queimado`, cada cabo com `queimado` e cada proteção em estado `queimada`. Vem antes de todos os outros erros, e vale mesmo sem `analise.sistema` | Dispositivo: "{nome do item} queimou". Cabo: "Cabo queimou: {nome do cabo}". Proteção: "{nome do item} queimou" | Um texto por `CodigoDano` (abaixo). Fusível queimado: "O fusível queimou: ele abriu o circuito para proteger o cabo." Outra proteção queimada: o texto de `arco-no-disjuntor-ca` | Consertar (fusível: Trocar o fusível) |
+| `sistema-desligado` | dica | Há sistema (análise de projeto com `sistema` e banco), `sequenciaDeEnergizar` devolve manobras a fazer e nenhuma recusa, e não há sugestão de nível erro | O sistema está montado, mas desligado | Ligue na ordem certa: primeiro a bateria, depois as placas, depois o inversor e por último a saída para os aparelhos. | Ligar o sistema |
+
+Textos de `peca-queimada` por `CodigoDano`:
+
+| Código | Texto |
+|---|---|
+| `controlador-sem-bateria` | As placas ficaram ligadas ao controlador sem a bateria. Os manuais mandam ligar a bateria primeiro e as placas por último. Nem todo controlador queima nessa situação; o simulador mostra o pior caso. |
+| `bateria-invertida` | A bateria foi ligada com os polos trocados (positivo no negativo). A peça queima na hora, mesmo com fusível no caminho. Confira positivo com positivo antes de fechar qualquer chave. |
+| `curto-na-bateria` | Um curto-circuito na bateria, sem proteção para abrir antes, pôs o cabo em brasa e o queimou. De verdade, a bateria também pode se estragar e pegar fogo. |
+| `arco-no-conector` | Soltar um conector das placas com corrente passando abre um arco elétrico, que queima o conector. Desligue o disjuntor das placas, ou cubra as placas, antes de mexer. |
+| `arco-no-disjuntor-ca` | Um disjuntor de corrente alternada não apaga o arco da corrente contínua. Ao abrir com corrente passando, ele queimou. |
+
+Projeto sem os campos novos (`estados`, `queimado`) e com tudo ligado, como nos cenários prontos: nenhuma das duas aparece.
+
 ## 8. Ações
 
 O núcleo só descreve a ação; quem executa é o aplicativo, porque várias delas mexem na cena.
@@ -132,6 +151,8 @@ O núcleo só descreve a ação; quem executa é o aplicativo, porque várias de
 | `mais-bateria` | Acrescenta uma bateria do mesmo modelo ao lado da última e a liga em paralelo, positivo com positivo e negativo com negativo, com o mesmo tipo de cabo do banco |
 | `desligar` | Desliga o aparelho indicado |
 | `ver-catalogo` | Abre o catálogo na categoria indicada |
+| `consertar` | Tira o `queimado` da peça ou do cabo, ou troca o fusível queimado (`acoes.consertar`) |
+| `energizar` | Fecha as proteções e liga o inversor na ordem certa (`acoes.energizar`) |
 
 `planejarMaisPlaca(projeto, catalogo, analise)` decide como a nova placa entra:
 

@@ -353,6 +353,31 @@ describe('avaliarOperacao: curto na bateria', () => {
     expect(curto.mudancas).toEqual([{ tipo: 'cabo-queimado', uid: 'c8', dano: { codigo: 'curto-na-bateria', msUtc: MS } }]);
   });
 
+  describe('banco em série, com o curto entre BAT+ e BAT−', () => {
+    /** b1 e b2 em série (c1 a c3) e o jumper c4 entre os terminais de bateria do inversor. */
+    const serie = (fusivel: string[]): Projeto =>
+      montar(
+        { b1: 'bat-moura-12mn105', b2: 'bat-moura-12mn105', inv: 'inv-aiker-500-12v-110' },
+        [['b1.pos', 'inv.batPos', fusivel], ['b1.neg', 'b2.pos'], ['b2.neg', 'inv.batNeg'], ['inv.batPos', 'inv.batNeg']],
+      );
+
+    it('com fusível no laço: o fusível queima, uma vez', () => {
+      const curto = situacao(serie([FUSIVEL]), ESCURO).consequencias.filter((c) => c.codigo === 'curto-na-bateria');
+      expect(curto).toHaveLength(1);
+      expect(curto[0].mudancas).toEqual([{ tipo: 'protecao', cabo: 'c1', indice: 0, estado: 'queimada' }]);
+    });
+
+    it('sem proteção: queimam os cabos do laço (os dois da bateria e o do curto), não o da emenda entre as baterias', () => {
+      const curto = situacao(serie([]), ESCURO).consequencias.find((c) => c.codigo === 'curto-na-bateria')!;
+      expect(curto.mudancas.map((m) => (m.tipo === 'cabo-queimado' ? m.uid : '?')).sort()).toEqual(['c1', 'c3', 'c4']);
+    });
+
+    it('depois do fusível queimado, o laço some e nada acontece de novo', () => {
+      const p = com(serie([FUSIVEL]), (x) => estados(x, 'c1', 'queimada'));
+      expect(situacao(p, ESCURO).consequencias.filter((c) => c.codigo === 'curto-na-bateria')).toEqual([]);
+    });
+  });
+
   it('o curto desfeito com a proteção aberta: não gera de novo', () => {
     const p = com(comJumper(tutorial()), (x) => estados(x, 'c1', 'queimada'));
     expect(situacao(p, ESCURO).consequencias.filter((c) => c.codigo === 'curto-na-bateria')).toEqual([]);
@@ -559,9 +584,41 @@ describe('arcoNoConector', () => {
     expect(c.mudancas).toEqual([{ tipo: 'peca-queimada', uid: 'p1', dano: { codigo: 'arco-no-conector', msUtc: MS } }]);
   });
 
-  it('apagar a placa com corrente: ela queima', () => {
+  it('apagar a placa com corrente, ligada a um controlador: fica só o evento, sem dano (a placa apagada some)', () => {
     const { p, correntes } = funcionando();
-    expect(arcoNoConector(p, CATALOGO, { tipo: 'apagar-dispositivo', uid: 'p1' }, correntes, MS)!.mudancas).toHaveLength(1);
+    const c = arcoNoConector(p, CATALOGO, { tipo: 'apagar-dispositivo', uid: 'p1' }, correntes, MS)!;
+    expect(c.codigo).toBe('arco-no-conector');
+    expect(c.uids).toEqual(['p1']);
+    expect(c.mudancas).toEqual([]);
+  });
+
+  describe('emenda entre duas placas em série', () => {
+    const serie = (): { p: Projeto; correntes: Map<string, number> } => {
+      const p = montar(
+        { p1: 'placa-resun-100', p2: 'placa-resun-100', ctl: 'ctl-pwm-30a' },
+        [['p1.pos', 'ctl.pvPos', [], 'cabo-solar-6'], ['p1.neg', 'p2.pos', [], 'cabo-solar-6'], ['p2.neg', 'ctl.pvNeg', [], 'cabo-solar-6']],
+      );
+      return { p, correntes: new Map(p.cabos.map((c) => [c.uid, 5])) };
+    };
+
+    it('apagar uma placa com corrente: queima a placa da outra ponta da emenda, não a apagada', () => {
+      const { p, correntes } = serie();
+      const c = arcoNoConector(p, CATALOGO, { tipo: 'apagar-dispositivo', uid: 'p1' }, correntes, MS)!;
+      expect(c.mudancas).toEqual([{ tipo: 'peca-queimada', uid: 'p2', dano: { codigo: 'arco-no-conector', msUtc: MS } }]);
+      expect(c.uids).toEqual(['p1', 'p2']);
+    });
+
+    it('a outra placa já queimada não queima de novo', () => {
+      const { p, correntes } = serie();
+      const queimada = com(p, (x) => { x.dispositivos.find((d) => d.uid === 'p2')!.queimado = dano; });
+      expect(arcoNoConector(queimada, CATALOGO, { tipo: 'apagar-dispositivo', uid: 'p1' }, correntes, MS)!.mudancas).toEqual([]);
+    });
+
+    it('apagar um cabo continua queimando a placa da ponta (as duas, na emenda)', () => {
+      const { p, correntes } = serie();
+      const c = arcoNoConector(p, CATALOGO, { tipo: 'apagar-cabo', cabo: 'c2' }, correntes, MS)!;
+      expect(c.mudancas.map((m) => (m.tipo === 'peca-queimada' ? m.uid : '?')).sort()).toEqual(['p1', 'p2']);
+    });
   });
 
   it('sem corrente (noite), cabo que não é das placas ou peça que não é placa: nada', () => {

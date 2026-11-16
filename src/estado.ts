@@ -1463,6 +1463,15 @@ export const acoes = {
       acoes.definirLigado(acao.dispositivo, false);
       return true;
     }
+    if (acao.tipo === 'consertar') {
+      acoes.consertar(acao.alvo);
+      return true;
+    }
+    if (acao.tipo === 'energizar') {
+      // A recusa (polaridade ou curto) é mostrada por quem chamou `acoes.energizar()` direto; aqui o consultor já lista o erro.
+      acoes.energizar();
+      return true;
+    }
     return false;
   },
 

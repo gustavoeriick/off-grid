@@ -6,9 +6,10 @@ import type {
 import { caminhosAteOSorvedouro, correntesDeProjeto, quedasDeTensao } from './cabos';
 import { montarRedes } from './circuito';
 import { comodoDe } from './comodos';
+import { estadoDaProtecao, sequenciaDeEnergizar } from './operacao';
 import { FATOR_TENSAO_CARGA, infoBanco, LIMITE_CARREGADOR_REDE_A, vmpQuente, vocFrio } from './eletrica';
 import type {
-  Acao, AnaliseCircuito, Cabo, Circuito, CodigoProblema, Estimativas, InfoBanco, Nivel, PlanoMaisPlaca, Projeto,
+  Acao, AnaliseCircuito, Cabo, Circuito, CodigoDano, CodigoProblema, Estimativas, InfoBanco, Nivel, PlanoMaisPlaca, Projeto,
   QuedaDeTensao, Sistema, Sugestao,
 } from './tipos';
 
@@ -141,6 +142,9 @@ export function analisarConsultor(
   const lista: Sugestao[] = [];
   const sistema = analise.sistema;
   const sugerir = (s: Sugestao): void => void lista.push(s);
+
+  // Peças queimadas pela operação: vêm antes de todos os outros erros.
+  for (const s of pecasQueimadas(projeto, catalogo)) sugerir(s);
 
   // Regras de ligação (a única que vale sem sistema é `sem-inversor`).
   for (const [codigo, nivel, titulo, texto] of LIGACAO) {
@@ -636,10 +640,85 @@ export function analisarConsultor(
     sugerir(s);
   }
 
+  // Sistema montado e nada energizado: a dica some se houver qualquer erro (ligar com erro só estraga peça).
+  if (banco !== null && !lista.some((s) => s.nivel === 'erro')) {
+    const plano = sequenciaDeEnergizar(projeto, catalogo, analise);
+    if (plano.recusa === null && plano.manobras.length > 0) {
+      sugerir({
+        regra: 'sistema-desligado',
+        nivel: 'dica',
+        titulo: 'O sistema está montado, mas desligado',
+        texto: 'Ligue na ordem certa: primeiro a bateria, depois as placas, depois o inversor e por último a saída para os aparelhos.',
+        alvos: [sistema.inversor],
+        acao: { tipo: 'energizar', rotulo: 'Ligar o sistema' },
+      });
+    }
+  }
+
   return lista
     .map((s, i) => ({ s, i }))
     .sort((a, b) => ORDEM_NIVEL[a.s.nivel] - ORDEM_NIVEL[b.s.nivel] || a.i - b.i)
     .map((x) => x.s);
+}
+
+// ---------------------------------------------------------------- Peças queimadas
+
+/** O que queimou a peça, por código de dano. */
+const TEXTO_DO_DANO: Record<CodigoDano, string> = {
+  'controlador-sem-bateria':
+    'As placas ficaram ligadas ao controlador sem a bateria. Os manuais mandam ligar a bateria primeiro e as placas por último. Nem todo controlador queima nessa situação; o simulador mostra o pior caso.',
+  'bateria-invertida':
+    'A bateria foi ligada com os polos trocados (positivo no negativo). A peça queima na hora, mesmo com fusível no caminho. Confira positivo com positivo antes de fechar qualquer chave.',
+  'curto-na-bateria':
+    'Um curto-circuito na bateria, sem proteção para abrir antes, pôs o cabo em brasa e o queimou. De verdade, a bateria também pode se estragar e pegar fogo.',
+  'arco-no-conector':
+    'Soltar um conector das placas com corrente passando abre um arco elétrico, que queima o conector. Desligue o disjuntor das placas, ou cubra as placas, antes de mexer.',
+  'arco-no-disjuntor-ca':
+    'Um disjuntor de corrente alternada não apaga o arco da corrente contínua. Ao abrir com corrente passando, ele queimou.',
+};
+
+/** Uma sugestão `peca-queimada` para cada dispositivo, cabo e proteção queimados. */
+function pecasQueimadas(projeto: Projeto, catalogo: Catalogo): Sugestao[] {
+  const lista: Sugestao[] = [];
+  for (const d of projeto.dispositivos) {
+    if (d.queimado === undefined) continue;
+    const nome = catalogo.get(d.itemId)?.nome ?? 'Peça';
+    lista.push({
+      regra: 'peca-queimada',
+      nivel: 'erro',
+      titulo: `${nome} queimou`,
+      texto: TEXTO_DO_DANO[d.queimado.codigo],
+      alvos: [d.uid],
+      acao: { tipo: 'consertar', rotulo: 'Consertar', alvo: { tipo: 'dispositivo', uid: d.uid } },
+    });
+  }
+  for (const c of projeto.cabos) {
+    if (c.queimado !== undefined) {
+      const nome = catalogo.get(c.caboId)?.nome ?? 'Cabo';
+      lista.push({
+        regra: 'peca-queimada',
+        nivel: 'erro',
+        titulo: `Cabo queimou: ${nome}`,
+        texto: TEXTO_DO_DANO[c.queimado.codigo],
+        alvos: [c.uid],
+        acao: { tipo: 'consertar', rotulo: 'Consertar', alvo: { tipo: 'cabo', uid: c.uid } },
+      });
+    }
+    c.protecoes.forEach((id, indice) => {
+      if (estadoDaProtecao(c, indice) !== 'queimada') return;
+      const p = catalogo.get(id);
+      const fusivel = p?.categoria === 'protecao' && p.tipo === 'fusivel';
+      lista.push({
+        regra: 'peca-queimada',
+        nivel: 'erro',
+        titulo: `${p?.nome ?? 'Proteção'} queimou`,
+        texto: fusivel ? 'O fusível queimou: ele abriu o circuito para proteger o cabo.' : TEXTO_DO_DANO['arco-no-disjuntor-ca'],
+        alvos: [c.uid],
+        acao: { tipo: 'consertar', rotulo: fusivel ? 'Trocar o fusível' : 'Consertar', alvo: { tipo: 'protecao', cabo: c.uid, indice } },
+      });
+    });
+  }
+  return lista;
 }
 
 // ---------------------------------------------------------------- Regras de proteção e de cabos
