@@ -4,9 +4,14 @@
 // e é nela que os passos olham.
 
 import { CATALOGO } from '../catalogo';
-import { ROTEIRO_TUTORIAL, roteiroPorId, ROTEIROS, type Passo, type Roteiro } from '../conteudo/roteiros';
-import { acoes, assinar, emTutorial, estado, recalcularAgora } from '../estado';
+import {
+  ERROS_GUIADOS, EXPERIMENTE_ERRAR, ROTEIRO_TUTORIAL, roteiroPorId, ROTEIROS,
+  type ErroGuiado, type Momento, type Passo, type Roteiro,
+} from '../conteudo/roteiros';
+import { acoes, assinar, emTutorial, estado, horaLocalDe, recalcularAgora, type EventoDeOperacao } from '../estado';
 import { localDoProjeto } from '../nucleo/irradiancia';
+import { posicaoSol } from '../nucleo/sol';
+import { emUso, usoDe } from '../nucleo/uso';
 import type { Aparelho } from '../catalogo/tipos';
 import { criarSobreposto } from './aprender';
 import { destacarCategoriaNoCatalogo, destacarNoCatalogo } from './catalogo';
@@ -178,8 +183,240 @@ function acompanharTeste(): void {
     return;
   }
   teste = { fase: 'resultado', resultado };
+  jaTestou = true;
   encerrarContagem();
   desenhar();
+}
+
+// ---------------------------------------------------------------- Momento do relógio
+
+/** O sol está acima do horizonte no relógio do simulador. */
+function solNoCeu(): boolean {
+  const local = localDoProjeto(estado.projeto);
+  return local ? posicaoSol(estado.tempo.msUtc, local.lat, local.lon).elevacao > 0 : true;
+}
+
+function momento(): Momento {
+  return {
+    solNoCeu: solNoCeu(),
+    horaLocal: horaLocalDe(estado.projeto, estado.tempo.msUtc),
+    bateriaCheia: estado.simulacao.estadoSim.soc >= 0.995,
+  };
+}
+
+/** Meio-dia local do dia que está na tela. */
+function meioDiaDoDia(): number {
+  return dezoitoHorasDoDia() - 6 * MS_HORA;
+}
+
+/** Há luz nas placas agora: o sol está no céu e elas poderiam entregar alguma potência. */
+function comSolNasPlacas(): boolean {
+  return solNoCeu() && estado.simulacao.saida.pvDisponivelW > 0;
+}
+
+/** Chave do que as frases de "agora" olham: muda quando o sol nasce ou se põe, ou quando a hora cheia muda. */
+let chaveDoMomento = '';
+
+function chaveDoMomentoAgora(): string {
+  const m = momento();
+  return `${m.solNoCeu}|${Math.floor(m.horaLocal)}|${m.bateriaCheia}|${comSolNasPlacas()}`;
+}
+
+// ---------------------------------------------------------------- Experimente errar (operar.md, seção 9)
+
+/**
+ * Os três erros guiados, depois do teste de autonomia. `erro` nulo é a lista. Os passos de um erro andam em ordem
+ * (`passo` só cresce): quando o erro acontece, os passos do tutorial deixam de estar feitos, e o painel não pode
+ * voltar a eles. `vistos` são os eventos que já existiam quando o erro começou.
+ */
+let errar:
+  | { erro: null }
+  | { erro: ErroGuiado; fase: 'antes' }
+  | { erro: ErroGuiado; fase: 'porque' }
+  | { erro: ErroGuiado; fase: 'passos'; passo: number; vistos: WeakSet<EventoDeOperacao> }
+  | { erro: ErroGuiado; fase: 'feito' }
+  | null = null;
+const errosFeitos = new Set<string>();
+/** Um teste de autonomia já terminou: o "Experimente errar" aparece no resumo. */
+let jaTestou = false;
+
+function eventosDesde(vistos: WeakSet<EventoDeOperacao>): EventoDeOperacao[] {
+  return estado.simulacao.eventos.filter((e) => !vistos.has(e));
+}
+
+/** Todos os passos do tutorial estão feitos: o sistema está ligado e funcionando. */
+const tutorialEmDia = (): boolean => indiceAtual() < 0;
+
+function abrirErrar(): void {
+  if (teste?.fase === 'rodando') return;
+  teste = null;
+  errar = { erro: null };
+  desenhar();
+}
+
+function fecharErrar(): void {
+  errar = null;
+  desenhar();
+}
+
+function comecarErro(id: string): void {
+  const erro = ERROS_GUIADOS.find((e) => e.id === id);
+  if (!erro) return;
+  errar = { erro, fase: 'antes' };
+  desenhar();
+}
+
+function mostrarPorQue(): void {
+  if (errar === null || errar.erro === null) return;
+  errar = { erro: errar.erro, fase: 'porque' };
+  desenhar();
+}
+
+function comecarPassosDoErro(): void {
+  if (errar?.erro === null || errar === null) return;
+  if (!tutorialEmDia()) return desenhar();
+  errar = { erro: errar.erro, fase: 'passos', passo: 0, vistos: new WeakSet(estado.simulacao.eventos) };
+  avancarErro();
+}
+
+/** Anda os passos do erro que já estão cumpridos. */
+function avancarErro(): void {
+  if (errar === null || errar.erro === null || errar.fase !== 'passos') return desenhar();
+  const contexto = { eventos: eventosDesde(errar.vistos), tutorialEmDia: tutorialEmDia() };
+  let i = errar.passo;
+  while (i < errar.erro.passos.length && errar.erro.passos[i]!.feito(estado.projeto, CATALOGO, contexto)) i += 1;
+  if (i >= errar.erro.passos.length) {
+    errosFeitos.add(errar.erro.id);
+    errar = { erro: errar.erro, fase: 'feito' };
+  } else {
+    errar.passo = i;
+  }
+  desenhar();
+}
+
+function botaoErrar(acao: string, rotulo: string, fn: () => void, extra: Record<string, string> = {}): HTMLButtonElement {
+  const b = h('button', { type: 'button', class: 'passo-botao', 'data-acao': acao, ...extra }, rotulo);
+  b.addEventListener('click', fn);
+  return b;
+}
+
+function botaoSairDoTutorial(): HTMLButtonElement {
+  return botaoErrar('sair', 'Sair do tutorial', sair);
+}
+
+/** De noite, o erro que precisa de sol oferece pôr o relógio ao meio-dia. */
+function ofertaDeSol(erro: ErroGuiado): Node[] {
+  if (!erro.precisaDeSol || comSolNasPlacas()) return [];
+  return [
+    h('p', { class: 'passo-dica', 'data-erro-nota': 'noite' }, 'Agora não há sol na placa no relógio do simulador: sem sol, o controlador só apaga e nada queima. Para ver o erro, ponha o relógio ao meio-dia.'),
+    h('div', { class: 'passo-botoes' }, botaoErrar('meio-dia', 'Pôr o relógio ao meio-dia', () => acoes.definirTempo(meioDiaDoDia()))),
+  ];
+}
+
+/** O aparelho grande fora do horário de uso não pede energia: oferece usá-lo o dia inteiro. */
+function ofertaDeUso(erro: ErroGuiado): Node[] {
+  if (!erro.aparelhoId) return [];
+  const d = estado.projeto.dispositivos.find((x) => x.itemId === erro.aparelhoId);
+  const item = d ? CATALOGO.get(d.itemId) : undefined;
+  if (!d || item?.categoria !== 'aparelho') return [];
+  const uso = usoDe(d, item);
+  if (emUso(uso, horaLocalDe(estado.projeto, estado.tempo.msUtc))) return [];
+  const uid = d.uid;
+  return [
+    h(
+      'p',
+      { class: 'passo-dica', 'data-erro-nota': 'horario' },
+      `No simulador, o ${item.nome.toLowerCase()} só é usado das ${uso.inicio} às ${uso.fim} h, e o relógio está fora desse horário: ligado, ele não pediria energia. Use o botão abaixo para ele valer o dia inteiro.`,
+    ),
+    h('div', { class: 'passo-botoes' }, botaoErrar('dia-inteiro-erro', `Usar o ${item.nome.toLowerCase()} o dia inteiro`, () => acoes.definirUso(uid, { inicio: 0, fim: 24 }))),
+  ];
+}
+
+function painelDeErrar(): Node[] {
+  if (errar === null) return [];
+  const cabeca = h('p', { class: 'passo-contagem' }, EXPERIMENTE_ERRAR.titulo, h('span', { class: 'passo-roteiro' }, ' · Tutorial'));
+  const lista = botaoErrar('lista-de-erros', 'Voltar à lista', abrirErrar);
+
+  if (errar.erro === null) {
+    const emDia = tutorialEmDia();
+    const f = feitos();
+    const falta = roteiro?.passos[indiceAtual(f)];
+    return semNulos([
+      cabeca,
+      h('p', { class: 'passo-texto' }, EXPERIMENTE_ERRAR.texto),
+      h('p', { class: 'passo-dica' }, EXPERIMENTE_ERRAR.deVerdade),
+      emDia || !falta
+        ? null
+        : h('p', { class: 'passo-dica', role: 'status', 'data-erro-nota': 'falta' }, `Para começar um erro, o sistema precisa estar ligado e funcionando. Falta: ${falta.titulo.toLowerCase()}. Volte ao tutorial para ver como.`),
+      h(
+        'div',
+        { class: 'passo-botoes lista-de-erros' },
+        ...ERROS_GUIADOS.map((erro, i) => {
+          const feito = errosFeitos.has(erro.id);
+          return botaoErrar('escolher-erro', `${i + 1}. ${erro.curto}${feito ? ' ✓' : ''}`, () => comecarErro(erro.id), { 'data-erro': erro.id, class: feito ? 'passo-botao erro-feito' : 'passo-botao', title: erro.titulo });
+        }),
+      ),
+      h('div', { class: 'passo-botoes' }, botaoErrar('voltar-ao-teste', 'Voltar ao teste', fecharErrar), botaoSairDoTutorial()),
+    ]);
+  }
+
+  const erro = errar.erro;
+  const ordem = ERROS_GUIADOS.indexOf(erro) + 1;
+  // Antes de começar, duas telas curtas (o painel não pode cobrir o quartinho): o que vai acontecer, e por quê.
+  // "Começar" só aparece na segunda: ninguém começa sem ter lido as duas.
+  const contagem = h('p', { class: 'passo-contagem' }, `${EXPERIMENTE_ERRAR.titulo} · ${ordem} de ${ERROS_GUIADOS.length}`);
+  if (errar.fase === 'antes') {
+    return [
+      contagem,
+      h('h4', { class: 'passo-titulo' }, erro.titulo),
+      h('p', { class: 'passo-texto', 'data-erro-texto': 'o-que-vai-acontecer' }, h('strong', null, 'O que vai acontecer: '), erro.oQueVaiAcontecer),
+      h('p', { class: 'passo-dica', 'data-erro-texto': 'de-verdade' }, erro.deVerdade),
+      h('div', { class: 'passo-botoes' }, botaoErrar('por-que-erro', 'Por quê?', mostrarPorQue), lista, botaoSairDoTutorial()),
+    ];
+  }
+  if (errar.fase === 'porque') {
+    const emDia = tutorialEmDia();
+    const falta = roteiro?.passos[indiceAtual()];
+    const comecar = botaoErrar('comecar-erro', 'Começar', comecarPassosDoErro);
+    if (!emDia) comecar.disabled = true;
+    return semNulos([
+      contagem,
+      h('h4', { class: 'passo-titulo' }, erro.titulo),
+      h('p', { class: 'passo-texto', 'data-erro-texto': 'por-que' }, h('strong', null, 'Por quê: '), erro.porQue),
+      emDia || !falta ? null : h('p', { class: 'passo-dica', role: 'status', 'data-erro-nota': 'falta' }, `Antes, o sistema precisa estar ligado e funcionando. Falta: ${falta.titulo.toLowerCase()}.`),
+      h('div', { class: 'passo-botoes' }, comecar, lista, botaoSairDoTutorial()),
+    ]);
+  }
+
+  if (errar.fase === 'feito') {
+    return [
+      h('p', { class: 'passo-contagem' }, `${EXPERIMENTE_ERRAR.titulo} · ${ordem} de ${ERROS_GUIADOS.length}`),
+      h('h4', { class: 'passo-titulo' }, `Pronto: ${erro.titulo.toLowerCase()}`),
+      h('p', { class: 'passo-texto', 'data-erro-texto': 'licao' }, erro.licao),
+      h('div', { class: 'passo-botoes' }, botaoErrar('lista-de-erros', 'Outro erro', abrirErrar), botaoErrar('voltar-ao-teste', 'Voltar ao teste', fecharErrar), botaoSairDoTutorial()),
+    ];
+  }
+
+  const passo = erro.passos[errar.passo]!;
+  const botoes = h('div', { class: 'passo-botoes' });
+  if (passo.itemId || passo.categoria) {
+    botoes.append(
+      botaoErrar('catalogo', 'Mostrar no catálogo', () => {
+        if (passo.itemId) destacarNoCatalogo(passo.itemId);
+        else if (passo.categoria) destacarCategoriaNoCatalogo(passo.categoria);
+      }),
+    );
+  }
+  botoes.append(lista, botaoSairDoTutorial());
+  return semNulos([
+    h('p', { class: 'passo-contagem' }, `${erro.titulo} · passo ${errar.passo + 1} de ${erro.passos.length}`),
+    h('h4', { class: 'passo-titulo' }, passo.titulo),
+    h('p', { class: 'passo-texto' }, passo.texto),
+    passo.dica ? h('p', { class: 'passo-dica' }, `Dica: ${passo.dica}`) : null,
+    ...(errar.passo === 0 ? ofertaDeSol(erro) : []),
+    ...(passo.id === 'ligar' ? ofertaDeUso(erro) : []),
+    botoes,
+  ]);
 }
 
 // ---------------------------------------------------------------- Andamento
@@ -223,6 +460,7 @@ function sair(): void {
   }
   roteiro = null;
   teste = null;
+  errar = null;
   pulados.clear();
   feitosAntes = new Set();
   atualAntes = null;
@@ -263,6 +501,9 @@ export function iniciarTutorial(): void {
   acoes.entrarNoTutorial();
   recalcularAgora();
   teste = null;
+  errar = null;
+  errosFeitos.clear();
+  jaTestou = false;
   comecarRoteiroDoTutorial();
 }
 
@@ -331,9 +572,9 @@ function resumoDoTutorial(r: Roteiro): Node[] {
       h(
         'p',
         { class: 'passo-texto' },
-        'Para comparar, desligue este aparelho, ligue outro na saída do inversor e teste de novo. Micro-ondas e chuveiro pedem mais do que o inversor de 500 W aguenta.',
+        'Troque o aparelho e teste de novo. Micro-ondas e chuveiro passam dos 500 W do inversor.',
       ),
-      h('div', { class: 'passo-botoes' }, deNovo, botaoSair),
+      h('div', { class: 'passo-botoes' }, deNovo, botaoErrar('experimente-errar', EXPERIMENTE_ERRAR.titulo, abrirErrar), botaoSair),
     ];
   }
 
@@ -353,7 +594,7 @@ function resumoDoTutorial(r: Roteiro): Node[] {
     h('p', { class: 'passo-texto' }, `O teste põe o relógio às ${horaTexto(dezoitoHorasDoDia())} deste dia, enche a bateria, tira a rede e acelera o tempo até a bateria esvaziar ou passarem 24 horas.`),
     h('p', { class: 'passo-texto' }, 'No teste, os aparelhos ligados ficam funcionando o tempo todo.'),
     h('p', { class: 'passo-dica' }, 'O simulador ajuda a aprender e a planejar. Antes de comprar e instalar de verdade, mostre o plano a um eletricista habilitado.'),
-    h('div', { class: 'passo-botoes' }, testar, botaoSair),
+    h('div', { class: 'passo-botoes' }, testar, jaTestou ? botaoErrar('experimente-errar', EXPERIMENTE_ERRAR.titulo, abrirErrar) : null, botaoSair),
   ]);
 }
 
@@ -382,6 +623,12 @@ function resumo(r: Roteiro): Node[] {
     h('p', { class: 'passo-dica' }, 'O simulador ajuda a aprender e a planejar. Antes de comprar e instalar de verdade, mostre o plano a um eletricista habilitado.'),
     h('div', { class: 'passo-botoes' }, botaoQueda, botaoSair),
   ]);
+}
+
+/** A frase de "agora" do passo (noite, aparelho fora do horário, peça queimada), só no tutorial. */
+function notaDoMomento(passo: Passo): HTMLElement | null {
+  const texto = passo.agora?.(estado.projeto, CATALOGO, momento()) ?? null;
+  return texto === null ? null : h('p', { class: 'passo-dica passo-agora', role: 'status', 'data-agora': passo.id }, texto);
 }
 
 function emAndamento(r: Roteiro, f: boolean[], atual: number): Node[] {
@@ -425,11 +672,12 @@ function emAndamento(r: Roteiro, f: boolean[], atual: number): Node[] {
   );
 
   return semNulos([
-    h('p', { class: 'passo-contagem' }, `Passo ${atual + 1} de ${r.passos.length}`, h('span', { class: 'passo-roteiro' }, ` · ${r.titulo}`)),
+    h('p', { class: 'passo-contagem' }, `Passo ${atual + 1} de ${r.passos.length}`, h('span', { class: 'passo-roteiro' }, ` · ${passo.parte ?? r.titulo}`)),
     feitoRecente ? h('p', { class: 'passo-feito', role: 'status' }, `Feito! ${feitoRecente}`) : null,
     h('h4', { class: 'passo-titulo' }, passo.titulo),
     h('p', { class: 'passo-texto' }, passo.texto),
     passo.dica ? h('p', { class: 'passo-dica' }, `Dica: ${passo.dica}`) : null,
+    notaDoMomento(passo),
     lista,
     botoes,
   ]);
@@ -447,6 +695,28 @@ function desenhar(): void {
     acoes.definirDestaques([]);
     return;
   }
+  chaveDoMomento = chaveDoMomentoAgora();
+  if (errar !== null && noTutorial()) {
+    // "Experimente errar": o painel segue os passos do erro, e não os do tutorial (o erro desfaz passos de propósito).
+    const passoDoErro = errar.erro !== null && errar.fase === 'passos' ? errar.erro.passos[errar.passo] : undefined;
+    acoes.definirDestaques(passoDoErro?.onde ? passoDoErro.onde(estado.projeto, CATALOGO) : []);
+    painel.hidden = false;
+    painel.dataset.roteiro = roteiro.id;
+    delete painel.dataset.teste;
+    painel.dataset.situacao = 'errar';
+    painel.dataset.passo = 'errar';
+    if (errar.erro === null) {
+      delete painel.dataset.erro;
+      painel.dataset.passoErro = 'lista';
+    } else {
+      painel.dataset.erro = errar.erro.id;
+      painel.dataset.passoErro = errar.fase === 'passos' ? errar.erro.passos[errar.passo]!.id : errar.fase;
+    }
+    substituir(painel, painelDeErrar());
+    return;
+  }
+  delete painel.dataset.erro;
+  delete painel.dataset.passoErro;
   const f = feitos();
   const atual = indiceAtual(f);
   // O realce na cena: só no tutorial, e só enquanto há um passo da vez (no resumo e durante o teste, nada).
@@ -470,12 +740,14 @@ function avaliar(): void {
     if (teste?.fase === 'rodando') encerrarContagem();
     teste = null;
     avisoDoTeste = null;
+    errar = null;
     roteiro = null;
     pulados.clear();
     gravar();
     return desenhar();
   }
   if (!roteiro) return;
+  if (errar !== null) return avancarErro();
   const f = feitos();
   // Um passo deixou de estar feito durante o teste: o teste não vale mais.
   if (teste && indiceAtual(f) >= 0) cancelarTeste();
@@ -538,6 +810,14 @@ export function montarPassoAPasso(): void {
 
   assinar('derivados', avaliar);
   assinar('simulacao', acompanharTeste);
+  // O relógio andou: as frases que dependem da hora (noite, horário de uso) e a oferta de sol podem mudar.
+  assinar('simulacao', () => {
+    if (roteiro && noTutorial() && teste?.fase !== 'rodando' && chaveDoMomentoAgora() !== chaveDoMomento) desenhar();
+  });
+  // Um dano do "Experimente errar" pode chegar com o relógio, antes da análise nova.
+  assinar('operacao', () => {
+    if (errar !== null) avancarErro();
+  });
 
   // Uma sessão em andamento (a página foi recarregada) continua de onde parou.
   const guardado = ler();

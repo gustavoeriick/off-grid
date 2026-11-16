@@ -94,6 +94,15 @@ function montarMenuDosCabos(): void {
 }
 
 /**
+ * "Ligar o sistema" (operar.md, seção 6): fecha as chaves na ordem certa. Com erro de polaridade ou de curto, o núcleo
+ * recusa e a tela mostra o motivo. Usado pelo menu "Projeto" e pela linha "Sem energia nos aparelhos" dos mostradores.
+ */
+export function ligarOSistema(): void {
+  const recusa = acoes.energizar();
+  if (recusa) mostrarMensagem(recusa.texto, true);
+}
+
+/**
  * "Ligar o sistema" e "Desligar o sistema" (operar.md, seção 6), no menu "Projeto" (na barra do alto não cabe em 1280 px): visível quando há inversor no projeto. Mostra o que faz sentido
  * agora: se ainda há manobra de ligar a fazer, "Ligar"; se não, "Desligar". Com erro de polaridade ou de curto na montagem,
  * o núcleo recusa e a tela mostra o motivo.
@@ -121,8 +130,7 @@ function montarBotaoDoSistema(): void {
       acoes.desenergizar();
       return;
     }
-    const recusa = acoes.energizar();
-    if (recusa) mostrarMensagem(recusa.texto, true);
+    ligarOSistema();
   });
   for (const nome of ['projeto', 'dispositivos', 'cabos', 'derivados'] as const) assinar(nome, desenhar);
   desenhar();

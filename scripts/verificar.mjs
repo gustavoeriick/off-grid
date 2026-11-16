@@ -1820,6 +1820,38 @@ async function principal() {
     const botaoDoPainel = (acao) => painel().locator(`button[data-acao="${acao}"]`);
     const esperarTeste = (fase, ms) => pagina.waitForFunction((f) => document.querySelector('#passo-a-passo')?.dataset.teste === f, fase, { timeout: ms });
     const esperarSituacao = (sit) => pagina.waitForFunction((x) => document.querySelector('#passo-a-passo')?.dataset.situacao === x, sit, { timeout: 8000 });
+    /** Estado da chave de índice `i` do cabo; campo ausente vale fechada. */
+    const estadoDaChave = async (caboUid, i) => ((await projeto()).cabos.find((c) => c.uid === caboUid)?.estados ?? [])[i] ?? 'fechada';
+    /** Texto do visor da peça (linhas separadas por " | "); vazio é apagado. */
+    const visor = (uid) => og((u) => window.__offgrid.textoDoVisor(u), uid);
+    /** Clica na proteção desenhada no cabo, na cena: abre ou fecha a chave dela. */
+    const clicarProtecao = async (caboUid, indice, nome) => {
+      await fecharAvisos();
+      const antes = await estadoDaChave(caboUid, indice);
+      const pt = await og(([u, i]) => window.__offgrid.telaDaProtecao(u, i), [caboUid, indice]);
+      if (!pt) await pagina.screenshot({ path: join(pasta, 'zz-falha-protecao.png') });
+      conferir(pt, `${nome}: a proteção deveria estar à vista na cena`);
+      await pagina.mouse.click(pt[0], pt[1]);
+      await esperar(350);
+      const depois = await estadoDaChave(caboUid, indice);
+      if (depois === antes) await pagina.screenshot({ path: join(pasta, 'zz-falha-protecao.png') });
+      conferir(depois !== antes, `${nome}: o clique na proteção deveria mudar a chave (continua ${depois})`);
+      await fecharAvisos();
+    };
+    /** Clica no botão ⏻ de um inversor ou aparelho, na cena. */
+    const clicarBotao = async (uid, nome) => {
+      await fecharAvisos();
+      const antes = (await projeto()).dispositivos.find((x) => x.uid === uid);
+      const pt = await og((u) => window.__offgrid.telaDoBotao(u), uid);
+      if (!pt) await pagina.screenshot({ path: join(pasta, 'zz-falha-botao.png') });
+      conferir(pt, `${nome}: o botão ⏻ deveria estar à vista na cena`);
+      await pagina.mouse.click(pt[0], pt[1]);
+      await esperar(350);
+      const depois = (await projeto()).dispositivos.find((x) => x.uid === uid);
+      if (depois.ligado === antes.ligado && depois.falha === antes.falha) await pagina.screenshot({ path: join(pasta, 'zz-falha-botao.png') });
+      conferir(depois.ligado !== antes.ligado || depois.falha !== antes.falha, `${nome}: o clique no botão ⏻ deveria ligar ou desligar`);
+      await fecharAvisos();
+    };
 
     // ---- Entrada pelo cartão "Por onde começar": volta o cartão e confere o botão principal.
     await og(() => window.__offgrid.acoes.novoProjeto());
@@ -1851,7 +1883,7 @@ async function principal() {
     const guardada = JSON.parse(await og(() => localStorage.getItem('offgrid.projeto.casa')));
     conferir(JSON.stringify(guardada) === JSON.stringify(casaAntes), 'a casa deveria ficar guardada em offgrid.projeto.casa');
     conferir((await painel().getAttribute('data-roteiro')) === 'tutorial-quartinho', 'o painel deveria mostrar o roteiro do tutorial');
-    conferir((await pagina.locator('#passo-a-passo .passo-contagem').textContent()).startsWith('Passo 1 de 9'), 'o tutorial deveria começar no passo 1 de 9');
+    conferir((await pagina.locator('#passo-a-passo .passo-contagem').textContent()).startsWith('Passo 1 de 13'), 'o tutorial deveria começar no passo 1 de 13');
     conferir((await painel().textContent()).includes('Sair do tutorial'), 'o painel deveria ter "Sair do tutorial"');
     // Topo.
     conferir(await pagina.locator('#rotulo-tutorial').isVisible(), 'o rótulo "Tutorial" deveria aparecer no topo');
@@ -1927,7 +1959,7 @@ async function principal() {
     await cabo(bateria, 'neg', inversor, 'batNeg');
     await noPasso(5);
 
-    // ---- Passo 5: fusível no cabo positivo (realce no cabo).
+    // ---- Passo 5: fusível no cabo positivo (realce no cabo). Ele nasce fora do porta-fusível.
     d = await exigirDestaque('cabo', 'no passo 5 deveria haver realce no cabo');
     p = await projeto();
     const caboPos = p.cabos.find((c) => c.de.disp === bateria && c.de.terminal === 'pos');
@@ -1936,6 +1968,7 @@ async function principal() {
     conferir(sFus.modo === 'protecao' && sFus.valido === true, `o fusível sobre o cabo positivo deveria poder ser instalado: ${JSON.stringify(sFus)}`);
     await soltar();
     await noPasso(6);
+    conferir((await estadoDaChave(caboPos.uid, 0)) === 'aberta', 'o fusível deveria nascer fora do porta-fusível');
 
     // ---- Passo 6: controlador na parede do fundo e dois cabos até a bateria.
     d = await exigirDestaque('superficie', 'no passo 6 deveria haver realce de superfície');
@@ -1971,10 +2004,49 @@ async function principal() {
     conferir(sDj.modo === 'protecao' && sDj.valido === true, `o disjuntor sobre o cabo do controlador deveria poder ser instalado: ${JSON.stringify(sDj)}`);
     await soltar();
     await noPasso(7);
+    conferir((await estadoDaChave(caboCtl.uid, 0)) === 'aberta', 'o disjuntor do controlador deveria nascer aberto');
+    conferir((await visor(ctl)) === '', `sem a bateria (disjuntor aberto), o visor do controlador deveria estar apagado: "${await visor(ctl)}"`);
 
-    // ---- Passo 7: cabos da placa no controlador.
+    // ---- Passo 7: ventilador no piso, plugue na saída do inversor. Ele nasce desligado e o passo não pede que ligue.
+    d = await exigirDestaque('superficie', 'no passo 7, sem aparelho, deveria haver realce de superfície');
+    conferir(d[0].id === 'piso-quartinho', `o passo 7 deveria realçar o piso: ${JSON.stringify(d)}`);
+    await arrastarPeca('ap-ventilador', [0.4, 0.05, -0.2], 'passo 7');
+    const ventilador = await uidDe('ap-ventilador');
+    await esperar(400);
+    await exigirDestaque('terminal', 'no passo 7, com o aparelho, deveria haver realce de terminais');
+    await cabo(ventilador, 'plug', inversor, 'caSaida');
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    conferir((await projeto()).dispositivos.find((x) => x.uid === ventilador).ligado === false, 'o ventilador deveria nascer desligado');
+
+    // ---- Passo 8 (conferir o consultor) fecha sozinho com a montagem certa: o painel vai ao passo 9, o primeiro de ligar.
+    await noPasso(9);
+    conferir((await pagina.locator('#passo-a-passo .passo-contagem').textContent()).includes('Parte 2: ligar'), 'o passo 9 deveria ser da parte de ligar');
+    conferir(await pagina.locator('#m-desligado').isVisible(), 'com tudo desligado, os mostradores deveriam dizer por que não há energia');
+    conferir(await pagina.locator('#m-ligar-sistema').isHidden(), 'no tutorial, "Ligar o sistema" não deveria aparecer nos mostradores: lá se liga com a mão');
+    await captura('86a-tutorial-passo-9-fusivel-aberto');
+
+    // ---- Passo 9: o fusível vai para o porta-fusível com um clique na cena.
+    d = await exigirDestaque('cabo', 'no passo 9 deveria haver realce no cabo do fusível');
+    conferir(d[0].uid === caboPos.uid, `o realce do passo 9 deveria ser o cabo positivo do inversor: ${JSON.stringify(d)}`);
+    await clicarProtecao(caboPos.uid, 0, 'fusível da bateria');
+    conferir((await estadoDaChave(caboPos.uid, 0)) === 'fechada', 'um clique no fusível deveria pô-lo no porta-fusível');
+    await noPasso(10);
+    conferir((await visor(inversor)) === '', 'com o inversor desligado, o visor dele deveria continuar apagado');
+
+    // ---- Passo 10: o disjuntor do controlador, também com um clique: o visor do controlador acende.
+    d = await exigirDestaque('cabo', 'no passo 10 deveria haver realce no cabo do controlador');
+    conferir(d[0].uid === caboCtl.uid, `o realce do passo 10 deveria ser o cabo positivo do controlador: ${JSON.stringify(d)}`);
+    await clicarProtecao(caboCtl.uid, 0, 'disjuntor do controlador');
+    conferir((await estadoDaChave(caboCtl.uid, 0)) === 'fechada', 'um clique no disjuntor deveria fechá-lo');
+    await noPasso(11);
+    const visorCtl = await visor(ctl);
+    console.log(`visor do controlador com a bateria e sem placa: "${visorCtl}"`);
+    conferir(visorCtl !== '' && visorCtl.includes('sem placas ligadas'), `com a bateria, o visor do controlador deveria acender e dizer que faltam as placas: "${visorCtl}"`);
+    await captura('86b-tutorial-passo-10-visor-do-controlador');
+
+    // ---- Passo 11: cabos da placa no controlador, por último.
     await esperar(300);
-    await exigirDestaque('terminal', 'no passo 7 deveria haver realce de terminais');
+    await exigirDestaque('terminal', 'no passo 11 deveria haver realce de terminais');
     const placa = await uidDe('placa-resun-100');
     // A placa está no telhado e o controlador dentro do quartinho: com o telhado à vista, a placa só aparece de cima.
     // O cabo é feito com dois cliques: clica no terminal da placa (vista de cima) e, com o cabo preso ao ponteiro,
@@ -2003,32 +2075,44 @@ async function principal() {
     };
     await cabo2cliques(placa, 'pos', ctl, 'pvPos');
     await cabo2cliques(placa, 'neg', ctl, 'pvNeg');
-    await noPasso(8);
+    await noPasso(12);
+    e = await estado();
+    conferir(!e.projeto.dispositivos.some((x) => x.queimado) && e.simulacao.eventos.length === 0, `ligar a placa por último não deveria queimar nada: ${JSON.stringify(e.simulacao.eventos)}`);
     await pagina.getByRole('button', { name: 'Sem telhado', exact: true }).click();
     await paraDentro();
+    const visorComPlaca = await visor(ctl);
+    console.log(`visor do controlador com a placa ligada: "${visorComPlaca}"`);
+    conferir(/^PV \d+,\d V \| carga \d+,\d A \| (carregando|bateria cheia|em espera|sem sol)$/.test(visorComPlaca), `com a placa, o visor do controlador deveria mostrar a tensão da placa e a corrente de carga: "${visorComPlaca}"`);
 
-    // ---- Passo 8: lâmpada no piso, plugue na saída do inversor.
-    d = await exigirDestaque('superficie', 'no passo 8, sem aparelho, deveria haver realce de superfície');
-    conferir(d[0].id === 'piso-quartinho', `o passo 8 deveria realçar o piso: ${JSON.stringify(d)}`);
-    await arrastarPeca('ap-ventilador', [0.4, 0.05, -0.2], 'passo 8');
-    const ventilador = await uidDe('ap-ventilador');
-    await esperar(400);
-    await exigirDestaque('terminal', 'no passo 8, com o aparelho, deveria haver realce de terminais');
-    await cabo(ventilador, 'plug', inversor, 'caSaida');
-    p = await projeto();
-    if (!p.dispositivos.find((x) => x.uid === ventilador).ligado) await og((u) => window.__offgrid.acoes.definirLigado(u, true), ventilador);
+    // ---- Passo 12: o inversor liga pelo botão ⏻ na cena; o visor dele acende.
+    d = await exigirDestaque('terminal', 'no passo 12 deveria haver realce no inversor');
+    conferir(d[0].disp === inversor, `o realce do passo 12 deveria marcar o inversor: ${JSON.stringify(d)}`);
+    await clicarBotao(inversor, 'inversor');
+    conferir((await projeto()).dispositivos.find((x) => x.uid === inversor).ligado === true, 'o botão ⏻ deveria ligar o inversor');
+    await noPasso(13);
+    const visorInv = await visor(inversor);
+    console.log(`visor do inversor ligado: "${visorInv}"`);
+    conferir(visorInv.startsWith('ligado') && visorInv.includes('0 W'), `o visor do inversor deveria acender com consumo zero: "${visorInv}"`);
+
+    // ---- Passo 13: o ventilador liga pelo botão ⏻ na cena → resumo.
+    d = await exigirDestaque('terminal', 'no passo 13 deveria haver realce no aparelho');
+    conferir(d[0].disp === ventilador, `o realce do passo 13 deveria marcar o ventilador: ${JSON.stringify(d)}`);
+    await clicarBotao(ventilador, 'ventilador');
+    conferir((await projeto()).dispositivos.find((x) => x.uid === ventilador).ligado === true, 'o botão ⏻ deveria ligar o ventilador');
     await og(() => window.__offgrid.acoes.selecionar(null));
-
-    // ---- Passo 9: sem erros → resumo. Se ficar preso aqui, o consultor diz por quê.
     try {
       await esperarSituacao('resumo');
     } catch {
       const sug = ((await estado()).derivados?.sugestoes ?? []).map((x) => `${x.nivel}: ${x.titulo}`);
-      throw new Error(`Conferência falhou: o passo "sem erros" não fechou. Sugestões do consultor: ${JSON.stringify(sug)}`);
+      throw new Error(`Conferência falhou: o tutorial não chegou ao resumo. Sugestões do consultor: ${JSON.stringify(sug)}`);
     }
+    e = await estado();
+    conferir(e.simulacao.eventos.length === 0 && !e.projeto.dispositivos.some((x) => x.queimado || x.falha), `o tutorial feito na ordem não deveria queimar nada: ${JSON.stringify(e.simulacao.eventos)}`);
+    console.log(`visor do inversor com o ventilador: "${await visor(inversor)}"`);
     conferir((await destaques()).length === 0, 'no resumo a lista de destaques deveria estar vazia');
     const resumoTexto = await painel().textContent();
     conferir(resumoTexto.includes('Montagem concluída') && resumoTexto.includes('Testar a bateria') && resumoTexto.includes('Orçamento total: R$'), `o resumo do tutorial: "${resumoTexto}"`);
+    conferir(!resumoTexto.includes('Experimente errar'), 'antes do primeiro teste, o resumo não deveria oferecer "Experimente errar"');
     await pagina.locator('#botao-vista-inicial').click();
     await esperar(1000);
     await captura('86-tutorial-resumo');
@@ -2043,7 +2127,7 @@ async function principal() {
     await esperarSituacao('andamento');
     e = await estado();
     conferir(!e.simulacao.quedaDeLuz.ativa && e.tempo.velocidade === 0 && !(await painel().getAttribute('data-teste')), `remover o ventilador no meio do teste deveria cancelá-lo e parar o relógio: queda ${e.simulacao.quedaDeLuz.ativa}, velocidade ${e.tempo.velocidade}, teste ${await painel().getAttribute('data-teste')}`);
-    conferir((await painel().getAttribute('data-passo')) === '8', 'o painel deveria voltar ao passo do aparelho');
+    conferir((await painel().getAttribute('data-passo')) === '7', 'o painel deveria voltar ao passo do aparelho');
     await og(() => window.__offgrid.acoes.desfazer());
     await esperarSituacao('resumo');
 
@@ -2059,7 +2143,7 @@ async function principal() {
     let texto = await painel().textContent();
     conferir(/A bateria segurou (\d+ h( \d+ min)?|\d+ min): das 18:00 às \d\d:\d\d\./.test(texto), `texto do resultado com o ventilador: "${texto}"`);
     conferir(/Aparelhos ligados: Ventilador, somando 50 W de consumo médio./.test(texto), `o resultado deveria listar o ventilador e os 50 W: "${texto}"`);
-    conferir(texto.includes('inversor de 500 W') && texto.includes('Micro-ondas e chuveiro') && texto.includes('confira no manual'), 'o resultado deveria avisar do micro-ondas e do chuveiro e do corte do inversor');
+    conferir(texto.includes('500 W do inversor') && texto.includes('Micro-ondas e chuveiro') && texto.includes('confira no manual'), 'o resultado deveria avisar do micro-ondas e do chuveiro e do corte do inversor');
     conferir(e.tempo.velocidade === 0 && !e.simulacao.quedaDeLuz.ativa, 'ao terminar o teste o tempo deveria parar e a contagem sem rede acabar');
     conferir(e.simulacao.estadoSim.soc < 0.55, `no teste do ventilador a bateria deveria estar no limite de descarga: ${e.simulacao.estadoSim.soc}`);
     conferir((await pagina.locator('button[data-acao="testar-de-novo"]').count()) === 1 && (await pagina.locator('#passo-a-passo button[data-acao="sair"]').count()) === 1, 'o resultado deveria ter "Testar de novo" e "Sair do tutorial"');
@@ -2116,6 +2200,221 @@ async function principal() {
       await captura(`90-tutorial-painel-${largura}x${altura}`);
     }
 
+    // ---- "Experimente errar": os três erros guiados, cada um com o conserto (operar.md, seção 9).
+    await pagina.setViewportSize({ width: 1440, height: 900 });
+    const noErro = async (passoErro, ms = 8000) => {
+      try {
+        await pagina.waitForFunction((x) => document.querySelector('#passo-a-passo')?.dataset.passoErro === x, passoErro, { timeout: ms });
+      } catch {
+        const ev = (await estado()).simulacao.eventos.map((x) => x.codigo);
+        throw new Error(`Conferência falhou: o "Experimente errar" deveria estar em "${passoErro}"; está em "${await painel().getAttribute('data-passo-erro')}". Eventos: ${JSON.stringify(ev)}. Painel: "${await painel().textContent()}"`);
+      }
+      await esperar(200);
+    };
+    const eventosAgora = async () => (await estado()).simulacao.eventos.map((x) => x.codigo);
+    const sairVisivel = async (onde) => conferir((await painel().locator('button[data-acao="sair"]').count()) === 1, `"Sair do tutorial" deveria estar no painel em ${onde}`);
+    const cobreOQuartinho = async () =>
+      og(() => {
+        const r = document.querySelector('#passo-a-passo').getBoundingClientRect();
+        const cantos = [];
+        for (const x of [-1.5, 1.5]) for (const y of [0, 2.4]) for (const z of [-1.25, 1.25]) cantos.push(window.__offgrid.telaDoPonto([x, y, z]));
+        const xs = cantos.map((c) => c[0]);
+        const ys = cantos.map((c) => c[1]);
+        const q = { esq: Math.min(...xs), dir: Math.max(...xs), topo: Math.min(...ys), base: Math.max(...ys) };
+        const larg = Math.max(0, Math.min(q.dir, r.right) - Math.max(q.esq, r.left));
+        const alt = Math.max(0, Math.min(q.base, r.bottom) - Math.max(q.topo, r.top));
+        const area = (q.dir - q.esq) * (q.base - q.topo);
+        return area > 0 ? (larg * alt) / area : 0;
+      });
+    conferir((await painel().textContent()).includes('Experimente errar'), 'depois do teste, o resultado deveria oferecer "Experimente errar"');
+    await botaoDoPainel('experimente-errar').click();
+    await noErro('lista');
+    texto = await painel().textContent();
+    conferir(texto.includes('pode sair a qualquer hora') && texto.includes('peça queimada é peça nova') && texto.includes('pegar fogo'), `a lista do "Experimente errar" deveria avisar que é opcional e o custo de verdade: "${texto}"`);
+    conferir((await painel().locator('button[data-acao="escolher-erro"]').count()) === 3, 'a lista deveria ter os três erros');
+    await sairVisivel('a lista de erros');
+    await pagina.locator('#botao-vista-inicial').click();
+    await esperar(1000);
+    await captura('90a-errar-lista');
+
+    // (a) Placa sem a bateria: abrir o disjuntor do controlador com sol queima o controlador.
+    /** Mede, nas duas resoluções e na vista inicial, quanto o painel do "Experimente errar" cobre do quartinho. */
+    const medirCobertura = async (nome) => {
+      for (const [largura, altura] of [[1280, 720], [1440, 900]]) {
+        await pagina.setViewportSize({ width: largura, height: altura });
+        await pagina.locator('#botao-vista-inicial').click();
+        await esperar(1200);
+        const sobre = await cobreOQuartinho();
+        console.log(`"Experimente errar" (${nome}) ${largura}x${altura}: o painel cobre ${(sobre * 100).toFixed(0)} % do quartinho`);
+        conferir(sobre < 0.15, `o painel do "Experimente errar" (${nome}) não deveria cobrir o quartinho em ${largura}x${altura}: ${(sobre * 100).toFixed(0)} %`);
+        await captura(`${nome}-${largura}x${altura}`);
+      }
+    };
+    await medirCobertura('90b-errar-lista');
+    await painel().locator('button[data-erro="placas-antes-da-bateria"]').click();
+    await noErro('antes');
+    texto = await painel().textContent();
+    conferir(texto.includes('O que vai acontecer:') && texto.includes('o controlador queima') && texto.includes('controlador novo') && texto.includes('pegar fogo'), `o erro (a) deveria dizer antes o que acontece e o custo de verdade: "${texto}"`);
+    conferir((await painel().locator('button[data-acao="comecar-erro"]').count()) === 0, 'o erro não deveria começar antes de o painel dizer por quê');
+    await sairVisivel('a explicação do erro (a)');
+    await medirCobertura('90c-errar-a-o-que-vai-acontecer');
+    await botaoDoPainel('por-que-erro').click();
+    await noErro('porque');
+    texto = await painel().textContent();
+    conferir(texto.includes('Por quê:') && texto.includes('Epever e Victron') && texto.includes('Simplificação do simulador'), `o erro (a) deveria dizer por quê, com a fonte e a simplificação: "${texto}"`);
+    await sairVisivel('o porquê do erro (a)');
+    await medirCobertura('90d-errar-a-por-que');
+    await botaoDoPainel('comecar-erro').click();
+    await noErro('abrir');
+    // O teste da lâmpada parou às 18:00: sem sol, o painel oferece o meio-dia.
+    if ((await painel().locator('[data-erro-nota="noite"]').count()) > 0) {
+      await medirCobertura('90e-errar-a-de-noite');
+      await botaoDoPainel('meio-dia').click();
+      await pagina.waitForFunction(() => !document.querySelector('#passo-a-passo [data-erro-nota="noite"]'), null, { timeout: 8000 });
+      conferir(Math.abs((await quando()).hora - 12) < 0.01, `"Pôr o relógio ao meio-dia" deveria levar o relógio às 12:00: ${JSON.stringify(await quando())}`);
+    }
+    await pagina.setViewportSize({ width: 1440, height: 900 });
+    await paraDentro();
+    // Com sol e a bateria abaixo de cheia (o teste gastou), o visor do controlador mostra a corrente de carga.
+    const visorCarregando = await visor(ctl);
+    console.log(`visor do controlador ao meio-dia, depois do teste: "${visorCarregando}"`);
+    conferir(/carga [1-9]\d*,\d A \| carregando$|carga 0,[1-9] A \| carregando$/.test(visorCarregando), `ao meio-dia, o visor do controlador deveria mostrar a corrente de carga: "${visorCarregando}"`);
+    await captura('90f-errar-a-visor-carregando');
+    const eventosAntes = (await estado()).simulacao.eventos.length;
+    await clicarProtecao(caboCtl.uid, 0, 'disjuntor do controlador (erro a)');
+    await noErro('consertar');
+    e = await estado();
+    conferir(e.simulacao.eventos.slice(eventosAntes).map((x) => x.codigo).join() === 'controlador-sem-bateria', `abrir o disjuntor com sol deveria queimar o controlador: ${JSON.stringify(e.simulacao.eventos.slice(eventosAntes))}`);
+    conferir(e.projeto.dispositivos.find((x) => x.uid === ctl).queimado?.codigo === 'controlador-sem-bateria', 'o controlador deveria ficar queimado');
+    conferir((await visor(ctl)) === '', 'queimado, o visor do controlador deveria apagar');
+    conferir((await og(() => window.__offgrid.operacaoNaCena())).selos.includes(ctl), 'a cena deveria marcar o controlador como queimado');
+    conferir((await pagina.locator('#cartoes-operacao article.cartao-operacao[data-evento="controlador-sem-bateria"]').count()) === 1, 'o painel da direita deveria ter o cartão do controlador queimado');
+    await captura('90g-errar-controlador-queimado');
+    // O conserto, na ordem do texto: fecha o disjuntor e depois conserta pelo painel do controlador.
+    await clicarProtecao(caboCtl.uid, 0, 'disjuntor do controlador (conserto)');
+    conferir((await estadoDaChave(caboCtl.uid, 0)) === 'fechada', 'o disjuntor deveria fechar de novo');
+    await og((u) => window.__offgrid.acoes.selecionar({ tipo: 'dispositivo', uid: u }), ctl);
+    await pagina.locator('#item-selecionado .bloco-queimado [data-acao="consertar"]').click();
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await noErro('feito');
+    conferir(!(await projeto()).dispositivos.find((x) => x.uid === ctl).queimado && (await visor(ctl)) !== '', 'consertado com a bateria ligada, o controlador deveria voltar e acender');
+    conferir((await painel().textContent()).includes('Bateria primeiro, placa por último'), 'o fim do erro (a) deveria trazer a lição');
+    await captura('90h-errar-controlador-consertado');
+
+    // (b) Aparelho maior que o inversor: o micro-ondas põe o inversor em falha; desligar e religar.
+    await botaoDoPainel('lista-de-erros').click();
+    await noErro('lista');
+    conferir((await painel().locator('button.erro-feito').count()) === 1, 'a lista deveria marcar o erro (a) como feito');
+    await painel().locator('button[data-erro="aparelho-grande"]').click();
+    await noErro('antes');
+    texto = await painel().textContent();
+    conferir(texto.includes('micro-ondas de 1.300 W num inversor de 500 W') && texto.includes('não queima nada'), `o erro (b) deveria dizer antes o que acontece: "${texto}"`);
+    await botaoDoPainel('por-que-erro').click();
+    await noErro('porque');
+    conferir((await painel().textContent()).includes('não religa sozinho'), 'o erro (b) deveria explicar por quê, com o manual do inversor');
+    await botaoDoPainel('comecar-erro').click();
+    await noErro('por-aparelho');
+    // O piso já tem bateria, inversor e aparelho: tenta alguns lugares livres até ficar verde.
+    let microondasNoPiso = false;
+    for (const ponto of [[-0.5, 0.05, -0.6], [-0.9, 0.05, -0.5], [0.9, 0.05, -0.6], [-0.2, 0.05, 0.1], [0.1, 0.05, -0.9]]) {
+      await fecharAvisos();
+      const s = await levar(await doCartao('ap-microondas'), await telaDoPonto(ponto));
+      if (s.modo === 'catalogo' && s.valido === true) {
+        await soltar();
+        microondasNoPiso = true;
+        break;
+      }
+      await pagina.keyboard.press('Escape');
+      await soltar();
+    }
+    conferir(microondasNoPiso, 'o micro-ondas deveria poder ser solto no piso do quartinho');
+    await fecharAvisos();
+    const microondas = await uidDe('ap-microondas');
+    await cabo(microondas, 'plug', inversor, 'caSaida');
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await noErro('ligar');
+    if ((await painel().locator('[data-erro-nota="horario"]').count()) > 0) await botaoDoPainel('dia-inteiro-erro').click();
+    const antesDaSobrecarga = (await estado()).simulacao.eventos.length;
+    await clicarBotao(microondas, 'micro-ondas');
+    await noErro('religar');
+    e = await estado();
+    conferir(e.simulacao.eventos.slice(antesDaSobrecarga).map((x) => x.codigo).includes('sobrecarga') && e.projeto.dispositivos.find((x) => x.uid === inversor).falha === 'sobrecarga', `ligar o micro-ondas deveria pôr o inversor em falha: ${JSON.stringify(e.simulacao.eventos.slice(antesDaSobrecarga))}`);
+    const visorFalha = await visor(inversor);
+    console.log(`visor do inversor em sobrecarga: "${visorFalha}"`);
+    conferir(visorFalha.startsWith('falha: sobrecarga'), `o visor do inversor deveria mostrar a falha: "${visorFalha}"`);
+    await captura('90i-errar-sobrecarga');
+    // Religar com o micro-ondas ligado: cai de novo. Desligado o micro-ondas, religa pelo painel do inversor.
+    await clicarBotao(microondas, 'micro-ondas (desligar)');
+    conferir((await projeto()).dispositivos.find((x) => x.uid === microondas).ligado === false, 'o botão ⏻ deveria desligar o micro-ondas');
+    await og((u) => window.__offgrid.acoes.selecionar({ tipo: 'dispositivo', uid: u }), inversor);
+    await pagina.locator('#item-selecionado [data-acao="religar-inversor"]').click();
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await noErro('feito');
+    conferir((await visor(inversor)).startsWith('ligado'), `religado, o visor do inversor deveria voltar: "${await visor(inversor)}"`);
+
+    // (c) Bateria invertida: desligar, trocar os cabos, fechar o fusível queima o inversor; desfazer, consertar e religar.
+    await botaoDoPainel('lista-de-erros').click();
+    await painel().locator('button[data-erro="bateria-invertida"]').click();
+    await noErro('antes');
+    texto = await painel().textContent();
+    conferir(texto.includes('o inversor queima na hora') && texto.includes('inversor novo') && texto.includes('pegar fogo'), `o erro (c) deveria dizer antes o que acontece e o custo de verdade: "${texto}"`);
+    await botaoDoPainel('por-que-erro').click();
+    await noErro('porque');
+    conferir((await painel().textContent()).includes('positivo com positivo'), 'o erro (c) deveria explicar por quê');
+    await botaoDoPainel('comecar-erro').click();
+    await noErro('desligar');
+    // Desliga na ordem inversa: aparelhos, inversor e por último o fusível, tudo pelo clique na cena.
+    for (const ap of (await projeto()).dispositivos.filter((x) => x.itemId.startsWith('ap-') && x.ligado)) await clicarBotao(ap.uid, ap.itemId);
+    await clicarBotao(inversor, 'inversor (desligar)');
+    await clicarProtecao(caboPos.uid, 0, 'fusível da bateria (tirar)');
+    await noErro('apagar');
+    const apagarCabo = async (uid) => {
+      await og((u) => window.__offgrid.acoes.selecionar({ tipo: 'cabo', uid: u }), uid);
+      await pagina.locator('#item-selecionado button', { hasText: 'Apagar cabo' }).click();
+      await esperar(200);
+    };
+    for (const c of (await projeto()).cabos.filter((x) => [x.de.disp, x.para.disp].includes(bateria) && [x.de.disp, x.para.disp].includes(inversor))) await apagarCabo(c.uid);
+    await noErro('cruzar-positivo');
+    await cabo(bateria, 'pos', inversor, 'batNeg');
+    const trocadoPos = (await projeto()).cabos.find((x) => [x.de, x.para].some((t) => t.disp === bateria && t.terminal === 'pos') && [x.de, x.para].some((t) => t.disp === inversor && t.terminal === 'batNeg')).uid;
+    const sFus2 = await levar(await doCartao('prot-fusivel-anl-100'), await og((u) => window.__offgrid.telaDoCabo(u, 0.5), trocadoPos));
+    conferir(sFus2.modo === 'protecao' && sFus2.valido === true, `o fusível sobre o cabo trocado deveria poder ser instalado: ${JSON.stringify(sFus2)}`);
+    await soltar();
+    await noErro('cruzar-negativo');
+    await cabo(bateria, 'neg', inversor, 'batPos');
+    await noErro('fechar');
+    const antesDaInversao = (await estado()).simulacao.eventos.length;
+    conferir(!(await projeto()).dispositivos.find((x) => x.uid === inversor).queimado, 'com o fusível fora, a bateria invertida ainda não deveria queimar o inversor');
+    await clicarProtecao(trocadoPos, 0, 'fusível do cabo trocado');
+    await noErro('desfazer');
+    e = await estado();
+    conferir(e.simulacao.eventos.slice(antesDaInversao).map((x) => x.codigo).join() === 'bateria-invertida', `fechar o fusível com a bateria invertida deveria queimar o inversor: ${JSON.stringify(e.simulacao.eventos.slice(antesDaInversao))}`);
+    conferir(e.projeto.dispositivos.find((x) => x.uid === inversor).queimado?.codigo === 'bateria-invertida' && (e.projeto.cabos.find((x) => x.uid === trocadoPos).estados ?? [])[0] === 'queimada', 'o inversor e o fusível deveriam ficar queimados');
+    conferir((await og(() => window.__offgrid.operacaoNaCena())).selos.includes(inversor), 'a cena deveria marcar o inversor como queimado');
+    await captura('90j-errar-inversor-queimado');
+    for (const c of (await projeto()).cabos.filter((x) => [x.de.disp, x.para.disp].includes(bateria) && [x.de.disp, x.para.disp].includes(inversor))) await apagarCabo(c.uid);
+    await cabo(bateria, 'pos', inversor, 'batPos');
+    await cabo(bateria, 'neg', inversor, 'batNeg');
+    const novoPos = (await projeto()).cabos.find((x) => x.de.disp === bateria && x.de.terminal === 'pos' && x.para.disp === inversor).uid;
+    const sFus3 = await levar(await doCartao('prot-fusivel-anl-100'), await og((u) => window.__offgrid.telaDoCabo(u, 0.5), novoPos));
+    conferir(sFus3.modo === 'protecao' && sFus3.valido === true, `o fusível sobre o cabo refeito deveria poder ser instalado: ${JSON.stringify(sFus3)}`);
+    await soltar();
+    await noErro('consertar');
+    await og((u) => window.__offgrid.acoes.selecionar({ tipo: 'dispositivo', uid: u }), inversor);
+    await pagina.locator('#item-selecionado .bloco-queimado [data-acao="consertar"]').click();
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await clicarProtecao(novoPos, 0, 'fusível do cabo refeito');
+    await clicarBotao(inversor, 'inversor (religar)');
+    const aparelhoDoTeste = (await projeto()).dispositivos.find((x) => x.itemId === 'ap-lampada') ?? (await projeto()).dispositivos.find((x) => x.itemId === 'ap-ventilador');
+    if (!aparelhoDoTeste.ligado) await clicarBotao(aparelhoDoTeste.uid, aparelhoDoTeste.itemId);
+    await noErro('feito');
+    e = await estado();
+    conferir(e.simulacao.eventos.slice(antesDaInversao).length === 1 && !e.projeto.dispositivos.some((x) => x.queimado || x.falha), `o conserto na ordem não deveria queimar nada de novo: ${JSON.stringify(e.simulacao.eventos.slice(antesDaInversao))}`);
+    await captura('90k-errar-pronto');
+    await botaoDoPainel('voltar-ao-teste').click();
+    await esperarSituacao('resumo');
+    conferir((await painel().textContent()).includes('Experimente errar'), 'depois de um teste, o resumo deveria continuar oferecendo "Experimente errar"');
+
     // ---- Sair: a casa volta igual, o painel fecha, o topo volta.
     await botaoDoPainel('sair').click();
     await esperar(600);
@@ -2128,6 +2427,26 @@ async function principal() {
     conferir((await og(() => localStorage.getItem('offgrid.projeto.casa'))) === null, 'ao sair a chave da casa guardada deveria ser apagada');
     await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
     await captura('91-tutorial-casa-de-volta');
+
+    // ---- "Ligar o sistema" na casa completa: o cenário pronto desligado com "Desligar o sistema" volta pelo botão dos mostradores.
+    await og(() => window.__offgrid.acoes.desenergizar());
+    await og(() => window.__offgrid.recalcular());
+    await pagina.waitForFunction(() => !document.querySelector('#m-desligado')?.hidden && !document.querySelector('#m-ligar-sistema')?.hidden, null, { timeout: 8000 });
+    texto = await pagina.locator('#m-desligado').textContent();
+    conferir(texto.includes('Sem energia nos aparelhos:') && texto.includes('Ligar o sistema'), `desligada, a casa deveria dizer por que não há energia e oferecer "Ligar o sistema": "${texto}"`);
+    await captura('91b-casa-desligada-ligar-o-sistema');
+    await pagina.locator('#m-ligar-sistema').click();
+    await pagina.waitForFunction(() => document.querySelector('#m-desligado')?.hidden === true, null, { timeout: 8000 });
+    e = await estado();
+    const inversorDaCasa = e.projeto.dispositivos.find((x) => x.uid === e.derivados.analise.sistema.inversor);
+    conferir(inversorDaCasa.ligado === true && e.projeto.cabos.every((c) => (c.estados ?? []).every((s) => s === 'fechada')), 'o botão "Ligar o sistema" dos mostradores deveria fechar as proteções e ligar o inversor');
+    await pagina.locator('#botao-projeto').click();
+    conferir((await pagina.locator('#botao-sistema').textContent()) === 'Desligar o sistema', 'ligado o sistema, o menu Projeto deveria oferecer "Desligar o sistema"');
+    await pagina.keyboard.press('Escape');
+    // Desfaz os dois passos: a casa volta a ser exatamente a de antes (os estados das chaves ficam ausentes, como no cenário).
+    await og(() => window.__offgrid.acoes.desfazer());
+    await og(() => window.__offgrid.acoes.desfazer());
+    conferir(JSON.stringify((await estado()).projeto) === JSON.stringify(casaAntes), 'desfazer o ligar e o desligar deveria devolver a casa igual');
   }
   await verificarTutorial();
 

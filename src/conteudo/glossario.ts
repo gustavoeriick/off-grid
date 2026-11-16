@@ -366,15 +366,39 @@ export const GLOSSARIO: TermoGlossario[] = [
     curto: 'Peça com um fio de metal que derrete e abre o circuito em excesso de corrente.',
     texto:
       'O fusível é o ponto fraco de propósito: com corrente demais, o elemento dele derrete antes de o cabo esquentar. Depois de queimar, precisa ser trocado. Ele tem duas medidas: a corrente em que abre e a tensão máxima que consegue interromper; as duas precisam servir para o circuito.',
-    veja: ['disjuntor', 'curto-circuito', 'bitola'],
+    veja: ['disjuntor', 'curto-circuito', 'bitola', 'porta-fusivel'],
+  },
+  {
+    id: 'porta-fusivel',
+    termo: 'Porta-fusível',
+    curto: 'A base em que o fusível encaixa: com o fusível fora dela, a corrente não passa.',
+    texto:
+      'O porta-fusível prende o fusível no cabo e deixa tirá-lo e pô-lo sem ferramenta especial. Tirar o fusível do porta-fusível desliga o circuito, como uma chave. Durante a fiação ele fica fora do lugar e só vai para o porta-fusível na hora de ligar, depois de conferida a polaridade. Muitos anúncios de fusível vêm sem o porta-fusível, que é comprado à parte.',
+    veja: ['fusivel', 'polaridade'],
   },
   {
     id: 'disjuntor',
     termo: 'Disjuntor',
     curto: 'Interruptor automático que desarma com corrente demais e pode ser religado.',
     texto:
-      'O disjuntor faz o papel do fusível, mas desarma em vez de queimar e pode ser religado pela alavanca. Também serve de interruptor para desligar um circuito antes de mexer nele. Há disjuntores de corrente contínua e de corrente alternada, e um não substitui o outro.',
-    veja: ['disjuntor-cc', 'disjuntor-ca', 'fusivel'],
+      'O disjuntor faz o papel do fusível, mas desarma em vez de queimar e pode ser religado. A alavanca dele é a chave: numa posição o disjuntor está fechado e a corrente passa; na outra, está aberto e a corrente não passa. Também serve de interruptor para desligar um circuito antes de mexer nele. Há disjuntores de corrente contínua e de corrente alternada, e um não substitui o outro.',
+    veja: ['disjuntor-cc', 'disjuntor-ca', 'fusivel', 'desarmar'],
+  },
+  {
+    id: 'desarmar',
+    termo: 'Desarmar',
+    curto: 'O disjuntor abre sozinho, porque passou corrente demais.',
+    texto:
+      'Quando passa mais corrente do que ele aguenta, o disjuntor desarma: a alavanca muda de posição sozinha e corta o circuito. Nada queima; para religar, tire a causa (um aparelho a mais, um curto) e feche a alavanca de novo. O disjuntor de verdade não desarma na hora: aguenta um pouco acima do limite por um instante, conforme a curva de tempo dele.',
+    veja: ['disjuntor', 'sobrecarga', 'curto-circuito'],
+  },
+  {
+    id: 'sobrecarga',
+    termo: 'Sobrecarga',
+    curto: 'Os aparelhos ligados juntos pedem mais potência do que o inversor ou o circuito aguentam.',
+    texto:
+      'Cada inversor tem um limite de potência. Se a soma dos aparelhos ligados ao mesmo tempo passa dele, o inversor corta a saída para se proteger e fica em falha até ser religado. Num cabo, sobrecarga é corrente acima do que ele aguenta: é o caso em que o disjuntor desarma ou o fusível queima. Desligue algum aparelho antes de religar.',
+    veja: ['potencia', 'inversor', 'desarmar'],
   },
   {
     id: 'disjuntor-cc',

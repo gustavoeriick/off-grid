@@ -2334,3 +2334,30 @@ body {
 #botao-sistema:not([hidden]) + button {
   border-top: 1px solid var(--borda);
 }
+
+/* ---------------------------------------------------------------- Tutorial em duas partes e "Experimente errar" (tarefa 8.5) */
+
+/* Frase que depende do momento (noite, aparelho fora do horário, peça queimada). */
+.passo-a-passo .passo-agora {
+  padding: 3px 6px;
+  color: #6d4c00;
+  background: #fff8e1;
+  border-left: 3px solid #f9a825;
+  border-radius: 3px;
+}
+
+.lista-de-erros {
+  margin: 4px 0 6px;
+}
+
+/* "Ligar o sistema" junto da frase de por que nada funciona. */
+.m-desligado .m-ligar-sistema {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 11.5px;
+}
+
+.lista-de-erros .erro-feito {
+  color: #1b5e20;
+  font-weight: 600;
+}

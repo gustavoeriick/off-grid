@@ -2,7 +2,7 @@
 // Tarefa 3.5. Especificação: docs/especificacao/cena-e-interface.md, seções 11 e 12.
 // O DOM é criado uma vez; a cada evento 'simulacao' só trocam textos, larguras e classes.
 
-import { acoes, assinar, estado, horaLocalDe } from '../estado';
+import { acoes, assinar, emTutorial, estado, horaLocalDe } from '../estado';
 import { infoBanco } from '../nucleo/eletrica';
 import { localDoProjeto } from '../nucleo/irradiancia';
 import { posicaoSol } from '../nucleo/sol';
@@ -11,6 +11,7 @@ import { circuitoDoCabo, estadoDaProtecao } from '../nucleo/operacao';
 import type { AvisoPasso, Circuito, Dispositivo, OrigemEnergia } from '../nucleo/tipos';
 import { el, h, num } from './formato';
 import { emTesteDeAutonomia } from './passoAPasso';
+import { ligarOSistema } from './topo';
 
 const AVISOS: Record<AvisoPasso, string> = {
   'sem-bateria': 'Falta a bateria: sem ela o inversor não tem de onde tirar energia.',
@@ -66,6 +67,14 @@ function mostrador(id: string, rotulo: string, extra?: HTMLElement): { raiz: HTM
  * Nulo quando não é o caso (sem sistema montado, bateria vazia, nenhum aparelho no horário...).
  */
 export function motivoDeEstarDesligado(): string | null {
+  return motivo()?.texto ?? null;
+}
+
+/**
+ * O motivo e se "Ligar o sistema" resolve: proteção da bateria ou da saída aberta, ou inversor desligado. Inversor em
+ * falha, aparelho desligado e peça queimada não: o atalho não mexe em aparelho nem conserta.
+ */
+function motivo(): { texto: string; atalho: boolean } | null {
   const analise = estado.derivados.analise;
   const sistema = analise.sistema;
   if (sistema === null) return null;
@@ -74,16 +83,16 @@ export function motivoDeEstarDesligado(): string | null {
   if (!inversor) return null;
   const abertaEm = (circuito: Circuito): boolean =>
     projeto.cabos.some((c) => circuitoDoCabo(projeto, analise, c) === circuito && c.protecoes.some((_, i) => estadoDaProtecao(c, i) === 'aberta' && !ehDps(c.protecoes[i])));
-  if (sistema.banco.length > 0 && abertaEm('bateria')) return 'a proteção da bateria está aberta.';
-  if (inversor.queimado === undefined && !inversor.ligado && inversor.falha === undefined) return 'o inversor está desligado.';
-  if (inversor.falha !== undefined) return 'o inversor está em falha por sobrecarga. Religue-o.';
-  if (abertaEm('saida')) return 'a proteção da saída está aberta.';
+  if (sistema.banco.length > 0 && abertaEm('bateria')) return { texto: 'a proteção da bateria está aberta.', atalho: true };
+  if (inversor.queimado === undefined && !inversor.ligado && inversor.falha === undefined) return { texto: 'o inversor está desligado.', atalho: true };
+  if (inversor.falha !== undefined) return { texto: 'o inversor está em falha por sobrecarga. Religue-o.', atalho: false };
+  if (abertaEm('saida')) return { texto: 'a proteção da saída está aberta.', atalho: true };
   const aparelhos = sistema.cargas.map((uid) => projeto.dispositivos.find((d) => d.uid === uid)).filter((d): d is Dispositivo => d !== undefined);
-  if (aparelhos.length > 0 && aparelhos.every((d) => !d.ligado)) return 'os aparelhos estão desligados.';
+  if (aparelhos.length > 0 && aparelhos.every((d) => !d.ligado)) return { texto: 'os aparelhos estão desligados.', atalho: false };
   const queimado =
     projeto.dispositivos.some((d) => d.queimado !== undefined) ||
     projeto.cabos.some((c) => c.queimado !== undefined || c.protecoes.some((_, i) => estadoDaProtecao(c, i) === 'queimada'));
-  if (queimado) return 'há peça queimada. Veja o aviso.';
+  if (queimado) return { texto: 'há peça queimada. Veja o aviso.', atalho: false };
   return null;
 }
 
@@ -102,7 +111,12 @@ export function montarMostradores(): void {
   const bateria = mostrador('m-bateria', 'Bateria', barra);
   const rede = mostrador('m-rede', 'Rede');
   const origem = h('p', { class: 'm-origem', id: 'm-origem' });
-  const desligado = h('p', { class: 'm-desligado', id: 'm-desligado', hidden: true });
+  // A frase de por que nada funciona e, quando o atalho resolve, o mesmo "Ligar o sistema" do menu Projeto.
+  // No tutorial o botão não aparece: lá a pessoa liga cada chave com a mão.
+  const textoDesligado = h('span', { class: 'm-desligado-texto' });
+  const ligarAqui = h('button', { type: 'button', id: 'm-ligar-sistema', class: 'm-ligar-sistema', 'data-acao': 'ligar-sistema', title: 'Fecha as proteções e liga o inversor na ordem certa: bateria, placas, inversor, saída. Os aparelhos não entram.', hidden: true }, 'Ligar o sistema');
+  ligarAqui.addEventListener('click', ligarOSistema);
+  const desligado = h('p', { class: 'm-desligado', id: 'm-desligado', hidden: true }, textoDesligado, ligarAqui);
   const avisos = h('ul', { class: 'm-avisos', id: 'm-avisos' });
   const secao = h(
     'section',
@@ -198,9 +212,11 @@ export function montarMostradores(): void {
     origem.dataset.origem = s.origem;
 
     // Nada atendido: se é porque o sistema está desligado, diz o primeiro motivo da ordem de ligar.
-    const motivo = s.cargaAtendidaW <= 0 ? motivoDeEstarDesligado() : null;
-    trocarTexto(desligado, motivo === null ? '' : `Sem energia nos aparelhos: ${motivo}`);
-    if (desligado.hidden !== (motivo === null)) desligado.hidden = motivo === null;
+    const porque = s.cargaAtendidaW <= 0 ? motivo() : null;
+    trocarTexto(textoDesligado, porque === null ? '' : `Sem energia nos aparelhos: ${porque.texto}`);
+    if (desligado.hidden !== (porque === null)) desligado.hidden = porque === null;
+    const comAtalho = porque !== null && porque.atalho && !emTutorial();
+    if (ligarAqui.hidden === comAtalho) ligarAqui.hidden = !comAtalho;
 
     // O núcleo avisa "bateria vazia" só no passo em que ela esvazia; enquanto o inversor segue cortado, o aviso continua.
     const lista: AvisoPasso[] = sim.estadoSim.cortado && !s.avisos.includes('bateria-vazia') ? [...s.avisos, 'bateria-vazia'] : s.avisos;
