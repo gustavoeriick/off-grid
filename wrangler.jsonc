@@ -4,7 +4,7 @@
 //   comando de build:  npm run build
 //   comando de deploy: npx wrangler deploy
 {
-  "name": "off-grid",
+  "name": "gus-off-grid",
   "compatibility_date": "2026-11-16",
   "workers_dev": true,
   "assets": {
