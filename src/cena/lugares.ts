@@ -512,7 +512,7 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
           (f.passaU === 0 || cabeSeArrumar(q.u1 - q.u0, placasNaFaixa(q, opcoes, 'v', pv + b0, pv + b1), a1 - a0)) &&
           (f.passaV === 0 || cabeSeArrumar(q.v1 - q.v0, placasNaFaixa(q, opcoes, 'u', pu + a0, pu + a1), b1 - b0));
         motivo = arrumando
-          ? 'Cabe mais uma placa nesta fileira se as outras forem para o lado: arraste-as para abrir espaço (com Shift apertado, a placa anda solta da grade)'
+          ? 'Cabe mais uma placa nesta fileira se as outras forem para o lado: use "Arrumar as placas" (ou arraste com Shift)'
           : `Não cabe: faltam ${centimetrosQueFaltam(Math.max(f.passaU, f.passaV))} cm até a borda do telhado`;
       } else motivo = item.categoria === 'placa' ? 'Fica em cima de outra placa (deixe 2 cm de folga)' : 'Já tem uma peça neste lugar';
     }

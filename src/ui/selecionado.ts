@@ -148,6 +148,25 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
     ),
   );
   nos.push(linha);
+  // Placa em telhado: realinha as placas da mesma água para caber o máximo (as do terreno ficam como estão).
+  const telhado = item.categoria === 'placa' && d.superficie?.startsWith('telhado-') ? d.superficie : null;
+  if (telhado) {
+    nos.push(
+      h(
+        'div',
+        { class: 'acoes-item' },
+        botao(
+          'Arrumar as placas deste telhado',
+          () => {
+            const r = window.__offgrid?.arrumarPlacas?.(telhado);
+            if (!r) return mostrarMensagem('Não foi possível arrumar as placas: a cena 3D não está pronta.', true);
+            mostrarMensagem(r.mensagem, r.erro);
+          },
+          { 'data-acao': 'arrumar-placas', title: 'Realinha as placas deste telhado em fileiras, com 2 cm de folga, para caber o máximo. Os cabos continuam ligados. Dá para desfazer.' },
+        ),
+      ),
+    );
+  }
   nos.push(...camposDaPlacaNoChao(d, item, redesenhar));
 
   if (item.categoria === 'aparelho') {

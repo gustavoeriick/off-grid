@@ -3093,6 +3093,54 @@ async function principal() {
   }
   await verificarArrumarCabos();
 
+  // "Arrumar as placas": o item do menu realinha as placas de cada telhado em fileiras da grade, com 2 cm de folga,
+  // sem soltar cabo; um desfazer volta tudo; arrumar de novo não mexe em nada.
+  async function verificarArrumarPlacas() {
+    const og = (fn, arg) => pagina.evaluate(fn, arg);
+    const projeto = async () => (await estado()).projeto;
+    const mensagem = async () => (await pagina.locator('#mensagem').textContent()) ?? '';
+    const arrumar = async () => {
+      await pagina.locator('#botao-cabos').click();
+      await pagina.locator('#botao-arrumar-placas').click();
+      await esperar(400);
+    };
+    const noTelhado = (p) => p.dispositivos.filter((d) => d.itemId.startsWith('placa-') && d.superficie?.startsWith('telhado-'));
+    const distancia = (a, b) => Math.hypot(a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]);
+
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await esperar(500);
+    const [a] = noTelhado(await projeto());
+    conferir(a && a.itemId === 'placa-renepv-585', 'o plano inicial deveria ter uma placa de 585 W em um telhado');
+    // Uma segunda placa fora da grade da primeira, 1,6 m ao lado, ao longo da largura do telhado (o eixo X da casa, na varanda da frente).
+    const outra = { pos: [a.pos[0] + 1.6, a.pos[1], a.pos[2]], quat: a.quat, superficie: a.superficie, giro: a.giro };
+    await og(([d, e]) => window.__offgrid.acoes.adicionarDispositivo(d.itemId, e), [a, outra]);
+    const b = noTelhado(await projeto())[1];
+    conferir(b && b.superficie === a.superficie, 'a segunda placa deveria estar no mesmo telhado da primeira');
+    await esperar(400);
+    const antes = await projeto();
+    await mudarCamera([-a.pos[0], a.pos[1] + 5, -a.pos[2] - 6], [-(a.pos[0] + b.pos[0]) / 2, a.pos[1], -a.pos[2]]);
+
+    await arrumar();
+    const depois = await projeto();
+    const [a2, b2] = noTelhado(depois);
+    conferir(/^[12] placas? arrumadas? no telhado /.test(await mensagem()), `a mensagem deveria dizer quantas placas e em que telhado: "${await mensagem()}"`);
+    // Vizinhas na mesma fileira: a medida da placa (1,134 m em pé, 2,278 m deitada) mais 2 cm de folga.
+    conferir([1.154, 2.298].some((passo) => Math.abs(distancia(a2, b2) - passo) < 0.003), `as duas placas deveriam ficar lado a lado com 2 cm de folga: ${distancia(a2, b2)}`);
+    conferir(Math.sign(a2.pos[0] - b2.pos[0]) === Math.sign(a.pos[0] - b.pos[0]) && a2.superficie === a.superficie && b2.superficie === b.superficie, 'as placas deveriam manter a ordem e o telhado');
+    conferir(JSON.stringify(depois.cabos.map((c) => [c.de, c.para, c.protecoes, c.estados])) === JSON.stringify(antes.cabos.map((c) => [c.de, c.para, c.protecoes, c.estados])), 'nenhum cabo deveria ser solto nem ter a proteção mexida');
+    conferir((await estado()).simulacao.eventos.length === 0, 'arrumar as placas não deveria provocar evento de operação');
+    await captura('100b-placas-arrumadas');
+
+    await arrumar();
+    conferir((await mensagem()) === 'As placas já estão arrumadas.' && JSON.stringify(await projeto()) === JSON.stringify(depois), `arrumar de novo não deveria mexer em nada: "${await mensagem()}"`);
+    await og(() => window.__offgrid.acoes.desfazer());
+    await esperar(400);
+    conferir(JSON.stringify(await projeto()) === JSON.stringify(antes), 'um desfazer deveria voltar as placas e os comprimentos dos cabos ao que eram antes de arrumar');
+    await og(() => window.__offgrid.acoes.novoProjeto());
+    await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
+  }
+  await verificarArrumarPlacas();
+
   // Busca no catálogo (tarefa 9.1): o campo procura em todas as abas, sem diferença de acento, de maiúsculas e de
   // espaço antes da unidade; o cartão aponta para o modelo que casou; o filtro de linha continua valendo; Esc e o "×" limpam.
   async function verificarBuscaNoCatalogo() {

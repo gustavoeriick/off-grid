@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATALOGO } from '../catalogo';
 import { criarArrumador, type ResultadoDeArrumar } from './arrumar';
+import { criarArrumadorDePlacas, type ResultadoDeArrumarPlacas } from './arrumarPlacas';
 import { acoes, assinar, type Encaixe, estado, recalcularAgora, registrarAmbiente } from '../estado';
 import { localDoProjeto } from '../nucleo/irradiancia';
 import { type CamadaDeCabos, criarCamadaDeCabos } from './cabos';
@@ -38,6 +39,7 @@ export { alturaDeApoio, dimensoesDe, encaixar, encaixarNoToque, normalizarGiro, 
 export { CAMADA_SO_SOMBRA } from './malha';
 export type { DestaqueNaCena } from './destaques';
 export type { ResultadoDeArrumar } from './arrumar';
+export type { ResultadoDeArrumarPlacas } from './arrumarPlacas';
 
 export interface OffgridGlobal {
   pronto: boolean;
@@ -100,6 +102,12 @@ export interface OffgridGlobal {
   arrumarCabos?: () => ResultadoDeArrumar;
   /** "Soltar os cabos": tira os grampos de todos os cabos, em um passo só de desfazer. Devolve quantos cabos foram soltos. */
   soltarCabos?: () => number;
+  /**
+   * "Arrumar as placas": realinha as placas da água de telhado de `id` dado (ou, sem ele, de todas as que têm placa)
+   * em fileiras centradas, com 2 cm de folga, para caber o máximo. Um passo só de desfazer; nenhum cabo é solto.
+   * Devolve quantas placas mudaram de lugar e a frase para a tela.
+   */
+  arrumarPlacas?: (superficie?: string) => ResultadoDeArrumarPlacas;
   /** Auxiliar de verificação: as medidas da cena (faces, caixas das peças, telhados) que a conta do trajeto dos cabos recebe. */
   mundoDosCabos?: () => import('./trajeto').Mundo;
   /**
@@ -270,6 +278,7 @@ export function criarCena(container: HTMLElement): Cena {
   const cabos = criarCamadaDeCabos(casa.grupo, dispositivos);
   const lugares = criarLugares(casa.grupo, () => casa.todasAsSuperficies());
   const arrumador = criarArrumador(casa.grupo, dispositivos, lugares);
+  const arrumadorDePlacas = criarArrumadorDePlacas(lugares);
 
   /**
    * Leva o estado do projeto para a cena: coloca as peças que chegaram sem posição, refaz os dispositivos e os cabos
@@ -683,6 +692,7 @@ export function criarCena(container: HTMLElement): Cena {
     destaquesNaCena: () => camadaDeDestaques.naCena(),
     arrumarCabos: () => arrumador.arrumar(),
     soltarCabos: () => arrumador.soltar(),
+    arrumarPlacas: (superficie) => arrumadorDePlacas.arrumar(superficie),
     mundoDosCabos: () => arrumador.medir(),
     telaDaProtecao: (caboUid, indice) => camadaDeOperacao.telaDaProtecao(caboUid, indice),
     telaDoBotao: (uid) => camadaDeOperacao.telaDoBotao(uid),

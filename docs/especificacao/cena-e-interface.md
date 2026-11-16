@@ -147,6 +147,13 @@ Proteções são arrastadas para cima de um cabo: o cabo sob o ponteiro acende e
 
 **Arrumar os cabos.** Pedido do Gustavo em 15/11/2026: os cabos soltos e pendurados ficam feios. O botão "Arrumar os cabos", na barra do alto, põe os grampos sozinho; o botão "Soltar os cabos" tira todos. Cada um é um passo só de desfazer (`acoes.definirGramposDosCabos`).
 
+**Placas no telhado e "Arrumar as placas".** Pedidos do Gustavo em 16/11/2026.
+
+- Entre placas valem 2 cm de folga. Sem placa de mesma medida na água, a grade é a fileira centrada que comporta o maior número de placas daquela medida, na largura e na queda; com vizinha de mesma medida, vale a grade dela. Com Shift apertado, a placa anda solta da grade (a borda e a folga continuam valendo).
+- Quando a casa da grade passa da borda, o fantasma fica na casa e o aviso é "Não cabe: faltam X cm até a borda do telhado", com X arredondado para cima. Quando caberia mais uma se as outras fossem para o lado, o aviso manda usar "Arrumar as placas" (ou arrastar com Shift).
+- "Arrumar as placas" (item do menu "Cabos", para todas as águas com placa) e "Arrumar as placas deste telhado" (no painel da placa selecionada) realinham as placas em fileiras, por medida e giro, mantendo a ordem. É um passo só do desfazer; os cabos acompanham e são remedidos; os grampos não acompanham. Se as fileiras não cabem, nada é mexido naquela água e a mensagem diz o motivo. Mover placa não solta conector: não gera evento de operação.
+- As contas puras ficam em `src/cena/gradeDasPlacas.ts`.
+
 - Cada cabo passa a correr rente às superfícies, em trechos retos: desce ou sobe pela parede na vertical, corre na horizontal, e muda de superfície pela quina (parede com piso, parede com parede). Nada de diagonal em parede.
 - Cabos que seguem o mesmo trajeto correm lado a lado, com um espaço pequeno entre eles, sem se cruzar à toa; o par positivo e negativo de uma mesma ligação fica junto.
 - O cabo não atravessa peça, porta nem janela, e não passa por dentro de parede: para ir de um cômodo a outro ou de dentro para fora, usa a porta ou contorna. Quando não há caminho razoável pelas superfícies (da casa ao quartinho, do telhado ao chão), o cabo fica preso nas duas pontas do vão e cruza o vão em linha reta.

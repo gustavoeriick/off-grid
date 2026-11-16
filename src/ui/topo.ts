@@ -91,6 +91,13 @@ function montarMenuDosCabos(): void {
     const soltos = window.__offgrid?.soltarCabos?.() ?? 0;
     mostrarMensagem(soltos === 0 ? 'Nenhum cabo está preso por grampos.' : soltos === 1 ? '1 cabo solto: os grampos dele foram tirados.' : `${soltos} cabos soltos: os grampos foram tirados.`);
   });
+  // "Arrumar as placas": todas as águas de telhado que têm placa, em um passo só de desfazer.
+  el('#botao-arrumar-placas').addEventListener('click', () => {
+    alternar(false);
+    const r = window.__offgrid?.arrumarPlacas?.();
+    if (!r) return mostrarMensagem('Não foi possível arrumar as placas: a cena 3D não está pronta.', true);
+    mostrarMensagem(r.mensagem, r.erro);
+  });
 }
 
 /**
