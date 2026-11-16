@@ -2,7 +2,7 @@
 
 **Estado em 15/11/2026:** fases 0 e 1 concluídas e aprovadas. Fases 2 a 5 construídas na noite de 14 para 15/11, com autorização do Gustavo para seguir e decidir as dúvidas, e gravadas no ramo `dev`; falta o teste dele. Não foi feita a publicação (5.4), que depende de ele pedir o envio ao GitHub, nem a nova coleta de preços (6.1). As decisões tomadas sem ele estão em [especificacao/fase-2.md](especificacao/fase-2.md), seção 8.
 
-**Próxima sessão (16/11/2026), pedida pelo Gustavo em 15/11:** começar pelas tarefas 9.1 (busca no catálogo solar) e L2.5 (busca de endereço no LoRa) e pela L2.6 (mapa da MeshBrasil). A fase 8 (operar o sistema) espera duas respostas dele, anotadas nela.
+**Próxima sessão (16/11/2026), pedida pelo Gustavo em 15/11:** começar pelas tarefas 9.1 (busca no catálogo solar) e L2.5 (busca de endereço no LoRa) e pela L2.6 (mapa da MeshBrasil). Depois delas, a fase 8 (operar o sistema), aprovada com as duas decisões anotadas nela.
 
 **Como usar este documento:** ele é a memória do projeto. Cada fase começa em uma sessão nova do Claude Code, que lê este plano e a especificação e não depende de conversas anteriores. Quem coordena uma fase marca aqui as tarefas concluídas.
 
@@ -169,7 +169,7 @@ Coordenação: Sonnet 5.5.
 - [x] **5.3 Estações portáteis e placas no chão.** `cena3d` e `nucleo`.
 - [ ] **5.4 Publicação no GitHub Pages e README.** `verificador` (Haiku).
 
-### Fase 8: operar o sistema (proposta de 15/11/2026, aguardando o Gustavo)
+### Fase 8: operar o sistema (aprovada pelo Gustavo em 15/11/2026)
 
 Pedido do Gustavo depois de concluir o tutorial: "Eu não tive que ligar nenhum disjuntor, não liguei o ventilador, não vi os números do carregamento na controladora. Então eu não sei o que poderia acontecer de errado se tentasse ligar o disjuntor fora da hora. Ainda está engessado." Hoje o simulador ensina a montar, não a operar: o disjuntor é só uma peça no cabo, o aparelho nasce ligado e as peças não mostram números.
 
@@ -180,7 +180,7 @@ Pedido do Gustavo depois de concluir o tutorial: "Eu não tive que ligar nenhum 
 - [ ] **8.5 Tutorial em duas partes:** montar e energizar na ordem certa, com uma parte opcional "experimente errar". Texto por Opus, revisão de segurança por Fable.
 - [ ] **8.6 Verificação com mouse e revisão.** `verificador` (Haiku) e `revisor` (Fable).
 
-Decisões pendentes, com a minha recomendação: (1) o erro estraga a peça, com conserto em um clique, em vez de só avisar; (2) as chaves e os visores valem na casa inteira, não só no tutorial.
+Decisões do Gustavo em 15/11/2026: (1) o erro estraga a peça, que fica marcada como queimada, com a explicação do que houve e conserto em um clique; (2) as chaves e os visores valem na casa inteira, em qualquer projeto, e o tutorial é o lugar onde isso é ensinado.
 
 ### Fase 9: busca
 
