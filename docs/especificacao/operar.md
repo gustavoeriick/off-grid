@@ -6,6 +6,8 @@ Decisões dele: (1) o erro estraga a peça, que fica marcada como queimada, com 
 
 Até aqui o simulador ensinava a montar. Esta fase ensina a operar: cada proteção vira uma chave, o inversor ganha o botão de ligar, as peças mostram números e a manobra errada tem consequência.
 
+Confirmações do Gustavo em 16/11/2026, depois de ler os pontos em aberto: tudo nasce desligado, em qualquer projeto; o controlador com placas ao sol e sem bateria queima (pior caso, dito na tela); o visor da bateria mostra a porcentagem e também os volts (seção 7.1).
+
 ## 1. Fontes
 
 Nada nesta fase é número inventado. As consequências são qualitativas (não liga, desarma, queima, abre arco) e vêm de:
