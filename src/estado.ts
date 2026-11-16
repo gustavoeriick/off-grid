@@ -16,12 +16,25 @@ import { baixarClimaDoDia } from './dados/openMeteo';
 import { registrarClimaReal, temClimaReal } from './nucleo/climaReal';
 import { irradianciaNasPlacas, localDoProjeto, localPorId } from './nucleo/irradiancia';
 import { converterProjeto } from './nucleo/migracao';
+import {
+  type AlvoDeConserto, aplicarConsequencias, arcoNoConector, arcoNoDisjuntorCa, avaliarOperacao, circuitoDoCabo,
+  type CodigoDeConsequencia, type Consequencia, consertar as consertarNoProjeto, correntesDeOperacao, estadoDaProtecao,
+  inversorOperando, type Manobra, projetoVivo, type RecusaDeEnergizar, sequenciaDeDesenergizar, sequenciaDeEnergizar,
+} from './nucleo/operacao';
 import { calcularOrcamento } from './nucleo/orcamento';
 import { podeLigar, terminaisDe } from './nucleo/terminais';
 import type {
-  Acao, AmbientePlacas, AnaliseCircuito, Cabo, CasaConfig, Clima, Comodo, Destaque, EstadoSim, Estimativas, Orcamento,
-  Local, Obstaculo, ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, SaidaPasso, Sugestao, Varanda, Vec3,
+  Acao, AmbientePlacas, AnaliseCircuito, Cabo, CasaConfig, Clima, Comodo, CondicaoPlaca, Destaque, Dispositivo, EstadoProtecao,
+  EstadoSim, Estimativas, Orcamento, Local, Obstaculo, ParedeInterna, PontaCabo, Prioridade, Projeto, Quat, SaidaPasso, Sugestao,
+  Varanda, Vec3,
 } from './nucleo/tipos';
+
+/**
+ * Peça posta pelo usuário nasce desligada (docs/especificacao/operar.md, seção 2): aparelho e inversor com o botão
+ * desligado; fusível e disjuntor abertos. Com `false`, tudo volta a nascer ligado e fechado, como antes da fase 8.
+ * Os cenários prontos e os projetos antigos não dependem disto: campo ausente vale fechado e ligado.
+ */
+export const PECA_NOVA_NASCE_DESLIGADA = true;
 
 export type ModoVisao = 'completa' | 'sem-telhado' | 'terreo';
 
@@ -70,6 +83,17 @@ export interface Simulacao {
   historico: PontoHistorico[];
   /** Cresce a cada salto do relógio e a cada "Bateria cheia": quem mede algo ao longo do tempo sabe que foi interrompido. */
   intervencoes: number;
+  /** Os 20 últimos acontecimentos da operação (peça queimada, desarme, sobrecarga). Não entram no projeto nem no desfazer. */
+  eventos: EventoDeOperacao[];
+}
+
+/** O que a operação provocou (operar.md, seção 5): a cena e os painéis mostram. */
+export interface EventoDeOperacao {
+  codigo: CodigoDeConsequencia;
+  /** Peças e cabos envolvidos. */
+  uids: string[];
+  /** Instante simulado em que aconteceu. */
+  msUtc: number;
 }
 
 /** Situação das medições do clima real para o dia simulado. */
@@ -105,10 +129,11 @@ export interface EstadoApp {
  * 'projeto' avisa qualquer mudança no projeto. Os demais são recortes dele, avisados antes:
  * 'casa' (medidas, orientação, varandas, paredes internas, cômodos, quartinho), 'dispositivos' e 'cabos'.
  * 'derivados' avisa quando análise, estimativas, sugestões e orçamento foram recalculados.
+ * 'operacao' avisa quando a lista `simulacao.eventos` cresce: algo queimou, desarmou ou entrou em falha.
  */
-export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima' | 'destaques' | 'projetos';
+export type Evento = 'projeto' | 'casa' | 'dispositivos' | 'cabos' | 'selecao' | 'edicao' | 'tempo' | 'visao' | 'derivados' | 'simulacao' | 'clima' | 'destaques' | 'projetos' | 'operacao';
 
-const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima', 'destaques', 'projetos'];
+const EVENTOS: Evento[] = ['projeto', 'casa', 'dispositivos', 'cabos', 'selecao', 'edicao', 'tempo', 'visao', 'derivados', 'simulacao', 'clima', 'destaques', 'projetos', 'operacao'];
 const ouvintes = Object.fromEntries(EVENTOS.map((e) => [e, new Set<() => void>()])) as Record<Evento, Set<() => void>>;
 
 /** 21/06/2026 ao meio-dia no Rio (UTC − 3). */
@@ -122,6 +147,9 @@ const CHAVE_CASA = 'offgrid.projeto.casa';
 const ESPERA_DERIVADOS_MS = 150;
 const ESPERA_GRAVAR_MS = 500;
 const LIMITE_HISTORICO = 50;
+const LIMITE_EVENTOS = 20;
+/** Voltas do ciclo avaliar, aplicar e recalcular das consequências. Uma manobra errada se resolve em duas ou três. */
+const LIMITE_DE_VOLTAS = 8;
 
 // ---------------------------------------------------------------- Ambiente das placas
 
@@ -271,17 +299,45 @@ function diaLocalDe(projeto: Projeto, msUtc: number): number {
   return Math.floor((msUtc + fuso * 3_600_000) / 86_400_000);
 }
 
-/** Um passo do núcleo, de `dtHoras`, com as condições do instante `msUtc`. */
-function passo(projeto: Projeto, analise: AnaliseCircuito, sim: EstadoSim, msUtc: number, dtHoras: number, semRede: boolean): SaidaPasso {
+/** As condições do último passo calculado: a luz em cada placa e a hora local. As consequências da operação usam as mesmas. */
+let ultimoPasso: { placas: ReadonlyMap<string, CondicaoPlaca>; horaLocal: number } = { placas: new Map(), horaLocal: 0 };
+
+/**
+ * Um passo do núcleo, de `dtHoras`, com as condições do instante `msUtc`. `viva` é a análise do que está energizado
+ * (operar.md, seção 4): a simulação não enxerga o que está atrás de proteção aberta, e o botão do inversor conta.
+ */
+function passo(projeto: Projeto, viva: AnaliseCircuito, sim: EstadoSim, msUtc: number, dtHoras: number, semRede: boolean): SaidaPasso {
   projetoDoAmbiente = projeto;
   const local = localDoProjeto(projeto);
-  const placas = local ? irradianciaNasPlacas(projeto, CATALOGO, local, msUtc, ambiente) : new Map();
-  return passoSimulacao(projeto, CATALOGO, analise, sim, {
+  const placas: ReadonlyMap<string, CondicaoPlaca> = local ? irradianciaNasPlacas(projeto, CATALOGO, local, msUtc, ambiente) : new Map();
+  const horaLocal = horaLocalDe(projeto, msUtc);
+  ultimoPasso = { placas, horaLocal };
+  const uidDoInversor = viva.sistema?.inversor;
+  const inversor = uidDoInversor === undefined ? undefined : projeto.dispositivos.find((d) => d.uid === uidDoInversor);
+  return passoSimulacao(projeto, CATALOGO, viva, sim, {
     dtHoras,
     redeDisponivel: !semRede,
-    horaLocal: horaLocalDe(projeto, msUtc),
+    horaLocal,
     placas,
+    inversorLigado: inversor ? inversorOperando(inversor) : true,
   });
+}
+
+/** Análise do que está energizado agora, guardada até o projeto mudar. Nulo: precisa ser refeita. */
+let vivaGuardada: AnaliseCircuito | null = null;
+
+/**
+ * A análise viva: `analisarCircuito` sobre o projeto sem os cabos interrompidos (proteção aberta ou queimada, cabo ou
+ * peça queimados). Responde "o que está energizado agora?". Os problemas dela não vão ao consultor.
+ */
+export function analiseViva(): AnaliseCircuito {
+  vivaGuardada ??= analisarCircuito(projetoVivo(estado.projeto, CATALOGO), CATALOGO);
+  return vivaGuardada;
+}
+
+/** Corrente que passa em cada cabo neste instante, em ampères, por `uid` do cabo. Cabo interrompido fica com 0. */
+export function correntesDeOperacaoAgora(): Map<string, number> {
+  return correntesDeOperacao(estado.projeto, CATALOGO, analiseViva(), estado.simulacao.saida, ultimoPasso.horaLocal);
 }
 
 const projetoDeAbertura = projetoInicial();
@@ -308,9 +364,10 @@ export function emTutorial(): boolean {
 estado.simulacao = {
   quedaDeLuz: { ativa: false, inicioMsUtc: null, apagouMsUtc: null },
   estadoSim: estadoInicial(),
-  saida: passo(estado.projeto, estado.derivados.analise, estadoInicial(), INSTANTE_INICIAL, 0, false),
+  saida: passo(estado.projeto, analiseViva(), estadoInicial(), INSTANTE_INICIAL, 0, false),
   historico: [],
   intervencoes: 0,
+  eventos: [],
 };
 
 /** Registra uma função chamada a cada mudança do tipo dado. Devolve a função que cancela o registro. */
@@ -335,6 +392,7 @@ function agendarDerivados(): void {
 export function recalcularAgora(): void {
   if (esperaDerivados) clearTimeout(esperaDerivados);
   esperaDerivados = null;
+  vivaGuardada = null;
   estado.derivados = calcularDerivados(estado.projeto, estado.tempo.msUtc);
   avisar('derivados');
   atualizarMostradores();
@@ -412,18 +470,73 @@ function conferirClimaReal(): void {
   );
 }
 
-/** Zera a simulação: bateria cheia, sem queda de luz, histórico vazio. Usado ao abrir ou começar um projeto. */
+/** Zera a simulação: bateria cheia, sem queda de luz, histórico e eventos vazios. Usado ao abrir ou começar um projeto. */
 function zerarSimulacao(): void {
   estado.simulacao.quedaDeLuz = { ativa: false, inicioMsUtc: null, apagouMsUtc: null };
   estado.simulacao.estadoSim = estadoInicial();
   estado.simulacao.historico = [];
+  estado.simulacao.eventos = [];
 }
 
-/** Passo de duração zero: atualiza os mostradores sem gastar bateria. */
+/**
+ * Passo de duração zero: atualiza os mostradores sem gastar bateria. Confere também as consequências da operação no
+ * estado do momento (o sol nasceu, a sombra mudou, a luz caiu): o que acontecer aqui é um passo próprio do desfazer.
+ */
 function atualizarMostradores(): void {
-  const sim = estado.simulacao;
-  sim.saida = passo(estado.projeto, estado.derivados.analise, sim.estadoSim, estado.tempo.msUtc, 0, sim.quedaDeLuz.ativa);
+  conferirOperacaoDoRelogio(false);
   avisar('simulacao');
+}
+
+// ---------------------------------------------------------------- Consequências da operação (operar.md, seção 5)
+
+/**
+ * O ciclo avaliar, aplicar e recalcular, até a lista vir vazia (ou o limite de voltas). `iniciais` são as consequências
+ * que dependem da ação (arco), já avaliadas sobre o projeto de antes dela. `antesDeMudar` é chamado uma vez, antes da
+ * primeira mudança no projeto. Com `saidaPronta`, a primeira avaliação usa a saída que já está em `simulacao.saida`.
+ * Deixa `simulacao.saida` em dia e devolve o que foi aplicado.
+ */
+function cicloDeConsequencias(iniciais: readonly Consequencia[], antesDeMudar?: () => void, saidaPronta = false): Consequencia[] {
+  const sim = estado.simulacao;
+  const aplicadas: Consequencia[] = [];
+  let lista = iniciais;
+  for (let volta = 0; ; volta += 1) {
+    if (lista.length > 0) {
+      if (aplicadas.length === 0) antesDeMudar?.();
+      estado.projeto = aplicarConsequencias(estado.projeto, lista);
+      aplicadas.push(...lista);
+      vivaGuardada = null;
+    }
+    if (volta >= LIMITE_DE_VOLTAS) break;
+    if (!(saidaPronta && volta === 0 && lista.length === 0)) {
+      sim.saida = passo(estado.projeto, analiseViva(), sim.estadoSim, estado.tempo.msUtc, 0, sim.quedaDeLuz.ativa);
+    }
+    lista = avaliarOperacao(estado.projeto, CATALOGO, analiseViva(), sim.saida, ultimoPasso.placas, estado.tempo.msUtc, ultimoPasso.horaLocal);
+    if (lista.length === 0) break;
+  }
+  return aplicadas;
+}
+
+/** Guarda os eventos das consequências (os 20 últimos) e avisa 'operacao'. */
+function registrarEventos(consequencias: readonly Consequencia[]): void {
+  if (consequencias.length === 0) return;
+  const sim = estado.simulacao;
+  sim.eventos = [...sim.eventos, ...consequencias.map(({ codigo, uids, msUtc }) => ({ codigo, uids: [...uids], msUtc }))].slice(-LIMITE_EVENTOS);
+  avisar('operacao');
+}
+
+/**
+ * Consequências que aparecem sem ação do usuário, com o relógio (o sol nasceu, o aparelho entrou no horário de uso).
+ * O que mudar no projeto é um passo próprio do desfazer.
+ */
+function conferirOperacaoDoRelogio(saidaPronta: boolean): void {
+  const aplicadas = cicloDeConsequencias([], guardarNoHistorico, saidaPronta);
+  if (aplicadas.length === 0) return;
+  avisar('dispositivos');
+  avisar('cabos');
+  avisar('projeto');
+  agendarDerivados();
+  agendarGravacao();
+  registrarEventos(aplicadas);
 }
 
 function registrarNoHistorico(msUtc: number, saida: SaidaPasso): void {
@@ -527,24 +640,47 @@ function guardarNoHistorico(): void {
   futuro.length = 0;
 }
 
-function depoisDeMudar(recortes: Recorte[]): void {
+/**
+ * Avisos e agendamentos depois de qualquer mudança no projeto. Com `daAcao` (uma lista, mesmo vazia), confere também as
+ * consequências da operação: o dano entra no projeto sem ponto de retorno próprio, ou seja, no mesmo passo do desfazer
+ * da ação. Sem `daAcao` (arraste em andamento, comprimento medido pela cena), a ligação não mudou e nada é conferido.
+ */
+function depoisDeMudar(recortes: Recorte[], daAcao?: readonly Consequencia[]): void {
   sanear(estado.projeto);
   limparSelecaoOrfa();
   for (const r of recortes) avisar(r);
   avisar('projeto');
+  if (daAcao !== undefined) {
+    // Depois dos avisos: a cena já conhece as peças novas quando a simulação pede a luz em cada placa.
+    vivaGuardada = null;
+    const aplicadas = cicloDeConsequencias(daAcao);
+    if (aplicadas.length > 0) {
+      avisar('dispositivos');
+      avisar('cabos');
+      avisar('projeto');
+    }
+    avisar('simulacao');
+    registrarEventos(aplicadas);
+  }
   agendarDerivados();
   agendarGravacao();
 }
 
-function mudar(recortes: Recorte[], opcoes: OpcoesMudanca | undefined, fn: (p: Projeto) => void): void {
-  if (opcoes?.historico !== false) guardarNoHistorico();
+/**
+ * Muda o projeto. `daAcao` traz as consequências que dependem da própria ação (arco ao apagar ou ao abrir), avaliadas
+ * antes dela; elas e as do estado do momento entram no mesmo passo do desfazer.
+ */
+function mudar(recortes: Recorte[], opcoes: OpcoesMudanca | undefined, fn: (p: Projeto) => void, daAcao: readonly Consequencia[] = []): void {
+  const arraste = opcoes?.historico === false;
+  if (!arraste) guardarNoHistorico();
   fn(estado.projeto);
-  depoisDeMudar(recortes);
+  depoisDeMudar(recortes, arraste ? undefined : daAcao);
 }
 
+/** Troca o projeto inteiro (abrir, desfazer, refazer). O que o estado do momento estragar entra sem ponto de retorno próprio. */
 function trocarProjeto(novo: Projeto): void {
   estado.projeto = novo;
-  depoisDeMudar(['casa', 'dispositivos', 'cabos']);
+  depoisDeMudar(['casa', 'dispositivos', 'cabos'], []);
   conferirClimaReal();
 }
 
@@ -667,8 +803,57 @@ function instalar(projeto: Projeto, uidCabo: string, protecaoId: string): void {
   const item = CATALOGO.get(protecaoId);
   if (!cabo || item?.categoria !== 'protecao') return;
   const quadro = quadroPara(projeto, cabo, item);
+  // `estados` acompanha `protecoes`: mesma ordem, mesmo tamanho. O DPS não tem chave: fica sempre fechado.
+  const nasce: EstadoProtecao = PECA_NOVA_NASCE_DESLIGADA && item.tipo !== 'dps' ? 'aberta' : 'fechada';
+  cabo.estados = [...estadosDe(cabo), nasce];
   cabo.protecoes = [...cabo.protecoes, protecaoId];
   if (quadro) cabo.quadro = quadro;
+}
+
+/** O estado de cada proteção do cabo, na ordem de `protecoes`. Campo ausente vale fechada. */
+function estadosDe(cabo: Cabo): EstadoProtecao[] {
+  return cabo.protecoes.map((_, i) => estadoDaProtecao(cabo, i));
+}
+
+/** Aparelho e inversor têm botão de ligar; as demais peças estão sempre ligadas. */
+function nasceLigado(item: Item): boolean {
+  return !(PECA_NOVA_NASCE_DESLIGADA && (item.categoria === 'aparelho' || item.categoria === 'inversor'));
+}
+
+/** Proteções com chave (todas menos o DPS) do circuito de entrada da rede que ainda não estão no estado `alvo`. As queimadas ficam de fora. */
+function chavesDaEntrada(projeto: Projeto, analise: AnaliseCircuito, alvo: 'fechada' | 'aberta'): Manobra[] {
+  const manobras: Manobra[] = [];
+  for (const cabo of projeto.cabos) {
+    if (cabo.protecoes.length === 0 || circuitoDoCabo(projeto, analise, cabo) !== 'entrada') continue;
+    cabo.protecoes.forEach((id, indice) => {
+      const item = CATALOGO.get(id);
+      const atual = estadoDaProtecao(cabo, indice);
+      if (item?.categoria !== 'protecao' || item.tipo === 'dps' || atual === 'queimada' || atual === alvo) return;
+      manobras.push({ tipo: 'protecao', cabo: cabo.uid, indice, estado: alvo });
+    });
+  }
+  return manobras;
+}
+
+function semFalha(d: Dispositivo): Dispositivo {
+  const { falha: _falha, ...resto } = d;
+  return resto;
+}
+
+/** Aplica as manobras no projeto, na ordem dada. Apertar o botão do inversor limpa a falha. Proteção queimada não muda. */
+function manobrar(projeto: Projeto, manobras: readonly Manobra[]): void {
+  for (const m of manobras) {
+    if (m.tipo === 'inversor') {
+      projeto.dispositivos = projeto.dispositivos.map((d) => (d.uid === m.uid ? semFalha({ ...d, ligado: m.ligado }) : d));
+    } else {
+      projeto.cabos = projeto.cabos.map((c) => {
+        if (c.uid !== m.cabo || estadoDaProtecao(c, m.indice) === 'queimada') return c;
+        const estados = estadosDe(c);
+        estados[m.indice] = m.estado;
+        return { ...c, estados };
+      });
+    }
+  }
 }
 
 export interface Encaixe {
@@ -785,7 +970,7 @@ export const acoes = {
     if (!item) throw new Error(`Item desconhecido no catálogo: "${itemId}"`);
     const uid = novoUid('d', estado.projeto.dispositivos.map((d) => d.uid));
     mudar(['dispositivos'], undefined, (p) => {
-      p.dispositivos = [...p.dispositivos, { uid, itemId, ...encaixe, ligado: true, uso: null }];
+      p.dispositivos = [...p.dispositivos, { uid, itemId, ...encaixe, ligado: nasceLigado(item), uso: null }];
     });
     return uid;
   },
@@ -854,14 +1039,18 @@ export const acoes = {
     });
   },
 
-  /** Remove o dispositivo e os cabos ligados a ele. Um quadro removido solta os cabos que passavam por ele. */
+  /**
+   * Remove o dispositivo e os cabos ligados a ele. Um quadro removido solta os cabos que passavam por ele.
+   * Apagar uma placa com corrente passando abre arco no conector (evento `arco-no-conector`).
+   */
   removerDispositivo(uid: string): void {
+    const arco = arcoNoConector(estado.projeto, CATALOGO, { tipo: 'apagar-dispositivo', uid }, correntesDeOperacaoAgora(), estado.tempo.msUtc);
     mudar(['dispositivos', 'cabos'], undefined, (p) => {
       p.dispositivos = p.dispositivos.filter((d) => d.uid !== uid);
       p.cabos = p.cabos
         .filter((c) => c.de.disp !== uid && c.para.disp !== uid)
         .map((c) => (c.quadro === uid ? { ...c, quadro: null } : c));
-    });
+    }, arco ? [arco] : []);
   },
 
   /** Troca o modelo de uma peça por outro item da mesma categoria, mantendo o lugar e os cabos. Devolve falso se a troca não é possível. */
@@ -878,10 +1067,67 @@ export const acoes = {
     return true;
   },
 
+  /**
+   * Botão de ligar e desligar do aparelho e do inversor. No inversor, apertar o botão limpa a falha de sobrecarga:
+   * religar é desligar e ligar. Se a sobrecarga continua, ele volta a entrar em falha na mesma hora.
+   */
   definirLigado(uid: string, ligado: boolean): void {
     mudar(['dispositivos'], undefined, (p) => {
-      p.dispositivos = p.dispositivos.map((d) => (d.uid === uid ? { ...d, ligado } : d));
+      p.dispositivos = p.dispositivos.map((d) => (d.uid === uid ? semFalha({ ...d, ligado }) : d));
     });
+  },
+
+  /**
+   * Abre ou fecha a chave de uma proteção do cabo: a alavanca do disjuntor, ou tirar e pôr o fusível. Proteção queimada
+   * não muda (só com `consertar`) e o DPS não tem chave. Abrir um disjuntor CA em cabo de corrente contínua com
+   * corrente passando queima o disjuntor.
+   */
+  alternarProtecao(caboUid: string, indice: number): void {
+    const cabo = estado.projeto.cabos.find((c) => c.uid === caboUid);
+    const item = CATALOGO.get(cabo?.protecoes[indice] ?? '');
+    if (!cabo || item?.categoria !== 'protecao' || item.tipo === 'dps') return;
+    const atual = estadoDaProtecao(cabo, indice);
+    if (atual === 'queimada') return;
+    const arco = atual === 'fechada'
+      ? arcoNoDisjuntorCa(estado.projeto, CATALOGO, { tipo: 'abrir-protecao', cabo: caboUid, indice }, correntesDeOperacaoAgora(), estado.tempo.msUtc)
+      : null;
+    mudar(['cabos'], undefined, (p) => {
+      // Com arco, o disjuntor não chega a abrir: a consequência o deixa queimado.
+      if (!arco) manobrar(p, [{ tipo: 'protecao', cabo: caboUid, indice, estado: atual === 'fechada' ? 'aberta' : 'fechada' }]);
+    }, arco ? [arco] : []);
+  },
+
+  /**
+   * Conserta uma peça ou um cabo queimado, ou troca o fusível queimado (que volta aberto). É um passo do desfazer.
+   * Não corrige a causa: se a ligação continua errada, a peça queima de novo assim que for energizada.
+   */
+  consertar(alvo: AlvoDeConserto): void {
+    mudar(['dispositivos', 'cabos'], undefined, (p) => {
+      const consertado = consertarNoProjeto(p, alvo);
+      p.dispositivos = consertado.dispositivos;
+      p.cabos = consertado.cabos;
+    });
+  },
+
+  /**
+   * "Ligar o sistema" (operar.md, seção 6): fecha as proteções da bateria, depois as das placas, liga o inversor, fecha as
+   * da saída e, por último, as da entrada da rede. Os aparelhos ficam como estão. É um passo só do desfazer.
+   * Com erro de polaridade ou de curto na montagem, não faz nada e devolve a recusa, com o texto para a tela.
+   */
+  energizar(): RecusaDeEnergizar | null {
+    const analise = analisarCircuito(estado.projeto, CATALOGO);
+    const plano = sequenciaDeEnergizar(estado.projeto, CATALOGO, analise);
+    if (plano.recusa) return plano.recusa;
+    const manobras = [...plano.manobras, ...chavesDaEntrada(estado.projeto, analise, 'fechada')];
+    if (manobras.length > 0) mudar(['dispositivos', 'cabos'], undefined, (p) => manobrar(p, manobras));
+    return null;
+  },
+
+  /** "Desligar o sistema": a ordem inversa. Entrada da rede, saída, inversor, placas e, por último, a bateria. Um passo só do desfazer. */
+  desenergizar(): void {
+    const analise = analisarCircuito(estado.projeto, CATALOGO);
+    const manobras = [...chavesDaEntrada(estado.projeto, analise, 'aberta'), ...sequenciaDeDesenergizar(estado.projeto, CATALOGO, analise)];
+    if (manobras.length > 0) mudar(['dispositivos', 'cabos'], undefined, (p) => manobrar(p, manobras));
   },
 
   /** Horário de uso de um aparelho. Nulo volta ao típico do catálogo. */
@@ -903,10 +1149,12 @@ export const acoes = {
     return uid;
   },
 
+  /** Apaga o cabo. Soltar um cabo das placas com corrente passando abre arco no conector e queima a placa da ponta. */
   removerCabo(uid: string): void {
+    const arco = arcoNoConector(estado.projeto, CATALOGO, { tipo: 'apagar-cabo', cabo: uid }, correntesDeOperacaoAgora(), estado.tempo.msUtc);
     mudar(['cabos'], undefined, (p) => {
       p.cabos = p.cabos.filter((c) => c.uid !== uid);
-    });
+    }, arco ? [arco] : []);
   },
 
   trocarTipoDeCabo(uid: string, caboId: string): void {
@@ -940,11 +1188,13 @@ export const acoes = {
       p.cabos = p.cabos.map((c) => {
         if (c.uid !== uidCabo) return c;
         const protecoes = c.protecoes.filter((_, i) => i !== indice);
+        // `estados` acompanha `protecoes`. Cabo de projeto antigo, sem o campo, continua sem ele: tudo fechado.
+        const estados = c.estados === undefined ? undefined : estadosDe(c).filter((_, i) => i !== indice);
         const noTrilho = protecoes.some((id) => {
           const item = CATALOGO.get(id);
           return item?.categoria === 'protecao' && modulosDaProtecao(item) !== null;
         });
-        return { ...c, protecoes, quadro: noTrilho ? c.quadro : null };
+        return { ...c, protecoes, ...(estados === undefined ? {} : { estados }), quadro: noTrilho ? c.quadro : null };
       });
     });
   },
@@ -1282,13 +1532,13 @@ export const acoes = {
   avancarTempo(minutos: number): void {
     if (!(minutos > 0)) return;
     const sim = estado.simulacao;
-    const analise = estado.derivados.analise;
+    const viva = analiseViva();
     let resta = minutos;
     let agora = estado.tempo.msUtc;
     while (resta > 1e-9) {
       const dtMin = Math.min(PASSO_MAXIMO_MIN, resta);
       const meio = agora + (dtMin * 60_000) / 2;
-      const saida = passo(estado.projeto, analise, sim.estadoSim, meio, dtMin / 60, sim.quedaDeLuz.ativa);
+      const saida = passo(estado.projeto, viva, sim.estadoSim, meio, dtMin / 60, sim.quedaDeLuz.ativa);
       agora += dtMin * 60_000;
       resta -= dtMin;
       sim.estadoSim = saida.estado;
@@ -1300,6 +1550,8 @@ export const acoes = {
     }
     const diaAntes = diaLocalDe(estado.projeto, estado.tempo.msUtc);
     estado.tempo.msUtc = agora;
+    // Consequências da operação, uma vez por chamada, com a saída do último passo: o erro armado à noite acontece quando o sol nasce.
+    conferirOperacaoDoRelogio(true);
     conferirClimaReal();
     avisar('tempo');
     avisar('simulacao');
