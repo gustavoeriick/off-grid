@@ -2,6 +2,8 @@
 
 **Estado em 15/11/2026:** fases 0 e 1 concluídas e aprovadas. Fases 2 a 5 construídas na noite de 14 para 15/11, com autorização do Gustavo para seguir e decidir as dúvidas, e gravadas no ramo `dev`; falta o teste dele. Não foi feita a publicação (5.4), que depende de ele pedir o envio ao GitHub, nem a nova coleta de preços (6.1). As decisões tomadas sem ele estão em [especificacao/fase-2.md](especificacao/fase-2.md), seção 8.
 
+**Próxima sessão (16/11/2026), pedida pelo Gustavo em 15/11:** começar pelas tarefas 9.1 (busca no catálogo solar) e L2.5 (busca de endereço no LoRa) e pela L2.6 (mapa da MeshBrasil). A fase 8 (operar o sistema) espera duas respostas dele, anotadas nela.
+
 **Como usar este documento:** ele é a memória do projeto. Cada fase começa em uma sessão nova do Claude Code, que lê este plano e a especificação e não depende de conversas anteriores. Quem coordena uma fase marca aqui as tarefas concluídas.
 
 ## 1. O que vamos construir
@@ -166,6 +168,23 @@ Coordenação: Sonnet 5.5.
 - [x] **5.2 Obstáculos:** vizinho, muro, árvore. `cena3d`.
 - [x] **5.3 Estações portáteis e placas no chão.** `cena3d` e `nucleo`.
 - [ ] **5.4 Publicação no GitHub Pages e README.** `verificador` (Haiku).
+
+### Fase 8: operar o sistema (proposta de 15/11/2026, aguardando o Gustavo)
+
+Pedido do Gustavo depois de concluir o tutorial: "Eu não tive que ligar nenhum disjuntor, não liguei o ventilador, não vi os números do carregamento na controladora. Então eu não sei o que poderia acontecer de errado se tentasse ligar o disjuntor fora da hora. Ainda está engessado." Hoje o simulador ensina a montar, não a operar: o disjuntor é só uma peça no cabo, o aparelho nasce ligado e as peças não mostram números.
+
+- [ ] **8.1 Especificação.** Estado de cada chave (disjuntor aberto ou fechado, inversor e controlador ligados ou não, fusível inteiro ou queimado), tudo nascendo desligado, a sequência certa de energizar, a tabela do que acontece na ordem errada (controlador sem bateria, sobrecarga do inversor, disjuntor da bateria aberto com carga, cabo da placa solto com sol, curto, polaridade invertida) e os visores das peças. Cada consequência vem dos manuais e de `src/conteudo/seguranca.ts`, marcada quando for simplificação; os eventos são qualitativos (desligou, queimou, arco), sem inventar corrente de curto nem tempo até o dano. Fable.
+- [ ] **8.2 Estado e núcleo:** as chaves no projeto e na simulação. Coordenador e `nucleo` (Sonnet).
+- [ ] **8.3 Cena:** alavanca que se move ao clique, visores com números ao vivo no controlador, no inversor e na bateria, e o efeito visível de cada evento (fumaça, faísca, peça marcada como queimada). `cena3d` (Fable).
+- [ ] **8.4 Painéis:** o que houve, por quê e o botão de consertar. `interface` (Sonnet).
+- [ ] **8.5 Tutorial em duas partes:** montar e energizar na ordem certa, com uma parte opcional "experimente errar". Texto por Opus, revisão de segurança por Fable.
+- [ ] **8.6 Verificação com mouse e revisão.** `verificador` (Haiku) e `revisor` (Fable).
+
+Decisões pendentes, com a minha recomendação: (1) o erro estraga a peça, com conserto em um clique, em vez de só avisar; (2) as chaves e os visores valem na casa inteira, não só no tutorial.
+
+### Fase 9: busca
+
+- [ ] **9.1 Busca no catálogo solar.** Pedido do Gustavo em 15/11/2026. Um campo no alto do catálogo que procura em todas as abas: nome do tipo, potência ou capacidade ("550 W", "100 Ah"), marca e modelo de cada item de mercado e o detalhe. Sem diferença de acento e de maiúsculas. Com texto no campo, a lista mostra os cartões que casam, de todas as abas, com a aba de cada um escrita no cartão; o cartão abre já no modelo que casou; o filtro de linha (Simples, Plano, Avançada) continua valendo; Esc ou o "×" limpa e volta à aba de antes. Sem resultado: "Nenhum item com esse texto". A busca é toda no navegador, sem rede. Parte pura (normalizar e casar) testável em Node. Verificação com o mouse. `interface` (Sonnet).
 
 ### Contínuo: preços
 

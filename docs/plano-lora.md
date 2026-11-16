@@ -148,6 +148,16 @@ Ao fim desta fase você já responde à pergunta dos 20 km e dos 40 km.
 - [x] **L4.1 Glossário, "por quê?" e regras da Anatel.** Texto por Opus; revisão do Fable.
 - [x] **L4.2 Tutorial "meu primeiro enlace".** `interface` (Sonnet).
 
+### Tarefas novas da fase L2, pedidas em 15/11/2026
+
+- [ ] **L2.5 Busca de endereço no mapa.** Pedido do Gustavo: "senti falta de um campo para buscar pelo endereço, isso ajudaria muito." Um campo sobre o mapa; a pessoa digita e aperta Enter (ou o botão); aparecem até 5 resultados, de preferência no Brasil; escolher um leva o mapa até lá e oferece "Pôr um ponto aqui".
+  - **Serviço:** Nominatim, do OpenStreetMap (`https://nominatim.openstreetmap.org/search`), conferido em 15/11/2026: responde ao navegador (`Access-Control-Allow-Origin: *`). Alternativa: Photon (`https://photon.komoot.io/api/`), que também responde. A política de uso do Nominatim pede no máximo um pedido por segundo e proíbe busca enquanto se digita; por isso a busca é só no Enter. A política tem de ser relida na especificação.
+  - **Privacidade, diferente do resto do ambiente:** o texto digitado vai para o serviço de endereços. Se for o endereço de casa, o serviço recebe o endereço. A tela avisa isso na primeira busca, de forma clara, e lembra que dá para buscar só o bairro ou a cidade e marcar o ponto à mão. O texto buscado não é gravado no projeto nem no navegador. Os pontos continuam sem sair do navegador.
+  - **Atribuição** do OpenStreetMap junto aos resultados.
+  - **Verificação** com respostas falsas interceptadas, em lugar neutro; nenhum endereço real em código, teste ou captura.
+  - Agente: `interface` (Sonnet), com a especificação curta pelo Fable.
+- [ ] **L2.6 Mapa da MeshBrasil.** Pedido do Gustavo: guardar no projeto https://www.meshbrasil.com/mapa-meshtastic-brasil.html. É o mapa da comunidade com os nós Meshtastic que publicam posição pelo servidor MQTT deles (o mapa em tela cheia fica em https://mapa.meshbrasil.com). A página não documenta API nem forma de incorporar; por isso o simulador só leva até ele: um link "Ver nós ativos no Brasil (MeshBrasil)", que abre em outra aba, no painel do resumo e no glossário (termo "rede em malha"), com uma frase dizendo que um nó já existente perto pode servir de repetidor e que o mapa só mostra quem optou por aparecer. `interface` (Sonnet).
+
 ### Fase L5: opcionais
 
 - [ ] **L5.1 Mapa de cobertura de um ponto.**
@@ -165,6 +175,9 @@ Ao fim desta fase você já responde à pergunta dos 20 km e dos 40 km.
 - **Dependência nova e serviços de fora** (decisões 1 e 2).
 
 ## 7. Fontes
+
+- MeshBrasil, mapa de nós Meshtastic no Brasil: https://www.meshbrasil.com/mapa-meshtastic-brasil.html (mapa em tela cheia: https://mapa.meshbrasil.com)
+- Nominatim, serviço de endereços do OpenStreetMap: https://nominatim.org/ (política de uso: https://operations.osmfoundation.org/policies/nominatim/)
 
 - Meshtastic, modos do rádio e orçamento de enlace: https://meshtastic.org/docs/overview/radio-settings
 - Meshtastic, regiões, potência e limite de saltos: https://meshtastic.org/docs/configuration/radio/lora
