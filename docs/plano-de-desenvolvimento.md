@@ -175,8 +175,8 @@ Pedido do Gustavo depois de concluir o tutorial: "Eu não tive que ligar nenhum 
 
 - [x] **8.1 Especificação** (em [especificacao/operar.md](especificacao/operar.md), escrita em 16/11/2026; aguarda a leitura do Gustavo). Estado de cada chave (disjuntor aberto ou fechado, inversor e controlador ligados ou não, fusível inteiro ou queimado), tudo nascendo desligado, a sequência certa de energizar, a tabela do que acontece na ordem errada (controlador sem bateria, sobrecarga do inversor, disjuntor da bateria aberto com carga, cabo da placa solto com sol, curto, polaridade invertida) e os visores das peças. Cada consequência vem dos manuais e de `src/conteudo/seguranca.ts`, marcada quando for simplificação; os eventos são qualitativos (desligou, queimou, arco), sem inventar corrente de curto nem tempo até o dano. Fable.
 - [x] **8.2 Estado e núcleo:** as chaves no projeto e na simulação. Coordenador e `nucleo` (Sonnet).
-- [ ] **8.3 Cena:** alavanca que se move ao clique, visores com números ao vivo no controlador, no inversor e na bateria, e o efeito visível de cada evento (fumaça, faísca, peça marcada como queimada). `cena3d` (Fable).
-- [ ] **8.4 Painéis:** o que houve, por quê e o botão de consertar. `interface` (Sonnet).
+- [x] **8.3 Cena:** alavanca que se move ao clique, visores com números ao vivo no controlador, no inversor e na bateria, e o efeito visível de cada evento (fumaça, faísca, peça marcada como queimada). `cena3d` (Fable).
+- [x] **8.4 Painéis:** o que houve, por quê e o botão de consertar. `interface` (Sonnet).
 - [ ] **8.5 Tutorial em duas partes:** montar e energizar na ordem certa, com uma parte opcional "experimente errar". Texto por Opus, revisão de segurança por Fable.
 - [ ] **8.6 Verificação com mouse e revisão.** `verificador` (Haiku) e `revisor` (Fable).
 
