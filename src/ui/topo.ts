@@ -1,6 +1,10 @@
 // Barra de cima: desfazer, refazer, novo, exportar, importar e "Editar casa". Tarefa 2.5, parte de interface.
 
+import { CATALOGO } from '../catalogo';
 import { acoes, assinar, emTutorial, estado } from '../estado';
+import { analisarCircuito } from '../nucleo/circuito';
+import { sequenciaDeEnergizar } from '../nucleo/operacao';
+import type { AnaliseCircuito } from '../nucleo/tipos';
 import { el, mostrarMensagem } from './formato';
 
 function emCampoDeTexto(alvo: EventTarget | null): boolean {
@@ -89,9 +93,45 @@ function montarMenuDosCabos(): void {
   });
 }
 
+/**
+ * "Ligar o sistema" e "Desligar o sistema" (operar.md, seção 6), no menu "Projeto" (na barra do alto não cabe em 1280 px): visível quando há inversor no projeto. Mostra o que faz sentido
+ * agora: se ainda há manobra de ligar a fazer, "Ligar"; se não, "Desligar". Com erro de polaridade ou de curto na montagem,
+ * o núcleo recusa e a tela mostra o motivo.
+ */
+function montarBotaoDoSistema(): void {
+  const botao = el<HTMLButtonElement>('#botao-sistema');
+  const faltaLigar = (analise: AnaliseCircuito): boolean => {
+    const plano = sequenciaDeEnergizar(estado.projeto, CATALOGO, analise);
+    return plano.recusa !== null || plano.manobras.length > 0;
+  };
+  const desenhar = (): void => {
+    const temInversor = estado.projeto.dispositivos.some((d) => CATALOGO.get(d.itemId)?.categoria === 'inversor');
+    botao.hidden = !temInversor;
+    if (!temInversor) return;
+    const ligar = faltaLigar(estado.derivados.analise);
+    botao.textContent = ligar ? 'Ligar o sistema' : 'Desligar o sistema';
+    botao.dataset.acao = ligar ? 'ligar-sistema' : 'desligar-sistema';
+    botao.title = ligar
+      ? 'Fecha as proteções e liga o inversor na ordem certa: bateria, placas, inversor, saída. Os aparelhos não entram.'
+      : 'Desliga na ordem inversa: saída, inversor, placas e, por último, a bateria.';
+  };
+  botao.addEventListener('click', () => {
+    // A análise dos derivados pode estar um instante atrasada depois de uma manobra: confere de novo na hora do clique.
+    if (!faltaLigar(analisarCircuito(estado.projeto, CATALOGO))) {
+      acoes.desenergizar();
+      return;
+    }
+    const recusa = acoes.energizar();
+    if (recusa) mostrarMensagem(recusa.texto, true);
+  });
+  for (const nome of ['projeto', 'dispositivos', 'cabos', 'derivados'] as const) assinar(nome, desenhar);
+  desenhar();
+}
+
 export function montarTopo(): void {
   montarMenuDoProjeto();
   montarMenuDosCabos();
+  montarBotaoDoSistema();
   el('#botao-desfazer').addEventListener('click', () => acoes.desfazer());
   el('#botao-refazer').addEventListener('click', () => acoes.refazer());
   el('#botao-novo').addEventListener('click', () => {

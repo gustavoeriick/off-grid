@@ -21,9 +21,10 @@
           <button type="button" id="botao-refazer" title="Refazer o que foi desfeito (Ctrl+Y)">Refazer</button>
         </div>
         <div class="menu-topo" id="menu-projeto">
-          <button type="button" id="botao-projeto" aria-haspopup="true" aria-expanded="false" title="Trocar de projeto, começar de novo, guardar o projeto em um arquivo ou abrir um arquivo">Projeto ▾</button>
+          <button type="button" id="botao-projeto" aria-haspopup="true" aria-expanded="false" title="Ligar ou desligar o sistema, trocar de projeto, começar de novo, guardar o projeto em um arquivo ou abrir um arquivo">Projeto ▾</button>
           <div class="menu-lista" id="lista-projeto" role="group" aria-label="Projeto" hidden>
             <p class="menu-nota" id="projeto-aberto"></p>
+            <button type="button" id="botao-sistema" data-acao="ligar-sistema" title="Fecha as proteções e liga o inversor na ordem certa: bateria, placas, inversor, saída. Os aparelhos não entram." hidden>Ligar o sistema</button>
             <button type="button" id="botao-meus-projetos" title="Lista dos projetos gravados neste navegador: abrir, criar, renomear, duplicar e apagar">Meus projetos: abrir, criar e trocar</button>
             <button type="button" id="botao-novo" title="Troca a montagem deste projeto pelo plano inicial. Dá para desfazer.">Recomeçar: voltar este projeto ao plano inicial</button>
             <button type="button" id="botao-exportar" title="Baixa o projeto em um arquivo .json">Exportar: guardar em um arquivo</button>

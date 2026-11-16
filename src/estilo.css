@@ -2165,3 +2165,172 @@ body {
   border-color: var(--destaque);
   color: #fff;
 }
+
+/* ---------------------------------------------------------------- Operar o sistema (tarefa 8.4) */
+
+/* Por que nada funciona: uma frase, logo abaixo da origem da energia. */
+.m-desligado {
+  margin: 4px 0 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8a1c1c;
+  background: #fdecea;
+  border-left: 3px solid #c62828;
+  border-radius: 3px;
+}
+
+/* Proteções do cabo: nome e "Remover" em cima; estado e comando embaixo. */
+.lista-protecoes li {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--borda);
+}
+
+.lista-protecoes .protecao-linha,
+.lista-protecoes .protecao-estado {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.lista-protecoes .protecao-estado span {
+  font-size: 12.5px;
+}
+
+/* Peça, cabo ou proteção queimados. */
+.bloco-queimado {
+  margin: 6px 0 8px;
+  padding: 6px 10px;
+  background: #fdecea;
+  border: 1px solid #e0a3a3;
+  border-left: 4px solid #c62828;
+  border-radius: 6px;
+}
+
+.rotulo-queimado {
+  margin: 0 0 4px;
+  font-weight: 700;
+  color: #8a1c1c;
+}
+
+.bloco-queimado p,
+.cartao-operacao p {
+  margin: 0 0 5px;
+  line-height: 1.35;
+}
+
+.op-porque summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.op-consertar {
+  margin-bottom: 6px;
+}
+
+.op-simplificacao {
+  font-style: italic;
+  color: var(--suave);
+}
+
+.op-de-graca {
+  font-size: 12px;
+  color: var(--suave);
+}
+
+.op-aviso-causa {
+  padding: 4px 8px;
+  background: #fff3e0;
+  border-left: 3px solid #ef6c00;
+  border-radius: 3px;
+}
+
+.op-consertar {
+  font-weight: 600;
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
+/* Cartões do que aconteceu, no painel da direita; rolam quando são muitos. */
+#cartoes-operacao {
+  max-height: 38vh;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.cartao-operacao {
+  --cor: #ef6c00;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--cor);
+  border-radius: 6px;
+  background: #fffaf3;
+}
+
+.cartao-operacao.estragou {
+  --cor: #c62828;
+  background: #fdf3f2;
+}
+
+.cartao-operacao .nivel {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--cor);
+}
+
+.cartao-operacao h4 {
+  margin: 2px 0 6px;
+  color: var(--cor);
+}
+
+/* Faixa sobre a cena, no padrão da faixa da queda de luz; fica abaixo dela quando as duas aparecem. */
+.faixa-operacao {
+  position: absolute;
+  top: 36px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  width: fit-content;
+  max-width: min(42rem, calc(100% - 24px));
+  margin: 0 auto;
+  padding: 8px 14px;
+  background: #ef6c00;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.faixa-queda:not([hidden]) ~ .faixa-operacao {
+  top: 84px;
+}
+
+#faixa-edicao:not([hidden]) ~ .faixa-operacao {
+  top: 124px;
+}
+
+#faixa-edicao:not([hidden]) ~ .faixa-queda:not([hidden]) ~ .faixa-operacao {
+  top: 172px;
+}
+
+#botao-sistema {
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+#botao-sistema[data-acao='desligar-sistema'] {
+  color: #8a1c1c;
+}
+
+#botao-sistema:not([hidden]) + button {
+  border-top: 1px solid var(--borda);
+}

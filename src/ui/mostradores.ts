@@ -7,7 +7,8 @@ import { infoBanco } from '../nucleo/eletrica';
 import { localDoProjeto } from '../nucleo/irradiancia';
 import { posicaoSol } from '../nucleo/sol';
 import { CATALOGO } from '../catalogo';
-import type { AvisoPasso, OrigemEnergia } from '../nucleo/tipos';
+import { circuitoDoCabo, estadoDaProtecao } from '../nucleo/operacao';
+import type { AvisoPasso, Circuito, Dispositivo, OrigemEnergia } from '../nucleo/tipos';
 import { el, h, num } from './formato';
 import { emTesteDeAutonomia } from './passoAPasso';
 
@@ -59,6 +60,38 @@ function mostrador(id: string, rotulo: string, extra?: HTMLElement): { raiz: HTM
   return { raiz, valor, nota };
 }
 
+/**
+ * Por que nada é atendido, quando é porque o sistema está desligado, pela ordem de operar.md, seção 6: proteção da bateria
+ * aberta, inversor desligado, inversor em falha, proteção da saída aberta, aparelho desligado, peça queimada.
+ * Nulo quando não é o caso (sem sistema montado, bateria vazia, nenhum aparelho no horário...).
+ */
+export function motivoDeEstarDesligado(): string | null {
+  const analise = estado.derivados.analise;
+  const sistema = analise.sistema;
+  if (sistema === null) return null;
+  const projeto = estado.projeto;
+  const inversor = projeto.dispositivos.find((d) => d.uid === sistema.inversor);
+  if (!inversor) return null;
+  const abertaEm = (circuito: Circuito): boolean =>
+    projeto.cabos.some((c) => circuitoDoCabo(projeto, analise, c) === circuito && c.protecoes.some((_, i) => estadoDaProtecao(c, i) === 'aberta' && !ehDps(c.protecoes[i])));
+  if (sistema.banco.length > 0 && abertaEm('bateria')) return 'a proteção da bateria está aberta.';
+  if (inversor.queimado === undefined && !inversor.ligado && inversor.falha === undefined) return 'o inversor está desligado.';
+  if (inversor.falha !== undefined) return 'o inversor está em falha por sobrecarga. Religue-o.';
+  if (abertaEm('saida')) return 'a proteção da saída está aberta.';
+  const aparelhos = sistema.cargas.map((uid) => projeto.dispositivos.find((d) => d.uid === uid)).filter((d): d is Dispositivo => d !== undefined);
+  if (aparelhos.length > 0 && aparelhos.every((d) => !d.ligado)) return 'os aparelhos estão desligados.';
+  const queimado =
+    projeto.dispositivos.some((d) => d.queimado !== undefined) ||
+    projeto.cabos.some((c) => c.queimado !== undefined || c.protecoes.some((_, i) => estadoDaProtecao(c, i) === 'queimada'));
+  if (queimado) return 'há peça queimada. Veja o aviso.';
+  return null;
+}
+
+function ehDps(id: string | undefined): boolean {
+  const p = id === undefined ? undefined : CATALOGO.get(id);
+  return p?.categoria === 'protecao' && p.tipo === 'dps';
+}
+
 export function montarMostradores(): void {
   // ---- Mostradores no alto da coluna da direita.
   const sol = mostrador('m-sol', 'Sol');
@@ -69,12 +102,14 @@ export function montarMostradores(): void {
   const bateria = mostrador('m-bateria', 'Bateria', barra);
   const rede = mostrador('m-rede', 'Rede');
   const origem = h('p', { class: 'm-origem', id: 'm-origem' });
+  const desligado = h('p', { class: 'm-desligado', id: 'm-desligado', hidden: true });
   const avisos = h('ul', { class: 'm-avisos', id: 'm-avisos' });
   const secao = h(
     'section',
     { id: 'mostradores', 'aria-label': 'Mostradores ao vivo' },
     h('div', { class: 'm-grade' }, sol.raiz, consumo.raiz, bateria.raiz, rede.raiz),
     origem,
+    desligado,
     avisos,
   );
   const direita = el('#direita');
@@ -162,6 +197,11 @@ export function montarMostradores(): void {
     trocarTexto(origem, ORIGENS[s.origem]);
     origem.dataset.origem = s.origem;
 
+    // Nada atendido: se é porque o sistema está desligado, diz o primeiro motivo da ordem de ligar.
+    const motivo = s.cargaAtendidaW <= 0 ? motivoDeEstarDesligado() : null;
+    trocarTexto(desligado, motivo === null ? '' : `Sem energia nos aparelhos: ${motivo}`);
+    if (desligado.hidden !== (motivo === null)) desligado.hidden = motivo === null;
+
     // O núcleo avisa "bateria vazia" só no passo em que ela esvazia; enquanto o inversor segue cortado, o aviso continua.
     const lista: AvisoPasso[] = sim.estadoSim.cortado && !s.avisos.includes('bateria-vazia') ? [...s.avisos, 'bateria-vazia'] : s.avisos;
     const chave = lista.join('|');
@@ -187,5 +227,7 @@ export function montarMostradores(): void {
   };
 
   assinar('simulacao', desenhar);
+  // O motivo de estar desligado olha a análise do projeto, que se atualiza um instante depois de cada manobra.
+  assinar('derivados', desenhar);
   desenhar();
 }

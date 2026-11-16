@@ -14,6 +14,7 @@ import { montarCampoDoComodo } from './comodos';
 import { montarGrafico } from './grafico';
 import { montarMostradores } from './mostradores';
 import { montarBarraDeObstaculos } from './obstaculos';
+import { montarEventosDeOperacao } from './operacao';
 import { iniciarTutorial, montarPassoAPasso } from './passoAPasso';
 import { montarPaineis } from './paineis';
 import { montarSelecionado } from './selecionado';
@@ -81,6 +82,7 @@ export function montarInterface(): void {
   montarCampoDoComodo();
   montarAvancoDoTempo();
   montarMostradores();
+  montarEventosDeOperacao();
   montarGrafico();
   montarGlossario();
   montarAvisos();

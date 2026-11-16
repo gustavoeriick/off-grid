@@ -10,8 +10,12 @@ import { acoes, assinar, estado } from '../estado';
 import { correntesDeProjeto, quedasDeTensao } from '../nucleo/cabos';
 import { comodoDe } from '../nucleo/comodos';
 import type { Cabo, CasaConfig, Circuito, Dispositivo, LadoCasa, ParedeInterna, Varanda } from '../nucleo/tipos';
+import { bateriaPresente, estadoDaProtecao } from '../nucleo/operacao';
+import { etiquetasDeTermos } from './aprender';
 import { avisosDoItem, blocoDePreco, brl, el, h, mostrarMensagem, num, substituir } from './formato';
 import { camposDaPlacaNoChao, linhaDaSombra, painelObstaculo } from './obstaculos';
+import { chaveDaPecaQueimada, chaveDaProtecaoQueimada, chaveDoCaboQueimado, corpoDoTexto } from './operacao';
+import { TEXTO_GERAL_DE_FUSIVEL_QUEIMADO, TEXTOS_DE_OPERACAO } from './textosDeOperacao';
 
 const NOME_CIRCUITO: Record<Circuito, string> = {
   placas: 'Placas',
@@ -56,6 +60,43 @@ function modeloDoItem(d: Dispositivo, item: Item, modelos: Item[], redesenhar: (
   return [h('label', { class: 'campo' }, 'Modelo:', lista)];
 }
 
+/** Bloco "Queimado": o que houve, por quê, o aviso de que a causa continua e o botão "Consertar". */
+function blocoDePecaQueimada(d: Dispositivo): HTMLElement | null {
+  const chave = chaveDaPecaQueimada(d);
+  if (chave === null) return null;
+  const texto = TEXTOS_DE_OPERACAO[chave];
+  return h(
+    'div',
+    { class: 'bloco-queimado', 'data-queimado': d.queimado?.codigo ?? '' },
+    h('p', { class: 'rotulo-queimado' }, `Queimado: ${texto.titulo}`),
+    ...corpoDoTexto(texto, { chave, alvos: [{ tipo: 'dispositivo', uid: d.uid }], uidDaPeca: d.uid, porQueAberto: true }),
+  );
+}
+
+/** Botão de ligar e desligar do inversor, com a situação dele em palavras. Em falha, vira "Religar o inversor". */
+function controlesDoInversor(d: Dispositivo): Node[] {
+  if (d.queimado !== undefined) return [h('p', { class: 'detalhe' }, 'Queimado: não liga até ser consertado.')];
+  const emFalha = d.falha !== undefined;
+  const situacao = emFalha ? 'Em falha: sobrecarga' : d.ligado ? 'Ligado' : 'Desligado';
+  const nos: Node[] = [
+    h(
+      'div',
+      { class: 'acoes-item' },
+      h('span', { class: d.ligado && !emFalha ? 'estado-ligado' : 'estado-desligado', 'data-estado-inversor': emFalha ? 'falha' : d.ligado ? 'ligado' : 'desligado' }, situacao),
+      botao(
+        emFalha ? 'Religar o inversor' : d.ligado ? 'Desligar o inversor' : 'Ligar o inversor',
+        // Religar é desligar e ligar: o núcleo limpa a falha ao apertar o botão.
+        () => acoes.definirLigado(d.uid, emFalha ? true : !d.ligado),
+        { 'data-acao': emFalha ? 'religar-inversor' : d.ligado ? 'desligar-inversor' : 'ligar-inversor' },
+      ),
+    ),
+  ];
+  if (emFalha) nos.push(h('p', { class: 'detalhe' }, 'Os aparelhos ligados pedem mais do que o inversor aguenta. Ele cortou a saída e espera ser religado. Desligue algum aparelho antes de religar.'));
+  else if (d.ligado && !bateriaPresente(estado.projeto, CATALOGO, d.uid)) nos.push(h('p', { class: 'detalhe' }, 'Sem a bateria ligada a ele, o inversor não liga (o visor fica apagado). Feche a proteção da bateria.'));
+  else if (!d.ligado) nos.push(h('p', { class: 'detalhe' }, 'Ligue o inversor depois da bateria e das placas, e antes dos aparelhos.'));
+  return nos;
+}
+
 function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | null {
   const item = CATALOGO.get(d.itemId);
   if (!item) return null;
@@ -70,6 +111,10 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
     h('p', { class: 'comodo' }, d.superficie === 'terreno' ? 'Lugar: no terreno, fora da casa' : `Cômodo: ${comodo ? comodo.nome : 'nenhum'}`),
     linhaDaSombra(d, item),
   ].filter((n) => n !== null);
+
+  const queimado = blocoDePecaQueimada(d);
+  if (queimado) nos.splice(1, 0, queimado);
+  if (item.categoria === 'inversor') nos.push(...controlesDoInversor(d));
 
   // Grampo de parede: não gira (o desenho acompanha o cabo) e, apagado, só solta o cabo naquele ponto.
   const grampo = item.categoria === 'acessorio' && item.tipo === 'grampo';
@@ -126,6 +171,33 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
   return nos;
 }
 
+function tipoDaProtecao(c: Cabo, indice: number): 'fusivel' | 'disjuntorCC' | 'disjuntorCA' | 'dps' | undefined {
+  const p = CATALOGO.get(c.protecoes[indice] ?? '');
+  return p?.categoria === 'protecao' ? p.tipo : undefined;
+}
+
+/** A chave de uma proteção: o estado em palavras e o comando. O DPS não tem chave. */
+function linhaDaChave(c: Cabo, indice: number): HTMLElement {
+  const tipo = tipoDaProtecao(c, indice);
+  const estadoAtual = estadoDaProtecao(c, indice);
+  if (tipo === 'dps') return h('div', { class: 'protecao-estado' }, h('span', { class: 'detalhe' }, 'Sem chave: protege contra surtos e fica sempre ligado.'));
+  const eFusivel = tipo === 'fusivel';
+  const palavras: Record<typeof estadoAtual, string> = {
+    fechada: eFusivel ? 'Colocado: a corrente passa' : 'Fechado: a corrente passa',
+    aberta: eFusivel ? 'Fora do porta-fusível: a corrente não passa' : 'Aberto: a corrente não passa',
+    queimada: 'Queimado: não passa corrente',
+  };
+  const comando =
+    estadoAtual === 'queimada'
+      ? botao(eFusivel ? 'Trocar o fusível' : 'Consertar', () => acoes.consertar({ tipo: 'protecao', cabo: c.uid, indice }), { 'data-acao': 'trocar-fusivel' })
+      : botao(
+          estadoAtual === 'fechada' ? (eFusivel ? 'Tirar o fusível' : 'Abrir') : eFusivel ? 'Pôr o fusível' : 'Fechar',
+          () => acoes.alternarProtecao(c.uid, indice),
+          { 'data-acao': 'alternar-protecao' },
+        );
+  return h('div', { class: 'protecao-estado' }, h('span', { class: estadoAtual === 'fechada' ? 'estado-ligado' : 'estado-desligado', 'data-estado-protecao': estadoAtual }, palavras[estadoAtual]), comando);
+}
+
 function painelCabo(c: Cabo): Node[] | null {
   const tipo = CATALOGO.get(c.caboId);
   if (tipo?.categoria !== 'cabo') return null;
@@ -144,13 +216,50 @@ function painelCabo(c: Cabo): Node[] | null {
         'ul',
         { class: 'lista-protecoes' },
         ...c.protecoes.map((id, i) =>
-          h('li', null, h('span', null, CATALOGO.get(id)?.nome ?? id), botao('Remover', () => acoes.removerProtecao(c.uid, i), { 'data-acao': 'remover-protecao' })),
+          h(
+            'li',
+            { 'data-protecao': String(i) },
+            h('div', { class: 'protecao-linha' }, h('span', null, CATALOGO.get(id)?.nome ?? id), botao('Remover', () => acoes.removerProtecao(c.uid, i), { 'data-acao': 'remover-protecao' })),
+            linhaDaChave(c, i),
+          ),
         ),
       )
     : h('p', { class: 'vazio' }, 'Nenhuma proteção. Arraste uma do catálogo para cima deste cabo.');
+  const queimadas = c.protecoes.map((_, i) => i).filter((i) => estadoDaProtecao(c, i) === 'queimada');
+  const tiposDeProtecao = new Set(c.protecoes.map((_, i) => tipoDaProtecao(c, i)));
+  const explicacaoDasChaves: Node[] = [];
+  if (tiposDeProtecao.has('disjuntorCC') || tiposDeProtecao.has('disjuntorCA')) {
+    explicacaoDasChaves.push(h('p', { class: 'detalhe' }, 'Disjuntor: chave que também abre sozinha quando passa corrente demais. Isso é desarmar: a alavanca cai e o circuito para. Depois de resolver a causa, é só fechar de novo.'));
+  }
+  if (tiposDeProtecao.has('fusivel')) {
+    explicacaoDasChaves.push(h('p', { class: 'detalhe' }, 'Fusível: peça que queima para cortar a corrente demais. Fora do porta-fusível, o circuito está cortado; queimado, só volta com um fusível novo.'));
+  }
+  if (explicacaoDasChaves.length) explicacaoDasChaves.push(h('p', { class: 'veja-tambem' }, ...etiquetasDeTermos(['disjuntor', 'fusivel', 'arco-eletrico'], 'etiqueta-termo')));
+  const explicacaoDeQueimadas = queimadas.map((i) => {
+    const chave = chaveDaProtecaoQueimada(c.uid);
+    const eFusivel = tipoDaProtecao(c, i) === 'fusivel';
+    return h(
+      'div',
+      { class: 'bloco-queimado', 'data-queimado': 'protecao' },
+      h('p', { class: 'rotulo-queimado' }, `Queimado: ${eFusivel ? 'o fusível' : 'a proteção'} deste cabo`),
+      ...(chave
+        ? corpoDoTexto(TEXTOS_DE_OPERACAO[chave], { chave, alvos: [{ tipo: 'protecao', cabo: c.uid, indice: i }], semBotao: true, porQueAberto: true })
+        : [h('p', { class: 'op-houve' }, eFusivel ? TEXTO_GERAL_DE_FUSIVEL_QUEIMADO : 'Esta proteção queimou e não corta mais o circuito. Descubra a causa antes de trocar.')]),
+    );
+  });
+  const chaveDoCabo = chaveDoCaboQueimado(c);
+  const caboQueimado = chaveDoCabo
+    ? h(
+        'div',
+        { class: 'bloco-queimado', 'data-queimado': 'cabo' },
+        h('p', { class: 'rotulo-queimado' }, `Cabo queimado: ${TEXTOS_DE_OPERACAO[chaveDoCabo].titulo}`),
+        ...corpoDoTexto(TEXTOS_DE_OPERACAO[chaveDoCabo], { chave: chaveDoCabo, alvos: [{ tipo: 'cabo', uid: c.uid }], rotuloDoBotao: 'Consertar este cabo', porQueAberto: true }),
+      )
+    : null;
 
-  const nos: Node[] = [
+  const nos: (Node | null)[] = [
     h('h3', null, 'Cabo'),
+    caboQueimado,
     h('p', { class: 'detalhe' }, `Liga ${nomeDoDispositivo(c.de.disp)} a ${nomeDoDispositivo(c.para.disp)}.`),
     h('label', { class: 'campo' }, 'Tipo', lista),
     h('p', { class: 'detalhe' }, `${tipo.detalhe}. Aguenta ${num(tipo.ampacidade)} A.`),
@@ -167,10 +276,12 @@ function painelCabo(c: Cabo): Node[] | null {
       : [h('p', { class: 'queda' }, 'Queda de tensão: sem circuito ligado')]),
     h('p', { class: 'rotulo-secao' }, 'Proteções instaladas'),
     protecoes,
+    ...explicacaoDasChaves,
+    ...explicacaoDeQueimadas,
     h('p', null, `Quadro: ${quadro ?? 'nenhum'}`),
     h('div', { class: 'acoes-item' }, botao('Apagar cabo', () => acoes.removerCabo(c.uid), { class: 'perigo' })),
   ];
-  return nos;
+  return nos.filter((n) => n !== null);
 }
 
 // ---------------------------------------------------------------- Casa: quartinho, varanda e parede interna ("Editar casa")
