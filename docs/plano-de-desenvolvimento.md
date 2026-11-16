@@ -186,6 +186,18 @@ Decisões do Gustavo em 15/11/2026: (1) o erro estraga a peça, que fica marcada
 
 - [x] **9.1 Busca no catálogo solar.** Pedido do Gustavo em 15/11/2026. Um campo no alto do catálogo que procura em todas as abas: nome do tipo, potência ou capacidade ("550 W", "100 Ah"), marca e modelo de cada item de mercado e o detalhe. Sem diferença de acento e de maiúsculas. Com texto no campo, a lista mostra os cartões que casam, de todas as abas, com a aba de cada um escrita no cartão; o cartão abre já no modelo que casou; o filtro de linha (Simples, Plano, Avançada) continua valendo; Esc ou o "×" limpa e volta à aba de antes. Sem resultado: "Nenhum item com esse texto". A busca é toda no navegador, sem rede. Parte pura (normalizar e casar) testável em Node. Verificação com o mouse. `interface` (Sonnet).
 
+### Ajustes anotados (codar todos de uma vez, quando o Gustavo mandar)
+
+O Gustavo pediu em 16/11/2026 para só anotar os ajustes e esperar: "Só adicione aos ajustes, mas espere para codar tudo de uma vez." Nada daqui começa sem ele dizer.
+
+- [ ] **A1 Visores configuráveis.** Pedido dele, com a captura do quartinho em que os visores ampliados se sobrepõem e um deles aparece cortado: "eu acho que poderia ser configurável: tamanho ampliado (que seria esse), tamanho real (que eu teria que dar zoom), clicável (que eu clico e aí sim eu vejo) e talvez outras opções". Um ajuste "Visores", junto dos modos de visão, com as opções:
+  - **Ampliado:** como hoje, o visor grande flutuando sobre a peça.
+  - **Tamanho real:** só o visor na face da peça; para ler, aproxima-se a câmera. Peça sem visor na face (bateria de chumbo, controlador PWM, inversor de piso) precisa de uma saída: sugestão, o visor pequeno colado na peça.
+  - **Ao clicar:** nenhum visor flutuando; clicar na peça (ou selecioná-la) mostra o visor dela, e clicar fora esconde.
+  - Sugestões minhas, para ele escolher: **ao passar o ponteiro** (o visor aparece enquanto o ponteiro está sobre a peça); **no painel** (os números de todas as peças em uma lista no painel da direita, sem nada flutuando na cena); **automático** (ampliado de longe, real de perto, que é parecido com o de hoje); **tamanho do ampliado** em pequeno, médio e grande; e uma **tecla para esconder ou mostrar todos** de uma vez.
+  - Defeito a corrigir junto, visto na captura: no modo ampliado os visores se sobrepõem uns aos outros e às peças, e o da bateria aparece cortado. Eles precisam se afastar entre si, com um fio fino ligando cada um à peça dele, e não podem ser cortados pelo piso ou pela parede.
+  - A escolha fica gravada no navegador, não no projeto.
+
 ### Contínuo: preços
 
 - [ ] **6.1 Nova coleta** com `pesquisa/prompt-coleta.md` no Claude in Chrome, importador da tarefa 1.1 e um relatório do que mudou de preço. `catalogo` (Sonnet).
