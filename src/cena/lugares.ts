@@ -10,13 +10,13 @@ import type { Item } from '../catalogo/tipos';
 import { type Encaixe, estado } from '../estado';
 import type { Dispositivo } from '../nucleo/tipos';
 import { ehGrampo, encaixar, superficieAceita } from './encaixe';
+import { ancoraDaFileira, cabeSeArrumar, centimetrosQueFaltam, FOLGA_ENTRE_PLACAS, passaDaBorda } from './gradeDasPlacas';
 import type { Marca, TipoSuperficie } from './malha';
 import { modeloDe } from './modelos';
 import { type Pegada, terrenoLivre } from './regrasDosObstaculos';
 import { aceitaNoTerreno, encaixarNoTerreno, ID_TERRENO, inclinacaoPadrao, pegadaDaPlacaNoChao } from './terreno';
 
-/** Folga entre placas vizinhas. */
-export const FOLGA_ENTRE_PLACAS = 0.02;
+export { FOLGA_ENTRE_PLACAS };
 /** Altura, acima do piso do andar, em que ficam a lâmpada e o chuveiro. */
 const ALTURA_DE_LAMPADA = 2.1;
 /** Topo da laje do térreo e do piso do quartinho. */
@@ -58,7 +58,7 @@ export interface OpcoesDeAssento {
   ignorar?: ReadonlySet<string> | 'todas';
   /** Lista de peças a considerar. O padrão é a do projeto. */
   pecas?: readonly Dispositivo[];
-  /** Prende a placa à grade das vizinhas (ou à do centro da água). */
+  /** Prende a placa à grade das vizinhas de mesma medida (ou, sem vizinha, à grade em que cabem mais placas na água). */
   prender?: boolean;
   /** Placa no terreno: inclinação do suporte, em graus. O padrão é a latitude do local. Nela, `giro` é o ângulo em torno da vertical. */
   inclinacao?: number;
@@ -412,6 +412,25 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
     return [a1 - a0, b1 - b0];
   }
 
+  /**
+   * Medidas, ao longo do outro eixo, das placas da água que ficam na mesma faixa: as que cruzam o trecho de `de` a
+   * `ate` do eixo dado. São as que disputam o comprimento da fileira (eixo 'v') ou da coluna (eixo 'u') com a placa nova.
+   */
+  function placasNaFaixa(q: Quadro, opcoes: OpcoesDeAssento, eixo: 'u' | 'v', de: number, ate: number): number[] {
+    const medidas: number[] = [];
+    for (const d of opcoes.pecas ?? estado.projeto.dispositivos) {
+      if (d.superficie !== q.marca.id || (opcoes.ignorar !== 'todas' && opcoes.ignorar?.has(d.uid))) continue;
+      const outro = CATALOGO.get(d.itemId);
+      if (outro?.categoria !== 'placa') continue;
+      const [c0, c1, d0, d1] = pegada(outro, quatDe(d), q);
+      const [ou, ov] = noQuadro(q, posDe(d));
+      const [min, max] = eixo === 'v' ? [ov + d0, ov + d1] : [ou + c0, ou + c1];
+      if (max <= de + 1e-6 || min >= ate - 1e-6) continue;
+      medidas.push(eixo === 'v' ? c1 - c0 : d1 - d0);
+    }
+    return medidas;
+  }
+
   function assentar(item: Item, giro: number, q: Quadro, pu: number, pv: number, opcoes: OpcoesDeAssento = {}): Candidato {
     const terreno = q.marca.id === ID_TERRENO;
     // O grampo de parede prende o cabo em qualquer parede, piso ou telhado, e também no chão do terreno.
@@ -427,12 +446,15 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
     }
     const [a0, a1, b0, b1] = pegada(item, quatDe(e), q);
 
+    /** Casa da grade que passa da borda da água: onde fica e quanto passa, ao longo de u e de v. */
+    let foraDaAgua: { pu: number; pv: number; passaU: number; passaV: number } | null = null;
     if (item.categoria === 'placa' && opcoes.prender && !terreno) {
-      // Grade alinhada à água: parte da placa vizinha mais próxima de mesma medida; sem vizinha, do centro da água.
+      // Grade alinhada à água: parte da placa vizinha mais próxima de mesma medida (as placas já postas não mudam de
+      // lugar). Sem vizinha, a grade é a que faz caber mais placas desta medida: fileira e coluna centradas na água.
       const passoU = a1 - a0 + FOLGA_ENTRE_PLACAS;
       const passoV = b1 - b0 + FOLGA_ENTRE_PLACAS;
-      let ancoraU = (q.u0 + q.u1) / 2;
-      let ancoraV = (q.v0 + q.v1) / 2;
+      let ancoraU = ancoraDaFileira(q.u0, q.u1, a1 - a0);
+      let ancoraV = ancoraDaFileira(q.v0, q.v1, b1 - b0);
       let menor = Infinity;
       for (const d of opcoes.pecas ?? estado.projeto.dispositivos) {
         if (d.superficie !== q.marca.id || (opcoes.ignorar !== 'todas' && opcoes.ignorar?.has(d.uid))) continue;
@@ -450,6 +472,9 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
       }
       pu = ancoraU + Math.round((pu - ancoraU) / passoU) * passoU;
       pv = ancoraV + Math.round((pv - ancoraV) / passoV) * passoV;
+      const passaU = passaDaBorda(pu, a1 - a0, q.u0, q.u1);
+      const passaV = passaDaBorda(pv, b1 - b0, q.v0, q.v1);
+      if (passaU > 0 || passaV > 0) foraDaAgua = { pu, pv, passaU, passaV };
     }
     if (q.marca.tipo === 'parede' && item.categoria === 'aparelho') {
       // Lâmpada e chuveiro: a 2,1 m do piso do andar.
@@ -477,7 +502,20 @@ export function criarLugares(casa: THREE.Group, todas: () => THREE.Mesh[]): Luga
     let motivo: string | null = null;
     if (atravessa) motivo = 'Atravessa uma parede';
     else if (terreno && terrenoOcupado(item, e)) motivo = 'Aqui não dá: fica em cima da casa, da varanda, do quartinho, de um muro, do vizinho ou do tronco de uma árvore';
-    else if (vizinhaCruzada(item, e, opcoes)) motivo = item.categoria === 'placa' ? 'Fica em cima de outra placa (deixe 2 cm de folga)' : 'Já tem uma peça neste lugar';
+    else if (vizinhaCruzada(item, e, opcoes)) {
+      if (foraDaAgua) {
+        // A casa da grade não cabe até a borda, e trazer a placa para dentro a poria em cima da vizinha. O que falta é
+        // telhado: o fantasma fica na casa da grade, e o motivo diz quanto falta, ou que basta arrumar as outras.
+        const f = foraDaAgua;
+        e = encaixarNo(item, q, noPlano(q, f.pu, f.pv), giro, opcoes);
+        const arrumando =
+          (f.passaU === 0 || cabeSeArrumar(q.u1 - q.u0, placasNaFaixa(q, opcoes, 'v', pv + b0, pv + b1), a1 - a0)) &&
+          (f.passaV === 0 || cabeSeArrumar(q.v1 - q.v0, placasNaFaixa(q, opcoes, 'u', pu + a0, pu + a1), b1 - b0));
+        motivo = arrumando
+          ? 'Cabe mais uma placa nesta fileira se as outras forem para o lado: arraste-as para abrir espaço (com Shift apertado, a placa anda solta da grade)'
+          : `Não cabe: faltam ${centimetrosQueFaltam(Math.max(f.passaU, f.passaV))} cm até a borda do telhado`;
+      } else motivo = item.categoria === 'placa' ? 'Fica em cima de outra placa (deixe 2 cm de folga)' : 'Já tem uma peça neste lugar';
+    }
     else if (!cabe(item, e, q)) {
       motivo = q.marca.tipo === 'telhado' ? 'Passa da borda do telhado' : q.marca.tipo === 'parede' ? 'Não cabe aqui: tem porta, janela ou o fim da parede' : terreno ? 'Longe demais da casa' : 'Passa da borda do piso';
     }

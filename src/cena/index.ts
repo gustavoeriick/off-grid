@@ -168,6 +168,13 @@ const QUADRO_LENTO_MS = 40;
 const QUADRO_MUITO_LENTO_MS = 120;
 /** Com intervalos abaixo deste no modo econômico, o próximo movimento volta a tentar a nitidez inteira. */
 const QUADRO_FOLGADO_MS = 20;
+/** Quadros folgados seguidos, no modo econômico e com a cena ainda em movimento, para tentar de novo a nitidez inteira. */
+const FOLGADOS_PARA_VOLTAR = 30;
+/**
+ * Espera entre duas tentativas de voltar à nitidez inteira com a cena em movimento. Dobra a cada tentativa que cai de
+ * novo no modo econômico (aparelho lento de verdade) e volta ao começo quando a nitidez inteira se sustenta.
+ */
+const ESPERA_PARA_VOLTAR_MS = { inicial: 1000, maxima: 30000, sustentada: 5000 } as const;
 /** Fração da nitidez usada no modo econômico. */
 const NITIDEZ_ECONOMICA = 0.5;
 /** No modo econômico, intervalo mínimo entre duas renovações do mapa de sombra. */
@@ -179,7 +186,8 @@ const VISTA_DO_QUARTINHO = { ladoGraus: 28, alturaGraus: 24, folga: 1.1 } as con
 
 export function criarCena(container: HTMLElement): Cena {
   const renderizador = new THREE.WebGLRenderer({ antialias: true });
-  const nitidezCheia = Math.min(window.devicePixelRatio || 1, 2);
+  /** Pontos do desenho por pixel de CSS. Acompanha a janela: muda com o zoom do navegador e ao trocar de monitor. */
+  let nitidezCheia = Math.min(window.devicePixelRatio || 1, 2);
   renderizador.setPixelRatio(nitidezCheia);
   renderizador.shadowMap.enabled = true;
   renderizador.shadowMap.type = THREE.PCFShadowMap;
@@ -233,9 +241,21 @@ export function criarCena(container: HTMLElement): Cena {
     sujo = true;
   });
 
+  /** O modo econômico está valendo (declarado aqui porque a nitidez da janela depende dele). */
+  let economico = false;
+  /** Lê de novo a nitidez da janela. O zoom do navegador (Ctrl + roda) e a troca de monitor a mudam com a página aberta. */
+  const acompanharNitidez = (): void => {
+    const nova = Math.min(window.devicePixelRatio || 1, 2);
+    if (nova === nitidezCheia) return;
+    nitidezCheia = nova;
+    renderizador.setPixelRatio(economico ? nitidezCheia * NITIDEZ_ECONOMICA : nitidezCheia);
+    pedirQuadro();
+  };
+
   const redimensionar = (): void => {
     const l = Math.max(1, container.clientWidth);
     const a = Math.max(1, container.clientHeight);
+    acompanharNitidez();
     renderizador.setSize(l, a);
     camera.aspect = l / a;
     camera.updateProjectionMatrix();
@@ -418,7 +438,6 @@ export function criarCena(container: HTMLElement): Cena {
   // Modo econômico, para vídeo fraco ou por software. Se a cena está em movimento (tempo correndo, câmera girando)
   // e os quadros saem a menos de 25 por segundo, ela passa a ser desenhada com metade da nitidez e com o mapa
   // de sombra refeito só de vez em quando. Assim que o movimento para, sai um quadro com a nitidez inteira.
-  let economico = false;
   /** O aparelho já precisou do modo econômico: o próximo movimento entra nele logo no segundo quadro. */
   let aparelhoLento = false;
   /** Quadros desenhados em voltas seguidas do laço, e quantos dos últimos intervalos foram lentos ou folgados. */
@@ -428,6 +447,10 @@ export function criarCena(container: HTMLElement): Cena {
   let anterior = 0;
   let ultimaSombra = 0;
   let sondado = false;
+  /** Volta à nitidez inteira com a cena em movimento: desde quando o modo econômico vale, quanto esperar e quando foi a última volta. */
+  let entrouNoEconomico = 0;
+  let esperaParaVoltar: number = ESPERA_PARA_VOLTAR_MS.inicial;
+  let ultimaVolta = -Infinity;
 
   /** Tempo de um quadro inteiro, com o mapa de sombra, lido só depois de a placa de vídeo terminar. */
   const cronometrar = (): number => {
@@ -451,6 +474,8 @@ export function criarCena(container: HTMLElement): Cena {
   let operacao: CamadaDeOperacao | null = null;
   const laco = (agora: number): void => {
     quadro = requestAnimationFrame(laco);
+    // A nitidez da janela é conferida a cada volta (é só uma leitura): nem toda mudança dela redimensiona a cena.
+    acompanharNitidez();
     // O realce do passo a passo pulsa: enquanto ele está na tela, saem quadros mesmo com a cena parada.
     // O mesmo vale para a fumaça e a faísca de um evento da operação, que correm no tempo de verdade.
     const realcando = destaques?.animar(agora) ?? false;
@@ -500,10 +525,26 @@ export function criarCena(container: HTMLElement): Cena {
       if (!economico && (lentos >= 3 || (aparelhoLento && seguidos >= 2))) {
         economico = true;
         aparelhoLento = true;
+        entrouNoEconomico = agora;
+        // Caiu logo depois de uma volta: o aparelho é lento mesmo, e a próxima tentativa espera o dobro.
+        esperaParaVoltar = agora - ultimaVolta < ESPERA_PARA_VOLTAR_MS.sustentada ? Math.min(ESPERA_PARA_VOLTAR_MS.maxima, esperaParaVoltar * 2) : ESPERA_PARA_VOLTAR_MS.inicial;
+        folgados = 0;
         renderizador.setPixelRatio(nitidezCheia * NITIDEZ_ECONOMICA);
       }
       // Com metade da nitidez os quadros saem folgados: no próximo movimento, tenta de novo a nitidez inteira.
       if (economico && folgados >= 20) aparelhoLento = false;
+      // O movimento pode não parar nunca (o relógio da simulação correndo): sem isto, um engasgo isolado (troca de aba,
+      // uma conta pesada) deixava a cena com metade da nitidez até o relógio ser pausado. Com os quadros folgados de
+      // novo, a nitidez inteira volta sem esperar a cena parar; se o aparelho não aguentar, o modo econômico retorna.
+      if (economico && folgados >= FOLGADOS_PARA_VOLTAR && agora - entrouNoEconomico >= esperaParaVoltar) {
+        economico = false;
+        aparelhoLento = false;
+        ultimaVolta = agora;
+        lentos = 0;
+        folgados = 0;
+        renderizador.setPixelRatio(nitidezCheia);
+        sombraSuja = true;
+      }
     }
     sujo = false;
     if (sombraSuja && (!economico || agora - ultimaSombra >= SOMBRA_ECONOMICA_MS)) {

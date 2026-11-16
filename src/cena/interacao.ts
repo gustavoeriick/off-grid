@@ -476,6 +476,8 @@ export function criarInteracao(c: PartesDaCena): Interacao {
 
   /** Superfície para a qual o ponteiro aponta durante um arraste de peça (pode não ser a do encaixe: a geladeira apontada para a parede vai para o piso). */
   let apontada: string | null = null;
+  /** Shift apertado durante o arraste: a placa anda solta da grade das vizinhas, para abrir espaço em uma fileira. */
+  let soltaDaGrade = false;
 
   function candidatoSob(item: Item, giro: number, chao: NoChao, x: number, y: number, ignorar?: ReadonlySet<string>): Candidato | null {
     apontada = null;
@@ -494,7 +496,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
     if (toque.marca.id === ID_TERRENO && item.categoria === 'placa') {
       return c.lugares.candidato(item, chao.giro ?? giroPadraoNoChao(), toque, { ...(ignorar ? { ignorar } : {}), ...(chao.inclinacao === null ? {} : { inclinacao: chao.inclinacao }) });
     }
-    return c.lugares.candidato(item, giro, toque, ignorar ? { ignorar } : {});
+    return c.lugares.candidato(item, giro, toque, { ...(ignorar ? { ignorar } : {}), ...(soltaDaGrade && item.categoria === 'placa' ? { prender: false } : {}) });
   }
 
   /** O candidato é uma placa sobre suporte, no terreno. */
@@ -544,7 +546,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       return;
     }
     mostrarFantasma(m.item, m.candidato.encaixe, m.candidato.valido);
-    if (m.candidato.valido) mostrarDica(noChao(m.item, m.candidato) ? 'Solte para pôr no chão, sobre suporte (R muda a direção)' : 'Solte para colocar (R gira)', x, y, 'bom');
+    if (m.candidato.valido) mostrarDica(noChao(m.item, m.candidato) ? 'Solte para pôr no chão, sobre suporte (R muda a direção)' : m.item.categoria === 'placa' ? 'Solte para colocar (R gira; com Shift, solta da grade)' : 'Solte para colocar (R gira)', x, y, 'bom');
     else mostrarDica(m.candidato.motivo, x, y, 'ruim');
   }
 
@@ -961,6 +963,7 @@ export function criarInteracao(c: PartesDaCena): Interacao {
       if (Math.hypot(e.clientX - m.x, e.clientY - m.y) <= LIMIAR_DE_ARRASTE) return;
       m.moveu = true;
     }
+    soltaDaGrade = e.shiftKey;
     pendente = [e.clientX, e.clientY];
     if (!quadroPendente) quadroPendente = requestAnimationFrame(despachar);
   }

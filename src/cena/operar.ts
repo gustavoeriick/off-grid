@@ -151,12 +151,26 @@ const FOLGA_DA_CHAVE_PX = 5;
 
 const semRaio = (): void => {};
 
+/** O desenho do visor é refeito com mais pontos quando o visor ampliado cresce na tela: passos e limite da ampliação. */
+const ESCALA_DO_VISOR = { passo: 0.25, maxima: 4 } as const;
+
+/** Ampliação do desenho para um visor mostrado com `larguraPx` pontos da tela: nunca menos pontos do que os mostrados. */
+function escalaDoVisor(larguraPx: number): number {
+  const exata = larguraPx / VISOR_LARGURA_PX;
+  return THREE.MathUtils.clamp(Math.ceil(exata / ESCALA_DO_VISOR.passo - 1e-6) * ESCALA_DO_VISOR.passo, 1, ESCALA_DO_VISOR.maxima);
+}
+
 interface Visor {
   uid: string;
   itemId: string;
   grupo: THREE.Group;
   pincel: CanvasRenderingContext2D;
+  /** Desenho com mipmaps, para o visor pequeno na face da peça. */
   textura: THREE.CanvasTexture;
+  /** O mesmo desenho sem mipmaps, para o visor ampliado: é mostrado quase ponto a ponto. */
+  nitida: THREE.CanvasTexture;
+  /** Pontos do desenho por ponto da medida de `visores.ts`: acompanha o tamanho do visor ampliado na tela. */
+  escala: number;
   /** Visor na face da frente da peça. Nulo na peça cujo modelo não tem visor. */
   face: THREE.Mesh | null;
   larguraDaFace: number;
@@ -403,6 +417,11 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
     const textura = new THREE.CanvasTexture(cv);
     textura.colorSpace = THREE.SRGBColorSpace;
     textura.anisotropy = 4;
+    // O visor ampliado é mostrado quase ponto a ponto: sem mipmaps, o texto não é amolecido pela média entre dois níveis.
+    const nitida = new THREE.CanvasTexture(cv);
+    nitida.colorSpace = THREE.SRGBColorSpace;
+    nitida.generateMipmaps = false;
+    nitida.minFilter = THREE.LinearFilter;
     let face: THREE.Mesh | null = null;
     const lugar = peca.modelo.visor;
     if (lugar) {
@@ -432,7 +451,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
     // O mesmo desenho, ampliado e sempre de frente: é o que se lê da distância de trabalho. É desenhado sem teste de
     // profundidade, por cima da peça dele, dos cabos e das outras peças; o lugar na tela é posto a cada quadro por
     // `arrumarVisores`, que também o esconde quando uma parede, um piso ou um telhado tapa a peça.
-    const flutuante = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    const flutuante = new THREE.Sprite(new THREE.SpriteMaterial({ map: nitida, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
     flutuante.name = 'visor-ampliado';
     flutuante.renderOrder = 8;
     flutuante.raycast = semRaio;
@@ -455,7 +474,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       for (const o of [flutuante, fio, ponta]) esconder(o, true);
     }
     return {
-      uid: d.uid, itemId: d.itemId, grupo, pincel, textura, face, larguraDaFace: lugar?.largura ?? 0, flutuante, fio, ponta,
+      uid: d.uid, itemId: d.itemId, grupo, pincel, textura, nitida, escala: 1, face, larguraDaFace: lugar?.largura ?? 0, flutuante, fio, ponta,
       colado, legivel: false, lugar: null, ret: null, pontaNaTela: [0, 0], desvio: [0, 0], mudanca: null, vista: { chave: '', livre: true }, conteudo: null, desenhado: '',
     };
   }
@@ -472,6 +491,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
     }
     v.flutuante.material.dispose();
     v.textura.dispose();
+    v.nitida.dispose();
     visores.delete(v.uid);
   }
 
@@ -492,9 +512,30 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       v.desenhado = chave;
       desenharVisor(v.pincel, conteudo);
       v.textura.needsUpdate = true;
+      v.nitida.needsUpdate = true;
       mudou = true;
     }
     if (mudou) c.pedirQuadroLeve();
+  }
+
+  /**
+   * Refaz o desenho do visor com os pontos que o visor ampliado ocupa na tela (largura em pixels de CSS vezes a
+   * nitidez da janela). Com o desenho de tamanho fixo, o texto saía borrado no tamanho "grande" e em tela de 125% ou mais.
+   */
+  function ajustarNitidez(v: Visor, larguraCss: number): void {
+    const escala = escalaDoVisor(larguraCss * Math.min(window.devicePixelRatio || 1, 2));
+    if (escala === v.escala) return;
+    v.escala = escala;
+    const cv = v.pincel.canvas;
+    cv.width = Math.round(VISOR_LARGURA_PX * escala);
+    cv.height = Math.round(VISOR_ALTURA_PX * escala);
+    v.pincel.setTransform(cv.width / VISOR_LARGURA_PX, 0, 0, cv.height / VISOR_ALTURA_PX, 0, 0);
+    if (v.conteudo) desenharVisor(v.pincel, v.conteudo);
+    // A textura mudou de tamanho: a da placa de vídeo é refeita.
+    for (const t of [v.textura, v.nitida]) {
+      t.dispose();
+      t.needsUpdate = true;
+    }
   }
 
   // ---------------------------------------------------------------- Botões de ligar
@@ -935,6 +976,7 @@ export function criarCamadaDeOperacao(c: PartesDaOperacao): CamadaDeOperacao {
       porNaTela(v.flutuante, cx, cy, z, L, A);
       v.flutuante.scale.set(largura * porPixel, altura * porPixel, 1);
       v.flutuante.visible = true;
+      ajustarNitidez(v, largura);
       // O fio vai da borda do visor a um ponto bem dentro da caixa da peça, o mais perto do visor.
       const [qx, qy] = pontoMaisPerto(pedido.peca, cx, cy, 0.3);
       const [sx, sy] = pontoMaisPerto(ret, qx, qy);
