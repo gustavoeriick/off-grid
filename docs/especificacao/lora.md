@@ -317,6 +317,46 @@ O projeto novo começa sem pontos. Não há ponto pré-marcado em lugar nenhum.
 - **Aviso fixo:** "O simulador considera o relevo, não prédios nem árvores. Na cidade, o resultado real costuma ser pior. Teste em campo antes de comprar e instalar."
 - Cada termo de rádio é explicado na primeira vez em que aparece, como no simulador solar.
 
+### 7.1 Busca de endereço (tarefa L2.5, pedida pelo Gustavo em 15/11/2026)
+
+Um campo sobre o mapa para chegar a um lugar sem arrastar o mapa. É a única parte do ambiente que manda para fora algo que a pessoa digitou; por isso as regras abaixo são mais estritas que as do resto.
+
+**Serviço.** Nominatim, o serviço de endereços do OpenStreetMap. Política de uso relida em 16/11/2026 (https://operations.osmfoundation.org/policies/nominatim/); o que ela exige e como o simulador cumpre:
+
+| Exigência da política | No simulador |
+|---|---|
+| No máximo 1 pedido por segundo | Um pedido por vez; o botão fica desligado até a resposta chegar e até passar 1 s do pedido anterior |
+| Proibido completar enquanto se digita | A busca só sai no Enter ou no botão "Buscar" |
+| Identificar a aplicação por `Referer` ou `User-Agent` | O navegador manda o `Referer` sozinho; o pedido não pode usar `referrerPolicy: 'no-referrer'` |
+| Guardar os resultados para não repetir pedido | Guarda em memória, só enquanto a página está aberta: repetir o mesmo texto não gera pedido novo |
+| Mostrar a atribuição | Linha "Resultados: © colaboradores do OpenStreetMap, pelo Nominatim", com link para https://www.openstreetmap.org/copyright, junto da lista |
+| Poder trocar de serviço | O endereço do serviço e a leitura da resposta ficam em um arquivo só (`src/lora/dados/enderecos.ts`) |
+| "Não envie dados pessoais" | O aviso de privacidade recomenda buscar a rua ou o bairro, sem número e sem nome de pessoa |
+
+**Pedido.** `GET https://nominatim.openstreetmap.org/search` com exatamente estes parâmetros: `q` (o texto, sem espaços nas pontas), `format=jsonv2`, `limit=5`, `accept-language=pt-BR` e `countrycodes=br`. Nenhum outro: nem e-mail, nem a área da tela, nem coordenada de ponto do projeto. Sem cabeçalhos próprios. Texto com menos de 3 caracteres não gera pedido. Espera máxima de 10 s; uma busca nova cancela a anterior.
+
+- Sem resultado no Brasil: a lista diz "Nada encontrado no Brasil com esse texto." e oferece o botão "Procurar no mundo todo", que repete o pedido sem `countrycodes`. É um clique da pessoa, não uma segunda busca automática.
+
+**Resposta.** Lista de até 5 itens. De cada um o simulador usa `display_name` (mostrado como texto puro, nunca como HTML), `lat`, `lon` e `boundingbox` (sul, norte, oeste, leste). Item com latitude ou longitude que não seja número dentro dos limites é descartado. Resposta que não é lista conta como falha.
+
+**Falhas, com o texto da tela.**
+- Sem rede, tempo esgotado ou resposta ilegível: "A busca de endereço não respondeu. Tente de novo ou marque o ponto à mão no mapa."
+- Recusa do serviço (HTTP 403 ou 429): "O serviço de endereços recusou o pedido, por excesso de uso. Espere um minuto e tente de novo, ou marque o ponto à mão no mapa."
+
+**Escolher um resultado.** O mapa vai até o lugar (enquadra o `boundingbox`, com zoom máximo 16; sem ele, zoom 15) e mostra uma marca provisória, que não é ponto do projeto, com três botões: "Pôr uma casa aqui", "Pôr um repetidor aqui" e "Fechar". Pôr o ponto usa a ação normal de adicionar ponto (um passo do desfazer), seleciona o ponto e tira a marca. O ponto nasce com o nome padrão: o nome do resultado não é copiado para o projeto. Esc, "Fechar", uma busca nova e a troca de projeto tiram a marca e a lista.
+
+**Privacidade.**
+- Antes do primeiro pedido, um aviso com "Buscar" e "Cancelar": "O texto que você digitar aqui vai para o Nominatim, o serviço de endereços do OpenStreetMap, que fica fora deste navegador. Se digitar o endereço da sua casa, o serviço recebe esse endereço. Dá para buscar só a rua ou o bairro, sem o número, e ajustar o ponto à mão no mapa. Os pontos que você marca continuam sem sair deste navegador." Aceito uma vez, não aparece mais (grava só a marca `offgrid.lora.avisoEndereco` no navegador).
+- Abaixo do campo fica sempre a frase curta "O texto da busca vai para o OpenStreetMap."
+- O texto buscado e os resultados não são gravados no projeto, no `localStorage`, no histórico de desfazer nem na exportação. O campo usa `autocomplete="off"`.
+- Nenhum endereço real em código, teste ou captura de tela: a verificação intercepta o pedido e responde com lugares inventados na região neutra das outras verificações, e confere que nenhum pedido chegou ao serviço real.
+
+**Camadas.** `src/lora/dados/enderecos.ts` faz o pedido e lê a resposta (a leitura é função pura, testada em Node). `src/lora/ui/busca-de-endereco.ts` monta o campo, a lista e o aviso. A marca provisória e o enquadramento entram na interface do mapa (`MapaLora`).
+
+### 7.2 Mapa da MeshBrasil (tarefa L2.6)
+
+Link "Ver nós ativos no Brasil (MeshBrasil)" para https://www.meshbrasil.com/mapa-meshtastic-brasil.html, abrindo em outra aba (`rel="noopener noreferrer"`), no painel do resumo e no termo "Rede em malha" do glossário. Junto do link, a frase: "Um rádio que já existe perto de você pode servir de repetidor. O mapa mostra só quem escolheu aparecer; a rede real é maior." O simulador não lê dados desse mapa: a página não documenta forma de fazer isso.
+
 ## 8. Casos de teste
 
 Saída de `node scripts/referencia/lora-referencia.mjs`. Tolerância de 0,01 nas unidades de cada linha.

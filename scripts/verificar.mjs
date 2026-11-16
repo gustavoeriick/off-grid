@@ -2440,6 +2440,125 @@ async function principal() {
   }
   await verificarArrumarCabos();
 
+  // Busca no catálogo (tarefa 9.1): o campo procura em todas as abas, sem diferença de acento, de maiúsculas e de
+  // espaço antes da unidade; o cartão aponta para o modelo que casou; o filtro de linha continua valendo; Esc e o "×" limpam.
+  async function verificarBuscaNoCatalogo() {
+    // Página nova: sem modelo escolhido à mão em nenhum cartão.
+    await pagina.reload();
+    await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true && typeof window.__offgrid.telaDoCartao === 'function', null, { timeout: 30000 });
+    const campo = pagina.locator('#busca-catalogo');
+    const limpar = pagina.locator('#busca-limpar');
+    const cartoes = pagina.locator('#lista-catalogo .cartao');
+    const grupos = () => cartoes.evaluateAll((l) => l.map((c) => c.dataset.grupo));
+    const abaAberta = () => pagina.locator('#abas-catalogo button[aria-selected="true"]').evaluateAll((l) => l.map((b) => b.dataset.cat));
+    const buscar = async (texto) => {
+      await campo.click();
+      await campo.fill(texto);
+    };
+
+    // O nome do modelo que não é o de referência no cartão de 585 W, lido da tela.
+    await pagina.locator('#abas-catalogo button[data-cat="placas"]').click();
+    const c585 = pagina.locator('#lista-catalogo .cartao', { has: pagina.locator('h4', { hasText: /^Placa solar de 585 W$/ }) });
+    const idReferencia = await c585.getAttribute('data-item-id');
+    await c585.locator('.ver-modelos').click();
+    const outro = c585.locator('.modelos .modelo:not(.escolhido)').first();
+    const idOutro = await outro.getAttribute('data-modelo-id');
+    const nomeOutro = (await outro.locator('.modelo-nome span').textContent()).trim();
+    const nomeReferencia = (await c585.locator('.modelos .modelo.escolhido .modelo-nome span').textContent()).trim();
+    await c585.locator('.ver-modelos').click();
+    conferir(idOutro && idOutro !== idReferencia && nomeOutro !== nomeReferencia, 'o cartão de 585 W deveria ter um segundo modelo');
+
+    // De uma aba que não é a primeira, para conferir a volta.
+    await pagina.locator('#abas-catalogo button[data-cat="baterias"]').click();
+    conferir(await limpar.isHidden(), 'sem texto, o "×" fica escondido');
+    const caixaDoCampo = await campo.boundingBox();
+    const caixaDasAbas = await pagina.locator('#abas-catalogo').boundingBox();
+    conferir(caixaDoCampo.y + caixaDoCampo.height <= caixaDasAbas.y + 1, 'o campo de busca fica acima das abas');
+
+    // Unidade colada ou separada, maiúsculas e acento.
+    await buscar('585w');
+    const colado = await grupos();
+    conferir(colado.length > 0, 'a busca por "585w" deveria achar alguma coisa');
+    conferir((await abaAberta()).length === 0, 'com busca, nenhuma aba fica marcada');
+    conferir((await cartoes.locator('.etiqueta-aba').count()) === colado.length, 'cada cartão do resultado diz a aba dele');
+    conferir(await limpar.isVisible(), 'com texto, o "×" aparece');
+    await buscar('585 W');
+    conferir(JSON.stringify(await grupos()) === JSON.stringify(colado), '"585 W" e "585w" deveriam dar o mesmo resultado');
+    await buscar('bateria');
+    const minusculas = await grupos();
+    const abasDoResultado = new Set(await cartoes.locator('.etiqueta-aba').allTextContents());
+    conferir(minusculas.length > 0 && abasDoResultado.has('Baterias'), `"bateria" deveria achar itens da aba Baterias: ${[...abasDoResultado]}`);
+    await buscar('BATERIA');
+    conferir(JSON.stringify(await grupos()) === JSON.stringify(minusculas), 'maiúsculas não deveriam mudar o resultado');
+    await buscar('fusivel');
+    const semAcento = await grupos();
+    await buscar('Fusível');
+    conferir(semAcento.length > 0 && JSON.stringify(await grupos()) === JSON.stringify(semAcento), 'o acento não deveria mudar o resultado');
+    await captura('100b-busca-no-catalogo');
+
+    // O modelo que casou: o cartão aponta para ele, fechado, e o arraste leva esse modelo.
+    await buscar(nomeOutro);
+    const achado = pagina.locator(`#lista-catalogo .cartao[data-item-id="${idOutro}"]`);
+    conferir((await achado.count()) === 1, `buscar "${nomeOutro}" deveria apontar o cartão para esse modelo`);
+    conferir((await achado.locator('.modelo-casou').textContent()).includes(nomeOutro), 'o cartão diz qual modelo casou');
+    conferir((await achado.locator('.detalhe').count()) === 0, 'o cartão do resultado continua fechado');
+    await pagina.evaluate(() => {
+      window.__arrastos = [];
+      window.addEventListener('offgrid:arrastar-item', (ev) => window.__arrastos.push(ev.detail));
+    });
+    const titulo = await achado.locator('h4').boundingBox();
+    await pagina.mouse.move(titulo.x + titulo.width / 2, titulo.y + titulo.height / 2);
+    await pagina.mouse.down();
+    await pagina.mouse.up();
+    const arrastos = await pagina.evaluate(() => window.__arrastos);
+    conferir(arrastos.length === 1 && arrastos[0].itemId === idOutro, `arrastar o resultado deveria levar o modelo que casou: ${JSON.stringify(arrastos)}`);
+    await achado.locator('.ver-modelos').click();
+    conferir((await achado.locator(`.modelo[data-modelo-id="${idOutro}"] input`).isChecked()) === true, 'no detalhe, o modelo que casou vem marcado');
+    await captura('100c-busca-modelo-que-casou');
+    // A escolha à mão vale mais que a busca.
+    await achado.locator(`.modelo[data-modelo-id="${idReferencia}"] .modelo-nome`).click();
+    conferir((await pagina.locator(`#lista-catalogo .cartao[data-item-id="${idReferencia}"]`).count()) === 1, 'escolher outro modelo à mão deveria valer mais que a busca');
+
+    // Filtro de linha sobre o resultado, e o aviso de que há resultado em outras linhas.
+    await buscar('585w');
+    await pagina.locator('#filtro-linha button[data-linha="simples"]').click();
+    const naSimples = await grupos();
+    conferir(naSimples.length < colado.length, 'o filtro de linha deveria valer sobre o resultado da busca');
+    if (naSimples.length === 0) {
+      conferir((await pagina.locator('#lista-catalogo .vazio').textContent()).includes('em outras linhas'), 'sem resultado na linha, a lista avisa que há em outras');
+      await pagina.locator('#lista-catalogo .ver-todas-linhas').click();
+      conferir(JSON.stringify(await grupos()) === JSON.stringify(colado), '"Ver todas as linhas" deveria mostrar o resultado inteiro');
+    } else await pagina.locator('#filtro-linha button[data-linha="todas"]').click();
+
+    // Sem resultado.
+    await buscar('zzzz');
+    conferir((await cartoes.count()) === 0 && (await pagina.locator('#lista-catalogo .vazio').textContent()).trim() === 'Nenhum item com esse texto.', 'texto sem resultado deveria dizer "Nenhum item com esse texto."');
+
+    // Digitar no campo não mexe na cena.
+    const antes = JSON.stringify((await estado()).projeto);
+    await buscar('');
+    await pagina.keyboard.type('rg Delete');
+    await pagina.keyboard.press('Delete');
+    conferir(JSON.stringify((await estado()).projeto) === antes, 'digitar no campo de busca não deveria mudar o projeto');
+
+    // Esc, "×" e clique em aba limpam; as duas primeiras voltam à aba de antes.
+    await buscar('585w');
+    await pagina.keyboard.press('Escape');
+    conferir((await campo.inputValue()) === '' && JSON.stringify(await abaAberta()) === '["baterias"]', 'Esc deveria limpar a busca e voltar à aba de antes');
+    await buscar('585w');
+    await limpar.click();
+    conferir((await campo.inputValue()) === '' && JSON.stringify(await abaAberta()) === '["baterias"]' && (await limpar.isHidden()), 'o "×" deveria limpar a busca e voltar à aba de antes');
+    await buscar('585w');
+    await pagina.locator('#abas-catalogo button[data-cat="inversores"]').click();
+    conferir((await campo.inputValue()) === '' && JSON.stringify(await abaAberta()) === '["inversores"]', 'clicar em uma aba deveria limpar a busca e abrir a aba');
+
+    // Quem procura um cartão pelo programa (consultor, tutorial) acha mesmo com busca ativa.
+    await buscar('zzzz');
+    const centro = await pagina.evaluate((id) => window.__offgrid.telaDoCartao(id), idReferencia);
+    conferir(Array.isArray(centro) && (await campo.inputValue()) === '' && JSON.stringify(await abaAberta()) === '["placas"]', 'telaDoCartao deveria limpar a busca e achar o cartão');
+  }
+  await verificarBuscaNoCatalogo();
+
   // Mapa e corte do terreno do ambiente de rádio (especificacao/lora.md, seção 7), tudo com o mouse.
   // O terreno é o inventado em scripts/blocos-falsos.mjs: dois morros que se enxergam por cima de um vale
   // (enlace que fecha com folga) e um lugar atrás de uma serra (enlace que não fecha).
@@ -3370,6 +3489,197 @@ async function principal() {
 
   // Ambiente de rádio LoRa (especificacao/lora.md, seção 1): página própria, seletor de ambiente e projetos separados.
   // Os pontos de teste ficam em lugares neutros, sem relação com casa nenhuma.
+  // Busca de endereço (especificacao/lora.md, seção 7.1) e link da MeshBrasil (7.2). O serviço de endereços é
+  // interceptado: os lugares são inventados, na região neutra do terreno falso, e nenhum pedido chega ao serviço real.
+  async function verificarLoraEndereco(lora) {
+    const lugar = { lat: LUGARES.centro.lat, lon: LUGARES.centro.lon };
+    const falso = (nome, dLat) => ({
+      display_name: nome,
+      lat: (lugar.lat + dLat).toFixed(4),
+      lon: lugar.lon.toFixed(4),
+      boundingbox: [(lugar.lat + dLat - 0.01).toFixed(4), (lugar.lat + dLat + 0.01).toFixed(4), (lugar.lon - 0.01).toFixed(4), (lugar.lon + 0.01).toFixed(4)],
+    });
+    const pedidosDeEndereco = [];
+    let resposta = { status: 200, corpo: [falso('Rua de Teste, Cidade Fictícia, Estado Fictício, Brasil', 0), falso('Rua de Teste <b>dois</b>, Vila Inventada, Brasil', 0.05)] };
+    await pagina.route('https://nominatim.openstreetmap.org/**', (rota) => {
+      const pedido = rota.request();
+      pedidosDeEndereco.push({ url: pedido.url(), cabecalhos: pedido.headers() });
+      if (resposta === 'abortar') return rota.abort();
+      return rota.fulfill({ status: resposta.status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(resposta.corpo) });
+    });
+    // As respostas de recusa e a queda são esperadas aqui: não contam como erro da página.
+    const errosAntes = erros.length;
+    const campo = pagina.locator('#lora-endereco');
+    const buscar = async (texto) => {
+      await campo.click();
+      await campo.fill(texto);
+      await pagina.keyboard.press('Enter');
+    };
+    const botaoLivre = () => pagina.waitForFunction(() => !document.querySelector('#lora-endereco-buscar').disabled, null, { timeout: 5000 });
+    const estadoDaLista = async () => ((await pagina.locator('#lora-endereco-estado').count()) ? (await pagina.locator('#lora-endereco-estado').textContent()).trim() : '');
+
+    await pagina.evaluate(() => localStorage.removeItem('offgrid.lora.avisoEndereco'));
+    await pagina.reload();
+    await pagina.waitForFunction(() => window.__lora && window.__lora.pronto === true, null, { timeout: 30000 });
+    const antes = await lora();
+    const chavesAntes = await pagina.evaluate(() => Object.keys(localStorage).sort());
+    conferir((await pagina.locator('#lora-endereco-frase').textContent()).trim() === 'O texto da busca vai para o OpenStreetMap.', 'a frase fixa da busca deveria estar na tela');
+    // O campo não cobre as ferramentas nem os controles de zoom.
+    const caixas = await pagina.evaluate(() => ['#lora-endereco-caixa', '.lora-ferramentas', '.maplibregl-ctrl-top-right'].map((s) => document.querySelector(s).getBoundingClientRect().toJSON()));
+    const cruza = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    conferir(!cruza(caixas[0], caixas[1]) && !cruza(caixas[0], caixas[2]), `o campo de endereço não deveria cobrir as ferramentas nem o zoom: ${JSON.stringify(caixas)}`);
+
+    // Texto curto e digitar sem Enter não geram pedido.
+    await campo.click();
+    await campo.fill('Rua de Teste');
+    await esperar(1200);
+    conferir(pedidosDeEndereco.length === 0, 'digitar sem Enter não deveria gerar pedido');
+    await buscar('Ru');
+    conferir(pedidosDeEndereco.length === 0 && (await pagina.locator('#lora-aviso-endereco').isHidden()), 'texto com menos de 3 letras não deveria gerar pedido nem aviso');
+
+    // Primeira busca: o aviso vem antes do pedido.
+    await buscar('Rua de Teste');
+    conferir(await pagina.locator('#lora-aviso-endereco').isVisible(), 'a primeira busca deveria mostrar o aviso de privacidade');
+    conferir((await pagina.locator('#lora-aviso-endereco').textContent()).includes('o serviço recebe esse endereço'), 'o aviso diz que o serviço recebe o endereço');
+    conferir(pedidosDeEndereco.length === 0, 'antes de aceitar o aviso, nenhum pedido deveria sair');
+    await captura('141-lora-endereco-aviso');
+    await pagina.locator('#lora-aviso-endereco-cancelar').click();
+    conferir(pedidosDeEndereco.length === 0 && (await pagina.locator('#lora-aviso-endereco').isHidden()), 'cancelar o aviso não deveria gerar pedido');
+    await buscar('Rua de Teste');
+    await pagina.locator('#lora-aviso-endereco-buscar').click();
+    await pagina.locator('.lora-endereco-resultado').first().waitFor();
+    conferir(pedidosDeEndereco.length === 1, `aceitar o aviso deveria gerar um pedido: ${pedidosDeEndereco.length}`);
+    const primeiro = new URL(pedidosDeEndereco[0].url);
+    const parametros = Object.fromEntries(primeiro.searchParams);
+    conferir(
+      primeiro.origin + primeiro.pathname === 'https://nominatim.openstreetmap.org/search' &&
+        JSON.stringify(Object.keys(parametros).sort()) === '["accept-language","countrycodes","format","limit","q"]' &&
+        parametros.q === 'Rua de Teste' && parametros.format === 'jsonv2' && parametros.limit === '5' && parametros['accept-language'] === 'pt-BR' && parametros.countrycodes === 'br',
+      `o pedido deveria levar só os cinco parâmetros da especificação: ${pedidosDeEndereco[0].url}`,
+    );
+    const proprios = Object.keys(pedidosDeEndereco[0].cabecalhos).filter((c) => c.startsWith('x-') || c === 'authorization' || c === 'content-type');
+    conferir(proprios.length === 0 && 'referer' in pedidosDeEndereco[0].cabecalhos, `o pedido não leva cabeçalho próprio e leva o Referer: ${JSON.stringify(pedidosDeEndereco[0].cabecalhos)}`);
+    conferir((await pagina.locator('.lora-endereco-resultado').count()) === 2, 'a lista deveria ter os dois resultados');
+    conferir((await pagina.locator('.lora-endereco-resultado b').count()) === 0 && (await pagina.locator('.lora-endereco-resultado').nth(1).textContent()).includes('<b>dois</b>'), 'o nome do resultado entra como texto, nunca como HTML');
+    const credito = pagina.locator('#lora-endereco-atribuicao');
+    conferir((await credito.textContent()).includes('© colaboradores do OpenStreetMap') && (await credito.locator('a').getAttribute('href')) === 'https://www.openstreetmap.org/copyright', 'a lista deveria trazer a atribuição do OpenStreetMap');
+    await captura('142-lora-endereco-resultados');
+
+    // O mesmo texto de novo não gera pedido; o aviso não volta.
+    await botaoLivre();
+    await buscar('Rua de Teste');
+    await pagina.locator('.lora-endereco-resultado').first().waitFor();
+    conferir(pedidosDeEndereco.length === 1 && (await pagina.locator('#lora-aviso-endereco').isHidden()), 'repetir a busca não deveria gerar pedido novo nem mostrar o aviso de novo');
+
+    // Escolher: o mapa vai até lá e a marca provisória oferece os três botões.
+    await pagina.locator('.lora-endereco-resultado').first().click();
+    await pagina.locator('#lora-lugar-casa').waitFor();
+    await esperar(800);
+    const centro = await pagina.evaluate(() => window.__lora.mapa.centro());
+    const zoom = await pagina.evaluate(() => window.__lora.mapa.zoom());
+    conferir(Math.abs(centro.lat - lugar.lat) < 0.02 && Math.abs(centro.lon - lugar.lon) < 0.02 && zoom <= 16.01 && zoom > 11, `o mapa deveria ir até o resultado, com zoom até 16: ${JSON.stringify(centro)} zoom ${zoom}`);
+    conferir((await lora()).projeto.pontos.length === antes.projeto.pontos.length, 'a marca provisória não é ponto do projeto');
+    await captura('143-lora-endereco-lugar');
+    await pagina.locator('#lora-lugar-casa').click();
+    let e = await lora();
+    const novo = e.projeto.pontos[e.projeto.pontos.length - 1];
+    conferir(e.projeto.pontos.length === antes.projeto.pontos.length + 1 && novo.tipo === 'casa' && Math.abs(novo.lat - lugar.lat) < 1e-3 && Math.abs(novo.lon - lugar.lon) < 1e-3, `"Pôr uma casa aqui" deveria criar o ponto no lugar: ${JSON.stringify(novo)}`);
+    conferir(!JSON.stringify(e.projeto).includes('Teste') && e.selecao?.tipo === 'ponto' && e.selecao.id === novo.id, 'o ponto nasce com o nome padrão, selecionado');
+    conferir((await pagina.locator('#lora-lugar-casa').isHidden()) && (await pagina.locator('#lora-endereco-resultados').isHidden()), 'pôr o ponto tira a marca e a lista');
+    await pagina.locator('#lora-desfazer').click();
+    conferir((await lora()).projeto.pontos.length === antes.projeto.pontos.length, 'pôr o ponto é um passo só do desfazer');
+
+    // O repetidor, o "Fechar" e o Esc.
+    await buscar('Rua de Teste');
+    await pagina.locator('.lora-endereco-resultado').nth(1).click();
+    await pagina.locator('#lora-lugar-repetidor').click();
+    e = await lora();
+    conferir(e.projeto.pontos[e.projeto.pontos.length - 1].tipo === 'repetidor', '"Pôr um repetidor aqui" deveria criar um repetidor');
+    await pagina.locator('#lora-desfazer').click();
+    await buscar('Rua de Teste');
+    await pagina.locator('.lora-endereco-resultado').first().click();
+    await pagina.locator('#lora-lugar-fechar').click();
+    conferir((await pagina.locator('#lora-lugar-casa').isHidden()) && (await pagina.locator('#lora-endereco-resultados').isHidden()), '"Fechar" tira a marca e a lista');
+    await buscar('Rua de Teste');
+    await pagina.locator('.lora-endereco-resultado').first().click();
+    await campo.click();
+    await pagina.keyboard.press('Escape');
+    conferir((await pagina.locator('#lora-lugar-casa').isHidden()) && (await pagina.locator('#lora-endereco-resultados').isHidden()), 'Esc no campo tira a marca e a lista');
+    // Ctrl+Z dentro do campo é do campo, não do projeto.
+    const pontosAgora = (await lora()).projeto.pontos.length;
+    await campo.click();
+    await pagina.keyboard.press('Control+z');
+    conferir((await lora()).projeto.pontos.length === pontosAgora, 'Ctrl+Z no campo não deveria desfazer o projeto');
+
+    // Nada no Brasil: o botão repete sem o filtro do país, só com o clique.
+    resposta = { status: 200, corpo: [] };
+    await botaoLivre();
+    await buscar('Lugar Inventado');
+    await pagina.locator('#lora-endereco-mundo').waitFor();
+    conferir((await estadoDaLista()) === 'Nada encontrado no Brasil com esse texto.', `sem resultado no Brasil: "${await estadoDaLista()}"`);
+    const antesDoMundo = pedidosDeEndereco.length;
+    await esperar(1500);
+    conferir(pedidosDeEndereco.length === antesDoMundo, 'a busca no mundo todo não sai sozinha');
+    await pagina.locator('#lora-endereco-mundo').click();
+    await esperar(600);
+    const doMundo = new URL(pedidosDeEndereco[pedidosDeEndereco.length - 1].url);
+    conferir(pedidosDeEndereco.length === antesDoMundo + 1 && !doMundo.searchParams.has('countrycodes') && doMundo.searchParams.get('q') === 'Lugar Inventado', `"Procurar no mundo todo" repete sem countrycodes: ${doMundo}`);
+
+    // Recusa do serviço, resposta ilegível e queda.
+    resposta = { status: 429, corpo: {} };
+    await botaoLivre();
+    await buscar('Outro Lugar Inventado');
+    await pagina.locator('#lora-endereco-estado[role="alert"]').waitFor();
+    conferir((await estadoDaLista()).startsWith('O serviço de endereços recusou o pedido'), `recusa: "${await estadoDaLista()}"`);
+    await captura('144-lora-endereco-recusa');
+    resposta = { status: 200, corpo: {} };
+    await botaoLivre();
+    await buscar('Terceiro Lugar Inventado');
+    await pagina.locator('#lora-endereco-estado[role="alert"]').waitFor();
+    conferir((await estadoDaLista()).startsWith('A busca de endereço não respondeu'), `resposta que não é lista: "${await estadoDaLista()}"`);
+    resposta = 'abortar';
+    await botaoLivre();
+    await buscar('Quarto Lugar Inventado');
+    await pagina.locator('#lora-endereco-estado[role="alert"]').waitFor();
+    conferir((await estadoDaLista()).startsWith('A busca de endereço não respondeu'), `sem rede: "${await estadoDaLista()}"`);
+    await campo.click();
+    await pagina.keyboard.press('Escape');
+
+    // Nada do que foi buscado ficou gravado.
+    await esperar(600);
+    const gravado = await pagina.evaluate(() => Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)])));
+    const chavesNovas = Object.keys(gravado).filter((k) => !chavesAntes.includes(k));
+    conferir(JSON.stringify(chavesNovas) === '["offgrid.lora.avisoEndereco"]' && gravado['offgrid.lora.avisoEndereco'] === 'sim', `a busca só grava a marca do aviso: ${JSON.stringify(chavesNovas)}`);
+    conferir(!/Teste|Inventad|Fict/.test(JSON.stringify(gravado)), 'o texto buscado e os resultados não deveriam ficar gravados no navegador');
+    const exportado = await pagina.evaluate(() => window.__lora.acoes.exportarProjeto());
+    conferir(!/Teste|Inventad|Fict/.test(exportado), 'o texto buscado não deveria ir para a exportação');
+    conferir(pedidosDeEndereco.every((p) => !/lat=|lon=|viewbox|email/.test(p.url)), 'nenhum pedido leva coordenada, área da tela ou e-mail');
+    await pagina.unroute('https://nominatim.openstreetmap.org/**');
+    // Só os três erros provocados acima (HTTP 429 e a queda) podem ter entrado na lista.
+    const provocados = erros.splice(errosAntes);
+    const estranhos = provocados.filter((x) => !x.includes('nominatim.openstreetmap.org') && !x.includes('429') && !x.includes('Failed to load resource'));
+    erros.push(...estranhos);
+
+    // Link da MeshBrasil no painel do resumo e no glossário.
+    await pagina.evaluate(() => window.__lora.acoes.selecionar(null));
+    const link = pagina.locator('#lora-link-meshbrasil');
+    conferir(
+      (await link.textContent()).trim() === 'Ver nós ativos no Brasil (MeshBrasil)' &&
+        (await link.getAttribute('href')) === 'https://www.meshbrasil.com/mapa-meshtastic-brasil.html' &&
+        (await link.getAttribute('target')) === '_blank' &&
+        (await link.getAttribute('rel')) === 'noopener noreferrer',
+      'o painel do resumo deveria ter o link da MeshBrasil, abrindo em outra aba',
+    );
+    conferir((await pagina.locator('#lora-direita').textContent()).includes('O mapa mostra só quem escolheu aparecer; a rede real é maior.'), 'o link vem com a frase da especificação');
+    await captura('145-lora-link-meshbrasil');
+    await pagina.locator('#lora-aprender-glossario').click();
+    await pagina.locator('#lora-termo-rede-em-malha').scrollIntoViewIfNeeded();
+    if ((await pagina.locator('#lora-link-meshbrasil-rede-em-malha').count()) === 0) await pagina.locator('#lora-termo-rede-em-malha').click();
+    conferir((await pagina.locator('#lora-link-meshbrasil-rede-em-malha').getAttribute('href')) === 'https://www.meshbrasil.com/mapa-meshtastic-brasil.html', 'o termo "Rede em malha" do glossário deveria ter o link da MeshBrasil');
+    await captura('146-lora-glossario-meshbrasil');
+    await pagina.keyboard.press('Escape');
+  }
+
   async function verificarLora() {
     const solarAntes = await pagina.evaluate(() => JSON.stringify(window.__offgrid.estado().projeto));
     // O ambiente de rádio pede blocos de mapa e de relevo a dois serviços de fora. Aqui eles são interceptados e
@@ -3422,6 +3732,7 @@ async function principal() {
 
     await verificarLoraMapa(lora, pedidos);
     await verificarLoraRede(lora, pedidos);
+    await verificarLoraEndereco(lora);
 
     // De volta ao solar: o projeto dele está como estava.
     await pagina.locator('.ambientes a', { hasText: 'Solar' }).click();

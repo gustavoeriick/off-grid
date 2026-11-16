@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ProjetoLora, Veredito } from '../nucleo/tipos';
-import { GLOSSARIO_LORA, termoLora } from './glossario';
+import { GLOSSARIO_LORA, LINK_MESHBRASIL, termoLora } from './glossario';
 import { PORQUE_LORA } from './porque';
 import { REGRAS_DA_ANATEL } from './regras';
 import { TUTORIAL_LORA, textoDoPasso, type ContextoDoPasso, type SituacaoDaRota } from './tutorial';
@@ -33,6 +33,7 @@ const projeto: ProjetoLora = {
 function todosOsTextos(): [string, string][] {
   const textos: [string, string][] = [];
   for (const t of GLOSSARIO_LORA) textos.push([`termo ${t.id}`, t.termo], [`curto ${t.id}`, t.curto], [`texto ${t.id}`, t.texto]);
+  for (const t of GLOSSARIO_LORA) if (t.link) textos.push([`link ${t.id}`, t.link.rotulo], [`link ${t.id}`, t.link.nota ?? 'x']);
   for (const [id, p] of Object.entries(PORQUE_LORA)) textos.push([`porque ${id}`, p.texto]);
   for (const b of REGRAS_DA_ANATEL) textos.push([`regra ${b.titulo}`, b.titulo], [`regra ${b.titulo}`, b.texto]);
   textos.push(['tutorial titulo', TUTORIAL_LORA.titulo], ['tutorial paraQuem', TUTORIAL_LORA.paraQuem]);
@@ -76,6 +77,17 @@ describe('conteúdo de LoRa', () => {
       for (const t of p.termos) if (!ids.has(t)) ruins.push(`${id}: ${t}`);
     }
     expect(ruins).toEqual([]);
+  });
+
+  it('links para fora: só https, com rótulo, e o da MeshBrasil está em "rede em malha"', () => {
+    for (const t of GLOSSARIO_LORA) {
+      if (!t.link) continue;
+      expect(t.link.url.startsWith('https://')).toBe(true);
+      expect(t.link.rotulo.trim()).not.toBe('');
+    }
+    expect(LINK_MESHBRASIL.url).toBe('https://www.meshbrasil.com/mapa-meshtastic-brasil.html');
+    expect(LINK_MESHBRASIL.rotulo).toBe('Ver nós ativos no Brasil (MeshBrasil)');
+    expect(termoLora('rede-em-malha')?.link).toBe(LINK_MESHBRASIL);
   });
 
   it('termoLora acha pelo id', () => {

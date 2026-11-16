@@ -2,7 +2,7 @@
 // Tarefas L4.1 e L4.2. O conteúdo vem pronto de src/lora/conteudo/; aqui só se mostra, sempre como texto (nada de innerHTML).
 // Segue o comportamento de src/ui/aprender.ts do ambiente solar, sem importar de lá.
 
-import { GLOSSARIO_LORA, PORQUE_LORA, REGRAS_DA_ANATEL, termoLora, type SituacaoLora, type Termo } from '../conteudo';
+import { GLOSSARIO_LORA, PORQUE_LORA, REGRAS_DA_ANATEL, termoLora, type LinkDoTermo, type SituacaoLora, type Termo } from '../conteudo';
 import { el, h } from './dom';
 
 /** Texto sem acento e em minúsculas, para a busca. */
@@ -89,6 +89,16 @@ export function etiquetasDeTermos(ids: readonly string[], classe: string): HTMLE
     });
 }
 
+/** Parágrafo com o link para fora (outra aba, sem passar o endereço desta página) e a frase que vai junto. */
+export function linkParaFora(link: LinkDoTermo, id?: string): HTMLElement {
+  return h(
+    'p',
+    { class: 'lora-link-externo' },
+    link.nota ? `${link.nota} ` : null,
+    h('a', { href: link.url, target: '_blank', rel: 'noopener noreferrer', id }, link.rotulo),
+  );
+}
+
 function montarGlossario(): void {
   const busca = h('input', { type: 'search', id: 'lora-busca-glossario', placeholder: 'Buscar um termo (por exemplo, fresnel)', 'aria-label': 'Buscar no glossário' });
   const nada = h('p', { class: 'vazio', id: 'lora-glossario-vazio', hidden: true }, 'Nenhum termo encontrado.');
@@ -100,6 +110,7 @@ function montarGlossario(): void {
   for (const t of GLOSSARIO_LORA) {
     const botao = h('button', { type: 'button', class: 'termo-titulo', 'aria-expanded': 'false' }, h('strong', null, t.termo), h('span', { class: 'termo-curto' }, t.curto));
     const detalhe = h('div', { class: 'termo-detalhe', hidden: true }, h('p', null, t.texto));
+    if (t.link) detalhe.append(linkParaFora(t.link, `lora-link-meshbrasil-${t.id}`));
     const veja = etiquetasDeTermos(t.veja ?? [], 'etiqueta-termo');
     if (veja.length) detalhe.append(h('p', { class: 'veja-tambem' }, h('span', null, 'Veja também: '), ...veja));
     const raiz = h('article', { class: 'termo', id: `lora-termo-${t.id}`, 'data-termo': t.id }, botao, detalhe);

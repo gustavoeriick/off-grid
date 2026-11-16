@@ -10,6 +10,7 @@ import { montarMapaLora } from './mapa/mapa';
 import { buscaAtual, rotaEmDestaque } from './ui/busca';
 import { el } from './ui/dom';
 import { montarAprenderLora } from './ui/aprender';
+import { montarBuscaDeEndereco } from './ui/busca-de-endereco';
 import { montarPaineisLora } from './ui/paineis';
 import { montarTutorialLora } from './ui/tutorial-lora';
 import { montarTopoLora } from './ui/topo';
@@ -21,6 +22,7 @@ montarCorteLora(el<HTMLElement>('#lora-corte'), mapa);
 montarPaineisLora(el<HTMLElement>('#lora-direita'));
 montarAprenderLora();
 montarTutorialLora(el<HTMLElement>('#lora-mapa-area'));
+montarBuscaDeEndereco(el<HTMLElement>('#lora-mapa-area'), mapa);
 
 // Para a verificação e para depuração no navegador.
 (window as unknown as { __lora: unknown }).__lora = {

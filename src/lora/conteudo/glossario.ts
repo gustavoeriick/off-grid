@@ -4,6 +4,21 @@
 // Números: só os da especificação e do plano, ou contas simples a partir deles, mostradas no texto.
 // Onde a tela já tem uma dica curta (GLOSSARIO de src/lora/ui/textos.ts), o `curto` diz a mesma coisa.
 
+/** Link para fora do simulador, mostrado com uma frase de contexto. Abre em outra aba. */
+export interface LinkDoTermo {
+  rotulo: string;
+  url: string;
+  /** Frase que vai junto do link. */
+  nota?: string;
+}
+
+/** Mapa dos nós Meshtastic ativos no Brasil (MeshBrasil). O simulador não lê dados dele: só leva a pessoa até lá. Especificação: seção 7.2. */
+export const LINK_MESHBRASIL: LinkDoTermo = {
+  rotulo: 'Ver nós ativos no Brasil (MeshBrasil)',
+  url: 'https://www.meshbrasil.com/mapa-meshtastic-brasil.html',
+  nota: 'Um rádio que já existe perto de você pode servir de repetidor. O mapa mostra só quem escolheu aparecer; a rede real é maior.',
+};
+
 export interface Termo {
   id: string;
   termo: string;
@@ -13,6 +28,8 @@ export interface Termo {
   texto: string;
   /** Ids de outros termos relacionados. */
   veja?: string[];
+  /** Link para fora, quando há um que ajuda a entender o termo. */
+  link?: LinkDoTermo;
 }
 
 export const GLOSSARIO_LORA: Termo[] = [
@@ -283,6 +300,7 @@ export const GLOSSARIO_LORA: Termo[] = [
     texto:
       'Em uma rede em malha não há antena central nem operadora: cada rádio recebe e repassa as mensagens que ouve. Assim a mensagem pode ir de uma casa a outra por caminhos diferentes, conforme os rádios que estão ligados. Rádio de vizinho que esteja na mesma rede também ajuda a levar a mensagem. É isso que deixa um repetidor em lugar alto servir a várias casas ao mesmo tempo.',
     veja: ['meshtastic', 'repetidor', 'rota'],
+    link: LINK_MESHBRASIL,
   },
 
   // ------------------------------------------------------------ Regras e prática

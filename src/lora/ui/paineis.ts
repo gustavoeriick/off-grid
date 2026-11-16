@@ -6,10 +6,10 @@
 import { montarRepetidorSolar } from './painel-solar';
 import { acoesLora, assinarLora, estadoLora } from '../estado';
 import { altitudeDoPonto, assinarCalculo, modoDoProjeto, rotasEntreCasas, situacaoDaAltitude, situacaoDoEnlace, type SituacaoDoEnlace } from '../calculo';
-import type { SituacaoLora } from '../conteudo';
+import { LINK_MESHBRASIL, type SituacaoLora } from '../conteudo';
 import { avisosDaRegra, FOLGA_COM_SOBRA_DB, MODOS, REGIOES, SALTOS_MAXIMO } from '../nucleo';
 import type { Melhoria, PontoLora, Regiao, ResultadoDoEnlace } from '../nucleo/tipos';
-import { abrirTermoLora, avisoDeRegra, botaoPorQue, temTermoLora } from './aprender';
+import { abrirTermoLora, avisoDeRegra, botaoPorQue, linkParaFora, temTermoLora } from './aprender';
 import { assinarBusca, destacarRota, procurarRepetidor, rotaEmDestaque } from './busca';
 import { h, num, type Filho } from './dom';
 import { montarPainelDaBusca } from './painel-da-busca';
@@ -80,7 +80,16 @@ function distintivo(texto: string, classe: string): HTMLElement {
 
 // ---------------------------------------------------------------- Resumo da rede
 
+/** O resumo, com o link para o mapa da MeshBrasil no fim (seção 7.2 da especificação). */
 function montarResumo(): HTMLElement {
+  const caixa = montarResumoDaRede();
+  const link = linkParaFora(LINK_MESHBRASIL, 'lora-link-meshbrasil');
+  link.classList.add('lora-ajuda');
+  caixa.append(link);
+  return caixa;
+}
+
+function montarResumoDaRede(): HTMLElement {
   const projeto = estadoLora.projeto;
   const caixa = h('section', { class: 'lora-painel', 'aria-label': 'Resumo da rede' }, h('h2', null, 'Sua rede'));
   if (projeto.pontos.length === 0) {

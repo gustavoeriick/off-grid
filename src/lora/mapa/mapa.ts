@@ -44,6 +44,21 @@ export interface MapaLora {
   irPara(lat: number, lon: number, zoom: number): void;
   /** Marca no mapa um lugar do caminho do enlace (o ponteiro sobre o corte do terreno). Nulo apaga a marca. */
   marcarNoCaminho(lugar: Coordenada | null): void;
+  /** Enquadra uma caixa (graus), sem aproximar além de `zoomMaximo`. */
+  enquadrarCaixa(caixa: CaixaGeografica, zoomMaximo: number): void;
+  /**
+   * Mostra, ou tira (com nulo), a marca provisória de um lugar da busca de endereço, com os botões "Pôr uma casa aqui",
+   * "Pôr um repetidor aqui" e "Fechar". A marca não é ponto do projeto. `aoEncerrar` é chamado quando a marca some por
+   * conta própria (um dos botões, Esc ou troca de projeto), nunca quando quem chamou a tira.
+   */
+  mostrarLugarProvisorio(lugar: Coordenada | null, aoEncerrar?: () => void): void;
+}
+
+export interface CaixaGeografica {
+  sul: number;
+  norte: number;
+  oeste: number;
+  leste: number;
 }
 
 function desenhoDaCasa(): SVGElement {
@@ -120,6 +135,17 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   const marcas = h('div', { class: 'lora-marcas' });
   const marcaDoCaminho = h('div', { class: 'lora-marca-caminho', hidden: true, 'aria-hidden': 'true' });
   marcas.append(marcaDoCaminho);
+  // Lugar achado na busca de endereço: uma marca provisória com três botões. Não é ponto do projeto.
+  const botaoCasaDoLugar = h('button', { type: 'button', id: 'lora-lugar-casa' }, 'Pôr uma casa aqui');
+  const botaoRepetidorDoLugar = h('button', { type: 'button', id: 'lora-lugar-repetidor' }, 'Pôr um repetidor aqui');
+  const botaoFecharOLugar = h('button', { type: 'button', id: 'lora-lugar-fechar' }, 'Fechar');
+  const marcaDoLugar = h(
+    'div',
+    { class: 'lora-lugar', id: 'lora-lugar', hidden: true, role: 'group', 'aria-label': 'Lugar encontrado na busca' },
+    h('span', { class: 'lora-lugar-alfinete', 'aria-hidden': 'true' }),
+    h('div', { class: 'lora-lugar-cartao' }, botaoCasaDoLugar, botaoRepetidorDoLugar, botaoFecharOLugar),
+  );
+  marcas.append(marcaDoLugar);
   mapa.getCanvasContainer().append(linhas, marcas);
 
   interface DesenhoDoPonto {
@@ -146,6 +172,8 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   /** Nas ferramentas "Ligar dois pontos" e "Sugerir ponto de repetidor": o primeiro ponto clicado. */
   let origemDaLigacao: string | null = null;
   let lugarMarcado: Coordenada | null = null;
+  let lugarDaBusca: Coordenada | null = null;
+  let aoEncerrarOLugar: (() => void) | undefined;
 
   const naTela = (c: Coordenada): { x: number; y: number } => {
     const p = mapa.project([c.lon, c.lat]);
@@ -449,7 +477,36 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
       const t = naTela(lugarMarcado);
       marcaDoCaminho.style.transform = `translate(${t.x.toFixed(1)}px, ${t.y.toFixed(1)}px)`;
     }
+
+    // Marca provisória do lugar da busca de endereço.
+    marcaDoLugar.hidden = lugarDaBusca === null;
+    if (lugarDaBusca) {
+      const t = naTela(lugarDaBusca);
+      marcaDoLugar.style.transform = `translate(${t.x.toFixed(1)}px, ${t.y.toFixed(1)}px)`;
+    }
   }
+
+  /** Tira a marca do lugar da busca. Com `avisar`, conta a quem a pediu que ela se foi. */
+  function tirarOLugar(avisar: boolean): void {
+    const aviso = aoEncerrarOLugar;
+    lugarDaBusca = null;
+    aoEncerrarOLugar = undefined;
+    marcaDoLugar.hidden = true;
+    if (avisar) aviso?.();
+  }
+  isolarDoMapa(marcaDoLugar);
+  const porPontoNoLugar = (tipo: PontoLora['tipo']): void => {
+    const lugar = lugarDaBusca;
+    if (!lugar) return;
+    // A ação normal de adicionar ponto: um passo do desfazer, com o nome padrão (o nome do resultado não entra no projeto).
+    const id = acoesLora.adicionarPonto(Math.min(85, Math.max(-85, lugar.lat)), lugar.lon, tipo);
+    tirarOLugar(true);
+    definirFerramenta(null);
+    acoesLora.selecionar({ tipo: 'ponto', id });
+  };
+  botaoCasaDoLugar.addEventListener('click', () => porPontoNoLugar('casa'));
+  botaoRepetidorDoLugar.addEventListener('click', () => porPontoNoLugar('repetidor'));
+  botaoFecharOLugar.addEventListener('click', () => tirarOLugar(true));
 
   // ---------------------------------------------------------------- Ferramentas
   const botaoDeFerramenta = (id: string, rotulo: string, dica: string): HTMLButtonElement => h('button', { type: 'button', id, title: dica, 'aria-pressed': 'false' }, rotulo);
@@ -580,6 +637,10 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
   window.addEventListener('keydown', (e) => {
     const alvo = e.target as HTMLElement | null;
     if (alvo && (alvo.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(alvo.tagName))) return;
+    if (e.key === 'Escape' && lugarDaBusca !== null) {
+      tirarOLugar(true);
+      return;
+    }
     if (e.key === 'Escape' && ferramenta !== null) {
       definirFerramenta(null);
       return;
@@ -624,6 +685,7 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
     const id = projetoAberto();
     if (id === idDoProjeto) return;
     idDoProjeto = id;
+    tirarOLugar(true);
     definirFerramenta(null);
     enquadrar(false);
   });
@@ -696,6 +758,21 @@ export function montarMapaLora(raiz: HTMLElement): MapaLora {
     },
     marcarNoCaminho(lugar) {
       lugarMarcado = lugar;
+      desenhar();
+    },
+    enquadrarCaixa(c, zoomMaximo) {
+      mapa.fitBounds(
+        [
+          [c.oeste, c.sul],
+          [c.leste, c.norte],
+        ],
+        { padding: { top: 130, bottom: 60, left: 40, right: 90 }, maxZoom: zoomMaximo },
+      );
+    },
+    mostrarLugarProvisorio(lugar, aoEncerrar) {
+      // Uma marca nova toma o lugar da anterior sem avisar quem pediu: ele já sabe.
+      lugarDaBusca = lugar;
+      aoEncerrarOLugar = lugar ? aoEncerrar : undefined;
       desenhar();
     },
   };
