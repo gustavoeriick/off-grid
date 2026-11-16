@@ -1,7 +1,8 @@
 // Roteiros do modo passo a passo. Tarefa 4.1. Só dados e funções puras: nada de DOM.
 // Cada passo diz o que fazer e por quê, e traz `feito`, que olha o projeto e a análise e responde se o passo foi cumprido.
-// Os passos seguem a ordem segura de montagem (bateria primeiro, depois placas, depois a saída CA)
-// e não contradizem os avisos de src/conteudo/seguranca.ts.
+// Todos os roteiros têm duas partes (operar.md, seção 9): "Montar", com tudo desligado, e "Ligar", uma manobra por
+// passo, na ordem da seção 6 (bateria, placas, inversor, saída, aparelhos). Os cabos da bateria entram na ordem cabo
+// positivo, proteção (nasce aberta), cabo negativo. Os passos não contradizem os avisos de src/conteudo/seguranca.ts.
 
 import type { Aparelho, Catalogo, Categoria, Item, Protecao, TipoProtecao } from '../catalogo/tipos';
 import type { AnaliseCircuito, Cabo, Destaque, Dispositivo, EstadoProtecao, Projeto, Sugestao } from '../nucleo/tipos';
@@ -128,214 +129,21 @@ function semErrosNoConsultor(_projeto: Projeto, derivados: DerivadosDoPasso): bo
   return !derivados.sugestoes.some((s) => s.nivel === 'erro');
 }
 
-const PASSO_SEM_ERROS = (textoFinal: string): Passo => ({
-  id: 'sem-erros',
-  titulo: 'Confira o consultor',
-  texto:
-    'Abra a aba Consultor, à direita. Os erros (em vermelho) são problemas que precisam sumir; os alertas e as dicas são conselhos para melhorar. ' +
-    textoFinal,
-  dica: 'O simulador ajuda a aprender e a planejar, mas não substitui um eletricista habilitado: mostre o plano a um antes de comprar e instalar.',
-  feito: semErrosNoConsultor,
-});
-
-// ---------------------------------------------------------------- Meu primeiro sistema (12 V)
+// ---------------------------------------------------------------- Peças dos roteiros
 
 const bateriaDeChumbo12 = (i: Item): boolean => i.categoria === 'bateria' && i.quimica === 'chumbo' && i.tensao === 12;
 const inversor12DeOndaPura = (i: Item): boolean => ehInversorDeVerdade(i) && i.categoria === 'inversor' && i.tensaoBateria === 12 && i.onda === 'pura';
 const controladorPwm = (i: Item): boolean => i.categoria === 'controlador' && i.solar.tipo === 'pwm';
 const placaPequena = (i: Item): boolean => i.categoria === 'placa' && i.wp <= 160;
-
-export const ROTEIRO_12V: Roteiro = {
-  id: 'primeiro-sistema-12v',
-  titulo: 'Meu primeiro sistema (12 V)',
-  paraQuem:
-    'Para quem nunca montou nada: um sistema pequeno, de 12 V, com uma placa, uma bateria e uma lâmpada. Serve para aprender a ordem de montagem e o que cada peça faz.',
-  passos: [
-    {
-      id: 'bateria',
-      titulo: 'Escolha a bateria',
-      texto:
-        'A bateria guarda a energia para quando não há sol. Use uma bateria estacionária de chumbo de 12 V: ela é feita para descarregar devagar, muitas vezes, ao contrário da bateria de carro. Arraste-a do catálogo para o piso do quartinho.',
-      dica: 'Os "Ah" (ampère-hora) dizem quanta carga a bateria guarda: quanto maior, mais tempo ela sustenta os aparelhos.',
-      itemId: 'bat-moura-12mn105',
-      feito: (p, _d, c) => dispositivosQue(p, c, bateriaDeChumbo12).length > 0,
-    },
-    {
-      id: 'inversor',
-      titulo: 'Instale o inversor',
-      texto:
-        'O inversor transforma a corrente contínua (CC) da bateria, de 12 V, na corrente alternada (CA) de 127 V das tomadas. Escolha um de onda pura: a forma de onda é parecida com a da rede e serve para mais aparelhos. Arraste-o para o piso, perto da bateria.',
-      dica: 'Inversor de onda modificada é mais barato, mas pode dar problema em aparelhos com motor ou eletrônica sensível.',
-      itemId: 'inv-aiker-500-12v-110',
-      feito: (p, _d, c) => dispositivosQue(p, c, inversor12DeOndaPura).length > 0,
-    },
-    {
-      id: 'cabos-da-bateria',
-      titulo: 'Ligue a bateria ao inversor',
-      texto:
-        'Arraste de um terminal até o outro: do positivo (+) da bateria até o BAT+ do inversor, e do negativo (−) até o BAT−. Positivo com positivo e negativo com negativo: ao inverter, o inversor pode queimar. Antes de apertar o último terminal, confira com o multímetro.',
-      dica: 'A bateria pode entregar uma corrente muito alta. Ferramenta de metal encostando nos dois polos faz curto-circuito.',
-      categoria: 'cabo',
-      feito: (p, _d, c) => cabosDoBanco(p, c, ehInversorDeVerdade, { pos: 'batPos', neg: 'batNeg' }).length > 0,
-    },
-    {
-      id: 'fusivel',
-      titulo: 'Coloque o fusível no cabo positivo',
-      texto:
-        'O fusível é uma peça que queima de propósito quando passa corrente demais, antes que o cabo esquente. Numa falha, a bateria entrega muita corrente, por isso o fusível vai no cabo positivo, perto dela. Arraste o fusível do catálogo para esse cabo.',
-      dica: 'O fusível precisa ser menor do que o cabo aguenta. O consultor avisa se for maior.',
-      itemId: 'prot-fusivel-anl-100',
-      feito: (p, _d, c) => cabosDoBanco(p, c, ehInversorDeVerdade, { pos: 'batPos', neg: 'batNeg' }).some((par) => temProtecao(par.pos, c, 'fusivel')),
-    },
-    {
-      id: 'controlador',
-      titulo: 'Ligue um controlador de carga na bateria',
-      texto:
-        'O controlador de carga fica entre a placa e a bateria e cuida da carga para não estragar a bateria. O PWM é o tipo mais simples e barato. Ligue-o primeiro na bateria (BAT+ no +, BAT− no −) e só depois na placa: os manuais pedem essa ordem. O cabo positivo dele também sai do polo da bateria e precisa de proteção própria: arraste o disjuntor CC de 80 A, da aba Proteções, para esse cabo.',
-      dica: 'O PWM serve bem para placas de 12 V, como a deste roteiro. O MPPT aproveita mais as placas maiores, mas custa mais.',
-      itemId: 'ctl-pwm-30a',
-      feito: (p, _d, c) => dispositivosQue(p, c, controladorPwm).length > 0 && cabosDoBanco(p, c, controladorPwm, { pos: 'batPos', neg: 'batNeg' }).length > 0,
-    },
-    {
-      id: 'placa',
-      titulo: 'Instale a placa e ligue no controlador',
-      texto:
-        'A placa transforma a luz do sol em corrente contínua. Uma placa pequena de 12 V, de 100 ou 155 W, combina com o controlador PWM. Arraste-a para o telhado da varanda e ligue o + dela no PV+ do controlador e o − no PV−.',
-      dica: 'A placa gera tensão sempre que há luz. Por isso ela entra por último no lado das placas: só mexa nos terminais com a placa coberta ou desligada.',
-      itemId: 'placa-resun-100',
-      feito: (p, _d, c) => {
-        const controladores = dispositivosQue(p, c, controladorPwm);
-        return dispositivosQue(p, c, placaPequena).some((placa) =>
-          controladores.some((ctl) => caboEntre(p, placa.uid, 'pos', ctl.uid, 'pvPos') && caboEntre(p, placa.uid, 'neg', ctl.uid, 'pvNeg')),
-        );
-      },
-    },
-    {
-      id: 'aparelho',
-      titulo: 'Ligue um aparelho na saída do inversor',
-      texto:
-        'A saída do inversor (127 V) é onde entram os aparelhos. Comece com algo pequeno, como uma lâmpada, para ver o sistema funcionando. Arraste o aparelho para a casa e ligue o plugue dele em "Saída para os aparelhos" do inversor.',
-      dica: 'A soma da potência dos aparelhos precisa caber na potência do inversor.',
-      itemId: 'ap-lampada',
-      feito: (p, _d, c) => cabosDaSaida(p, c).some((cabo) => aparelhoNaSaida(p, c, cabo)),
-    },
-    PASSO_SEM_ERROS('Quando não houver mais erros, o sistema está montado no simulador.'),
-  ],
-};
-
-// ---------------------------------------------------------------- O plano da casa (24 V)
-
 const bateriaDeLitio24 = (i: Item): boolean => i.categoria === 'bateria' && i.quimica === 'lifepo4' && i.tensao === 24;
 const inversorHibrido3kw = (i: Item): boolean =>
   i.categoria === 'inversor' && ehInversorDeVerdade(i) && i.tensaoBateria === 24 && i.potenciaW >= 3000 && i.solar !== undefined;
+const placaGrande = (i: Item): boolean => i.categoria === 'placa' && i.wp >= 500;
 
-export const ROTEIRO_24V: Roteiro = {
-  id: 'plano-da-casa-24v',
-  titulo: 'O plano da casa (24 V)',
-  paraQuem:
-    'Para o sistema do sobrado do Gustavo no Rio: bateria de lítio de 24 V, inversor híbrido de 3.000 W e duas placas de 585 W, com as proteções que o consultor pede.',
-  passos: [
-    {
-      id: 'bateria',
-      titulo: 'Escolha a bateria de lítio de 24 V',
-      texto:
-        'A bateria guarda a energia para a noite e para a queda de luz. A de lítio (LiFePO4) de 24 V e 100 Ah guarda cerca de 2,4 kWh, é mais leve e aguenta muito mais ciclos de carga e descarga do que a de chumbo. Arraste-a para o piso do quartinho.',
-      dica: 'kWh é a unidade de energia da conta de luz. Quanto mais kWh na bateria, mais tempo a casa aguenta sem sol e sem rede.',
-      itemId: 'bat-alfx-24v-100',
-      feito: (p, _d, c) => dispositivosQue(p, c, bateriaDeLitio24).length > 0,
-    },
-    {
-      id: 'inversor',
-      titulo: 'Instale o inversor híbrido de 3.000 W',
-      texto:
-        'O inversor híbrido faz três trabalhos em um aparelho: transforma a CC da bateria em CA de 127 V, carrega a bateria com as placas e pode usar a rede da rua. Este é de 24 V e 3.000 W, o que o plano pede. Arraste-o para a parede do quartinho.',
-      dica: 'Ele precisa ser da mesma tensão da bateria (24 V) e da mesma tensão das tomadas da casa (127 V).',
-      itemId: 'inv-anenji-3kw-24v-127',
-      feito: (p, _d, c) => dispositivosQue(p, c, inversorHibrido3kw).length > 0,
-    },
-    {
-      id: 'cabos-e-fusivel',
-      titulo: 'Cabos de bateria de 35 mm² e fusível',
-      texto:
-        'Ligue o + da bateria ao BAT+ do inversor e o − ao BAT−, com cabo de bateria de 35 mm² (a seção é a "grossura" do cobre: quanto mais grosso, mais corrente o cabo aguenta). Arraste o fusível de 150 A para o cabo positivo, perto da bateria. Instale o fusível antes de ligar o cabo no inversor.',
-      dica: 'Tudo o que fica entre a bateria e o fusível está sem proteção. Deixe esse trecho o mais curto possível.',
-      itemId: 'prot-fusivel-anl-150',
-      feito: (p, _d, c) =>
-        cabosDoBanco(p, c, ehInversorDeVerdade, { pos: 'batPos', neg: 'batNeg' }).some(
-          (par) => par.pos.caboId === 'cabo-bat-35' && par.neg.caboId === 'cabo-bat-35' && temProtecao(par.pos, c, 'fusivel'),
-        ),
-    },
-    {
-      id: 'placas-em-serie',
-      titulo: 'Duas placas de 585 W em série no telhado da varanda',
-      texto:
-        'Arraste duas placas para o telhado da varanda e ligue-as em série: o + da primeira no PV+ do inversor, o − da primeira no + da segunda e o − da segunda no PV−. Por que duas? A entrada das placas deste inversor só trabalha a partir de 60 V, e uma placa sozinha entrega cerca de 38 V no calor. Em série as tensões se somam, e as duas juntas passam dos 60 V.',
-      dica: 'Em série, as tensões se somam e a corrente continua a mesma. Em paralelo, as correntes se somam e a tensão continua a mesma.',
-      itemId: 'placa-renepv-585',
-      feito: (p, d, c) => {
-        const s = d.analise.sistema;
-        if (!s) return false;
-        const placas = new Set(dispositivosQue(p, c, (i) => i.categoria === 'placa' && i.wp >= 500).map((x) => x.uid));
-        return s.fileiras.some((fila) => fila.length >= 2 && fila.every((uid) => placas.has(uid)));
-      },
-    },
-    {
-      id: 'protecoes-das-placas',
-      titulo: 'Disjuntor CC e DPS nas placas, em um quadro',
-      texto:
-        'Arraste um quadro de sobrepor para uma parede do quartinho. Depois arraste o disjuntor CC de 32 A e o DPS para um cabo das placas, de preferência o positivo: eles vão para dentro do quadro. O disjuntor CC deixa desligar as placas para a manutenção, e o DPS (protetor contra surtos) ajuda a limitar picos de tensão.',
-      dica: 'Use sempre um disjuntor feito para corrente contínua nas placas: o disjuntor comum da casa é para CA. O DPS não garante proteção contra um raio direto.',
-      itemId: 'prot-disjuntor-cc-32',
-      feito: (p, _d, c) => {
-        // Vale qualquer cabo do circuito das placas: o que chega em PV+ ou PV−, ou o que sai de uma placa.
-        const noQuadro = (tipo: 'disjuntorCC' | 'dps'): boolean =>
-          p.cabos.some((cabo) => {
-            const dasPlacas =
-              [cabo.de.terminal, cabo.para.terminal].some((t) => t === 'pvPos' || t === 'pvNeg') ||
-              [cabo.de.disp, cabo.para.disp].some((uid) => {
-                const d = p.dispositivos.find((x) => x.uid === uid);
-                return d !== undefined && itemDe(c, d)?.categoria === 'placa';
-              });
-            const quadro = cabo.quadro === null ? undefined : p.dispositivos.find((x) => x.uid === cabo.quadro);
-            return dasPlacas && temProtecao(cabo, c, tipo) && quadro !== undefined;
-          });
-        return noQuadro('disjuntorCC') && noQuadro('dps');
-      },
-    },
-    {
-      id: 'tomada-da-rede',
-      titulo: 'Ligue a tomada da rede na entrada CA',
-      texto:
-        'Ligue a "Entrada da rede" do inversor a uma tomada da rede da casa. Com a rede ligada, o inversor pode carregar a bateria e alimentar a casa quando as placas e a bateria não bastam. Se a tomada não estiver na cena, arraste-a da aba Aparelhos.',
-      dica: 'Na queda de luz o inversor para de usar a rede e vive só da bateria e das placas.',
-      itemId: 'rede-tomada',
-      feito: (p, _d, c) => {
-        const inversores = dispositivosQue(p, c, ehInversor);
-        const tomadas = dispositivosQue(p, c, (i) => i.categoria === 'rede');
-        return inversores.some((i) => tomadas.some((t) => caboEntre(p, i.uid, 'caEntrada', t.uid, 'tomada') !== undefined));
-      },
-    },
-    {
-      id: 'aparelhos-na-saida',
-      titulo: 'Os aparelhos na saída, com disjuntor',
-      texto:
-        'Arraste os aparelhos da casa e ligue o plugue de cada um em "Saída para os aparelhos" do inversor. Em cada cabo de saída, coloque um disjuntor de 16 A: ele desarma se o circuito esquentar ou entrar em curto, antes que o fio da casa sofra.',
-      dica: 'A soma da potência dos aparelhos precisa caber nos 3.000 W do inversor. Aparelhos com motor, como a geladeira, puxam mais na partida.',
-      itemId: 'prot-disjuntor-ca-16',
-      feito: (p, d, c) => {
-        const saidas = cabosDaSaida(p, c).filter((cabo) => aparelhoNaSaida(p, c, cabo));
-        return d.analise.sistema !== null && saidas.length > 0 && saidas.every((cabo) => temProtecao(cabo, c, 'disjuntorCA'));
-      },
-    },
-    PASSO_SEM_ERROS('Quando não houver mais erros, o plano está montado no simulador e dá para simular uma queda de luz.'),
-  ],
-};
-
-// ---------------------------------------------------------------- Tutorial: só o quartinho (docs/especificacao/tutorial.md)
-// Duas partes (docs/especificacao/operar.md, seção 9). "Montar": as peças nascem desligadas (fusível fora do
-// porta-fusível, disjuntor aberto, inversor e aparelho desligados). "Ligar": uma manobra por passo, na ordem da
-// seção 6: bateria, placa, inversor, aparelho. A placa só é ligada ao controlador depois de a bateria chegar a ele:
-// de dia, placa ligada a controlador sem bateria queima o controlador.
+// ---------------------------------------------------------------- Chaves, botões e realces (operar.md, seções 2 e 6)
+// As peças postas pelo usuário nascem desligadas: o fusível fora do porta-fusível, o disjuntor aberto, o inversor e o
+// aparelho desligados. Os roteiros têm duas partes: "Montar", com tudo desligado, e "Ligar", uma manobra por passo, na
+// ordem da seção 6 de operar.md.
 
 const superficie = (id: string): Destaque => ({ tipo: 'superficie', id });
 const terminal = (disp: string, t: string): Destaque => ({ tipo: 'terminal', disp, terminal: t });
@@ -354,13 +162,16 @@ const BAT = { pos: 'batPos', neg: 'batNeg' };
 /** Estado da chave de índice `i` do cabo. Campo ausente vale fechada (projeto antigo). */
 const estadoDe = (cabo: Cabo, i: number): EstadoProtecao => cabo.estados?.[i] ?? 'fechada';
 
-/** Índices das proteções de corrente do cabo: fusível e disjuntor CC. */
-function chavesDeCorrente(cabo: Cabo, catalogo: Catalogo): number[] {
+/** Índices das proteções do cabo que são de um dos tipos dados. */
+function indicesDe(cabo: Cabo, catalogo: Catalogo, tipos: TipoProtecao[]): number[] {
   return cabo.protecoes.flatMap((id, i) => {
     const p = catalogo.get(id);
-    return p?.categoria === 'protecao' && (p.tipo === 'fusivel' || p.tipo === 'disjuntorCC') ? [i] : [];
+    return p?.categoria === 'protecao' && tipos.includes(p.tipo) ? [i] : [];
   });
 }
+
+/** Índices das proteções de corrente do cabo: fusível e disjuntor CC. */
+const chavesDeCorrente = (cabo: Cabo, catalogo: Catalogo): number[] => indicesDe(cabo, catalogo, ['fusivel', 'disjuntorCC']);
 
 /** O cabo tem fusível ou disjuntor CC, e todos estão fechados. */
 function protegidoEFechado(cabo: Cabo, catalogo: Catalogo): boolean {
@@ -371,7 +182,7 @@ function protegidoEFechado(cabo: Cabo, catalogo: Catalogo): boolean {
 const algumaFechada = (cabo: Cabo, catalogo: Catalogo): boolean => chavesDeCorrente(cabo, catalogo).some((i) => estadoDe(cabo, i) === 'fechada');
 const algumaQueimada = (cabo: Cabo, catalogo: Catalogo): boolean => chavesDeCorrente(cabo, catalogo).some((i) => estadoDe(cabo, i) === 'queimada');
 
-/** Cabos do positivo da bateria ao BAT+ do inversor, com ou sem o cabo negativo ao lado (passos 4 e 5 da montagem). */
+/** Cabos do positivo da bateria ao BAT+ do inversor, com ou sem o cabo negativo ao lado (os passos do cabo positivo e do fusível). */
 function cabosPositivosAoInversor(p: Projeto, c: Catalogo): Cabo[] {
   const baterias = dispositivosQue(p, c, (i) => i.categoria === 'bateria');
   const inversores = dispositivosQue(p, c, ehInversorDeVerdade);
@@ -382,6 +193,24 @@ function cabosPositivosAoInversor(p: Projeto, c: Catalogo): Cabo[] {
 const positivosDoInversor = (p: Projeto, c: Catalogo): Cabo[] => cabosDoBanco(p, c, ehInversorDeVerdade, BAT).map((par) => par.pos);
 /** Cabos positivos da bateria ao controlador. */
 const positivosDoControlador = (p: Projeto, c: Catalogo): Cabo[] => cabosDoBanco(p, c, controladorPwm, BAT).map((par) => par.pos);
+
+/** Cabos do circuito das placas: os que chegam em PV+ ou PV−, ou saem de uma placa. */
+function cabosDasPlacas(p: Projeto, c: Catalogo): Cabo[] {
+  const placas = new Set(dispositivosQue(p, c, (i) => i.categoria === 'placa').map((d) => d.uid));
+  return p.cabos.filter(
+    (cabo) => [cabo.de.terminal, cabo.para.terminal].some((t) => t === 'pvPos' || t === 'pvNeg') || placas.has(cabo.de.disp) || placas.has(cabo.para.disp),
+  );
+}
+
+/** Cabos das placas com fusível ou disjuntor CC (a chave das placas). */
+const chavesDasPlacas = (p: Projeto, c: Catalogo): Cabo[] => cabosDasPlacas(p, c).filter((cabo) => chavesDeCorrente(cabo, c).length > 0);
+
+/** Cabos da saída do inversor que chegam ao plugue de um aparelho. */
+const cabosDosAparelhos = (p: Projeto, c: Catalogo): Cabo[] => cabosDaSaida(p, c).filter((cabo) => aparelhoNaSaida(p, c, cabo));
+
+/** Os disjuntores CA do cabo estão todos fechados (sem disjuntor CA, vale fechado). */
+const disjuntoresCaFechados = (cabo: Cabo, catalogo: Catalogo): boolean =>
+  indicesDe(cabo, catalogo, ['disjuntorCA']).every((i) => estadoDe(cabo, i) === 'fechada');
 
 /** Aparelhos com o plugue na saída de algum inversor. */
 function aparelhosNaSaida(projeto: Projeto, catalogo: Catalogo): Dispositivo[] {
@@ -400,9 +229,528 @@ const inversorFuncionando = (d: Dispositivo): boolean => d.ligado && d.falha ===
 
 const inteiro = (n: number): string => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(n);
 
-/** Os passos da parte "Montar" (1 a 9) e da parte "Ligar" (10 a 14). */
 const MONTAR = 'Parte 1: montar';
 const LIGAR = 'Parte 2: ligar';
+/** Os nomes das duas partes, como o painel os mostra. */
+export const PARTES = { montar: MONTAR, ligar: LIGAR } as const;
+
+/** Dito nos passos de ligar dos roteiros da casa, onde "Ligar o sistema" aparece (no tutorial ele não aparece). */
+const ATALHO =
+  'Atalho para quem só quer dimensionar: "Ligar o sistema", no menu Projeto, fecha as proteções e liga o inversor de uma vez, na ordem certa. O passo fica feito do mesmo jeito.';
+
+// ---------------------------------------------------------------- Passos comuns ao tutorial e aos roteiros da casa
+// Cada função devolve um passo com os textos do tutorial; o roteiro que precisa de outro texto passa o seu.
+
+interface Textos {
+  titulo?: string;
+  texto?: string;
+  dica?: string;
+}
+
+/** As peças que os passos procuram: a bateria e o inversor do roteiro. */
+interface PecasDoRoteiro {
+  bateria: (item: Item) => boolean;
+  inversor: (item: Item) => boolean;
+}
+
+const PECAS_12V: PecasDoRoteiro = { bateria: bateriaDeChumbo12, inversor: inversor12DeOndaPura };
+const PECAS_24V: PecasDoRoteiro = { bateria: bateriaDeLitio24, inversor: inversorHibrido3kw };
+
+/** Uma frase a mais no fim da dica. */
+const comAtalho = (dica: string): string => `${dica} ${ATALHO}`;
+
+function passoCaboPositivo(pecas: PecasDoRoteiro, t: Textos = {}): Passo {
+  return {
+    id: 'cabo-positivo',
+    parte: MONTAR,
+    titulo: t.titulo ?? 'Ligue o cabo positivo da bateria ao inversor',
+    texto:
+      t.texto ??
+      'Puxe um cabo do positivo (+) da bateria até o BAT+ do inversor: clique em um terminal e arraste até o outro. É o primeiro dos dois cabos da bateria: o fusível entra nele antes de o cabo negativo ser ligado. Positivo com positivo; invertido, o inversor queima.',
+    dica:
+      t.dica ??
+      'Na vida real, use ferramenta isolada, aperte um terminal de cada vez e nunca deixe metal encostar nos dois polos da bateria: ela entrega centenas de ampères em um curto.',
+    categoria: 'cabo',
+    feito: (p, _d, c) => cabosPositivosAoInversor(p, c).length > 0,
+    onde: (p, c) => {
+      const b = primeiro(p, c, pecas.bateria);
+      const i = primeiro(p, c, pecas.inversor);
+      return b && i ? ligacoesQueFaltam(p, [[b.uid, 'pos', i.uid, 'batPos']]) : [];
+    },
+  };
+}
+
+function passoFusivel(itemId: string, t: Textos = {}): Passo {
+  return {
+    id: 'fusivel',
+    parte: MONTAR,
+    titulo: t.titulo ?? 'Ponha o fusível no cabo positivo, ainda fora do lugar',
+    texto:
+      t.texto ??
+      'O fusível é o ponto fraco de propósito: ele queima quando passa corrente demais, antes de o cabo esquentar e pegar fogo. Fica no cabo positivo, o mais perto possível da bateria. Arraste o fusível do catálogo e solte em cima do cabo positivo. Ele entra fora do porta-fusível (a base em que o fusível encaixa): assim a corrente ainda não passa. Ele vai para o lugar só na hora de ligar, com o inversor desligado.',
+    dica:
+      t.dica ??
+      'Na vida real, o fusível vai no cabo antes de o cabo ser apertado no inversor. Aqui o cabo vem antes porque o fusível é solto em cima dele; fora do porta-fusível, é como se o cabo ainda não chegasse ao inversor. O manual do controlador manda não pôr o fusível no lugar enquanto se faz a fiação. Ele precisa ser menor do que o cabo aguenta; se não for, o consultor avisa. Este anúncio vem sem o porta-fusível, que é comprado à parte.',
+    itemId,
+    feito: (p, _d, c) => cabosPositivosAoInversor(p, c).some((cabo) => temProtecao(cabo, c, 'fusivel') || temProtecao(cabo, c, 'disjuntorCC')),
+    onde: (p, c) => cabosPositivosAoInversor(p, c).map((cabo) => realceDoCabo(cabo.uid)),
+  };
+}
+
+/** `tipoDeCabo`: os dois cabos da bateria precisam ser deste tipo (o roteiro de 24 V pede 35 mm²). */
+function passoCaboNegativo(pecas: PecasDoRoteiro, t: Textos = {}, tipoDeCabo?: string): Passo {
+  return {
+    id: 'cabo-negativo',
+    parte: MONTAR,
+    titulo: t.titulo ?? 'Ligue o cabo negativo da bateria ao inversor',
+    texto:
+      t.texto ??
+      'Agora puxe o segundo cabo, do negativo (−) da bateria até o BAT− do inversor. Negativo com negativo. Com o fusível fora do lugar, a corrente ainda não passa: o circuito da bateria só fecha na parte de ligar.',
+    dica:
+      t.dica ??
+      'Na vida real, este é o último terminal: antes de apertá-lo, confira a polaridade com o multímetro. A cor do cabo ajuda, mas não garante. Ferramenta isolada e um polo de cada vez.',
+    categoria: 'cabo',
+    feito: (p, _d, c) =>
+      cabosDoBanco(p, c, ehInversorDeVerdade, BAT).some((par) => tipoDeCabo === undefined || (par.pos.caboId === tipoDeCabo && par.neg.caboId === tipoDeCabo)),
+    onde: (p, c) => {
+      const b = primeiro(p, c, pecas.bateria);
+      const i = primeiro(p, c, pecas.inversor);
+      return b && i ? ligacoesQueFaltam(p, [[b.uid, 'neg', i.uid, 'batNeg']]) : [];
+    },
+  };
+}
+
+/** `lugar`: onde o texto manda pôr o controlador ("a parede do fundo"); `paredeDoRealce`: a superfície realçada. */
+function passoControlador(pecas: PecasDoRoteiro, lugar: string, paredeDoRealce: string): Passo {
+  return {
+    id: 'controlador',
+    parte: MONTAR,
+    titulo: 'Instale o controlador de carga e ligue na bateria',
+    texto:
+      'A placa não pode ser ligada direto na bateria: sem controle, ela sobrecarrega a bateria e a estraga. O controlador de carga fica entre as duas e corta a carga na hora certa. ' +
+      `Arraste-o para ${lugar} e ligue o BAT+ dele no + da bateria. Proteja esse cabo positivo antes de ligar o segundo: arraste o disjuntor CC de 80 A, da aba Proteções, para cima dele. Só então ligue o BAT− no −. ` +
+      'O disjuntor é uma chave que desliga sozinha com corrente demais e se liga de novo pela alavanca; ele entra aberto, sem deixar a corrente passar.',
+    dica: 'O controlador é ligado primeiro na bateria e só depois na placa: é pela bateria que ele descobre se o sistema é de 12 ou de 24 V. Todo cabo que sai do polo positivo da bateria precisa de proteção própria, perto dela. O controlador carrega com até 30 A, e a proteção fica acima disso com folga: no catálogo, a menor que serve é a de 80 A, que ainda protege este cabo de 35 mm² (ele aguenta 155 A). Na compra, um disjuntor CC de 40 A, se o manual do controlador indicar, faz o mesmo papel.',
+    itemId: 'ctl-pwm-30a',
+    feito: (p, _d, c) =>
+      cabosDoBanco(p, c, controladorPwm, BAT).some((par) => temProtecao(par.pos, c, 'fusivel') || temProtecao(par.pos, c, 'disjuntorCC')),
+    onde: (p, c) => {
+      const ctl = primeiro(p, c, controladorPwm);
+      const b = primeiro(p, c, pecas.bateria);
+      if (!ctl) return [superficie(paredeDoRealce)];
+      if (!b) return [];
+      // Na ordem: cabo positivo, disjuntor nele, cabo negativo.
+      const positivo = caboEntre(p, b.uid, 'pos', ctl.uid, 'batPos');
+      if (!positivo) return ligacoesQueFaltam(p, [[b.uid, 'pos', ctl.uid, 'batPos']]);
+      if (chavesDeCorrente(positivo, c).length === 0) return [realceDoCabo(positivo.uid)];
+      return ligacoesQueFaltam(p, [[b.uid, 'neg', ctl.uid, 'batNeg']]);
+    },
+  };
+}
+
+/** Último passo da montagem: é o passo 1 da seção 6 de operar.md, conferir antes de fechar qualquer chave. */
+const PASSO_CONFERIR: Passo = {
+  id: 'sem-erros',
+  parte: MONTAR,
+  titulo: 'Confira a montagem antes de ligar',
+  texto:
+    'Antes de ligar qualquer coisa, confira a montagem. Abra a aba Consultor, à direita. Os erros (em vermelho) precisam sumir, como positivo e negativo trocados; os alertas e as dicas são conselhos para melhorar. Sem erro, começa a parte de ligar.',
+  dica: 'Na vida real, esta conferência é feita com o multímetro, antes de pôr o fusível no lugar. O simulador ajuda a aprender e a planejar, mas não substitui um eletricista habilitado: mostre o plano a um antes de comprar e instalar.',
+  feito: semErrosNoConsultor,
+};
+
+function passoFecharFusivel(pecas: PecasDoRoteiro, t: Textos = {}): Passo {
+  return {
+    id: 'fechar-fusivel',
+    parte: LIGAR,
+    titulo: t.titulo ?? 'Ponha o fusível da bateria no lugar',
+    texto:
+      t.texto ??
+      'Agora é ligar, sempre nesta ordem: bateria primeiro, depois a placa, o inversor e, por último, o aparelho. O inversor está desligado, e é assim que o fusível vai para o lugar: ele só se põe e só se tira sem corrente passando. Clique no fusível, no cabo positivo entre a bateria e o inversor, para pô-lo no porta-fusível (ou clique no cabo e use "Pôr o fusível"). O inversor continua apagado: o botão dele ainda está desligado.',
+    dica:
+      t.dica ??
+      'Na vida real, ao fechar o circuito da bateria pode saltar uma faísca pequena no último contato: é o inversor se carregando por dentro, e é normal. Faísca grande, estalo forte ou cheiro de queimado não são: desligue e confira a polaridade.',
+    feito: (p, _d, c) => positivosDoInversor(p, c).some((cabo) => protegidoEFechado(cabo, c)),
+    onde: (p, c) => positivosDoInversor(p, c).map((cabo) => realceDoCabo(cabo.uid)),
+    agora: (p, c) => {
+      if (positivosDoInversor(p, c).some((cabo) => algumaQueimada(cabo, c)))
+        return 'O fusível está queimado. Desligue o inversor, clique no cabo e use "Trocar o fusível": o novo entra fora do porta-fusível, e aí você o põe no lugar.';
+      if (dispositivosQue(p, c, pecas.inversor).some((d) => d.ligado)) return 'O inversor está ligado: desligue-o pelo botão de ligar antes de pôr o fusível.';
+      return null;
+    },
+  };
+}
+
+function passoFecharControlador(t: Textos = {}): Passo {
+  return {
+    id: 'fechar-controlador',
+    parte: LIGAR,
+    titulo: 'Feche o disjuntor do controlador',
+    texto:
+      'Clique no disjuntor do cabo positivo entre a bateria e o controlador para fechá-lo (ou clique no cabo e use "Fechar"). O visor do controlador, a telinha com números, acende: é o sinal de que ele achou a bateria. Ainda sem a placa, ele mostra "sem placas ligadas".',
+    dica: t.dica ?? 'O manual do controlador manda nesta ordem: primeiro a bateria, conferir que ele acendeu, e só depois a placa.',
+    feito: (p, _d, c) => positivosDoControlador(p, c).some((cabo) => protegidoEFechado(cabo, c)),
+    onde: (p, c) => positivosDoControlador(p, c).map((cabo) => realceDoCabo(cabo.uid)),
+  };
+}
+
+/** Os cabos da placa pequena até o controlador PWM, com a bateria já presente nele. */
+function passoCabosDaPlaca(): Passo {
+  return {
+    id: 'cabos-da-placa',
+    parte: LIGAR,
+    titulo: 'Ligue a placa ao controlador, por último',
+    texto:
+      'Com a bateria já ligada ao controlador, a placa pode entrar. Puxe um cabo do + da placa, no telhado, até o PV+ do controlador, e outro do − até o PV−. Olhe o visor do controlador: ele mostra a tensão da placa, em volts (V), e a corrente de carga, em ampères (A), que é a corrente entrando na bateria.',
+    dica: 'No simulador, o cabo também sai com dois cliques: clique no terminal da placa, gire a câmera até ver o controlador pela porta e clique no terminal dele. Na vida real, cubra a placa com um pano escuro ou trabalhe sem sol ao fazer esta ligação, e nunca solte um conector da placa com o sistema funcionando.',
+    categoria: 'cabo',
+    feito: (p, _d, c) => {
+      const controladores = dispositivosQue(p, c, controladorPwm);
+      return dispositivosQue(p, c, placaPequena).some((placa) =>
+        controladores.some((ctl) => caboEntre(p, placa.uid, 'pos', ctl.uid, 'pvPos') && caboEntre(p, placa.uid, 'neg', ctl.uid, 'pvNeg')),
+      );
+    },
+    onde: (p, c) => {
+      const placa = primeiro(p, c, placaPequena);
+      const ctl = primeiro(p, c, controladorPwm);
+      return placa && ctl ? ligacoesQueFaltam(p, [[placa.uid, 'pos', ctl.uid, 'pvPos'], [placa.uid, 'neg', ctl.uid, 'pvNeg']]) : [];
+    },
+    agora: (_p, _c, m) => {
+      if (!m.solNoCeu) return 'Agora é noite no relógio do simulador: o visor mostra "sem sol", e a corrente de carga aparece quando o sol nascer. Pode seguir.';
+      if (m.bateriaCheia) return 'A bateria está cheia: o visor mostra "bateria cheia" e a corrente de carga fica em zero, porque não há para onde mandar a energia. Ela aparece quando a bateria gastar um pouco. Pode seguir.';
+      return null;
+    },
+  };
+}
+
+/** `placasNoInversor`: o inversor tem a entrada das placas embutida, e o visor dele mostra a corrente de carga. */
+function passoLigarInversor(pecas: PecasDoRoteiro, t: Textos = {}, placasNoInversor = false): Passo {
+  return {
+    id: 'ligar-inversor',
+    parte: LIGAR,
+    titulo: 'Ligue o inversor',
+    texto:
+      t.texto ??
+      'Clique no botão redondo de ligar, ao lado do inversor (ou clique no inversor e use "Ligar o inversor"). O visor do inversor acende e mostra a situação, de onde vem a energia e o consumo, que ainda é zero.',
+    dica:
+      t.dica ??
+      'O inversor só liga com a bateria ligada a ele: sem ela, o visor fica apagado. Ele entra depois da bateria e da placa, e antes dos aparelhos.',
+    feito: (p, _d, c) => dispositivosQue(p, c, pecas.inversor).some(inversorFuncionando),
+    // Não há realce de peça: o terminal da saída marca o inversor.
+    onde: (p, c) => {
+      const inv = primeiro(p, c, pecas.inversor);
+      return inv ? [terminal(inv.uid, 'caSaida')] : [];
+    },
+    agora: (p, c, m) => {
+      const inv = primeiro(p, c, pecas.inversor);
+      if (inv?.queimado !== undefined) return 'O inversor está queimado. Confira a ligação da bateria no consultor, clique no inversor e use "Consertar".';
+      if (inv?.falha !== undefined) return 'O inversor está em falha por sobrecarga (os aparelhos pediram mais do que ele aguenta). Desligue algum aparelho e use "Religar o inversor".';
+      if (!placasNoInversor) return null;
+      if (!m.solNoCeu) return 'Agora é noite no relógio do simulador: a corrente de carga das placas aparece no visor quando o sol nascer. Pode seguir.';
+      if (m.bateriaCheia) return 'A bateria está cheia: a corrente de carga fica em zero, porque não há para onde mandar a energia das placas. Ela aparece quando a bateria gastar um pouco. Pode seguir.';
+      return null;
+    },
+  };
+}
+
+/** `depoisDoHorario`: a frase que segue o aviso de que o relógio está fora do horário de uso do aparelho. */
+function passoLigarAparelho(t: Required<Textos>, depoisDoHorario: string): Passo {
+  return {
+    id: 'ligar-aparelho',
+    parte: LIGAR,
+    titulo: t.titulo,
+    texto: t.texto,
+    dica: t.dica,
+    feito: (p, _d, c) => aparelhosNaSaida(p, c).some((d) => d.ligado),
+    onde: (p, c) => aparelhosNaSaida(p, c).slice(0, 1).map((d) => terminal(d.uid, 'plug')),
+    agora: (p, c, m) => {
+      const d = aparelhosNaSaida(p, c)[0];
+      const item = d ? c.get(d.itemId) : undefined;
+      if (!d || item?.categoria !== 'aparelho') return null;
+      const uso = usoDe(d, item);
+      if (emUso(uso, m.horaLocal)) return null;
+      return `O relógio está fora do horário de uso deste aparelho (das ${uso.inicio} às ${uso.fim} h): ${depoisDoHorario}`;
+    },
+  };
+}
+
+// ---------------------------------------------------------------- Meu primeiro sistema (12 V)
+// As peças do tutorial, na casa: a placa no telhado da varanda e a lâmpada como aparelho. Mesma ordem do tutorial,
+// com a placa posta depois do controlador (ela só é ligada na parte de ligar).
+
+export const ROTEIRO_12V: Roteiro = {
+  id: 'primeiro-sistema-12v',
+  titulo: 'Meu primeiro sistema (12 V)',
+  paraQuem:
+    'Para quem nunca montou nada: um sistema pequeno, de 12 V, com uma placa, uma bateria e uma lâmpada. Primeiro você monta, com tudo desligado; depois liga, uma chave de cada vez. Serve para aprender a ordem e o que cada peça faz.',
+  passos: [
+    {
+      id: 'bateria',
+      parte: MONTAR,
+      titulo: 'Escolha a bateria',
+      texto:
+        'A bateria guarda a energia para quando não há sol. Use uma bateria estacionária de chumbo de 12 V: ela é feita para descarregar devagar, muitas vezes, ao contrário da bateria de carro. Arraste-a do catálogo para o piso do quartinho.',
+      dica: 'Os "Ah" (ampère-hora) dizem quanta carga a bateria guarda: quanto maior, mais tempo ela sustenta os aparelhos.',
+      itemId: 'bat-moura-12mn105',
+      feito: (p, _d, c) => dispositivosQue(p, c, bateriaDeChumbo12).length > 0,
+    },
+    {
+      id: 'inversor',
+      parte: MONTAR,
+      titulo: 'Instale o inversor',
+      texto:
+        'O inversor transforma a corrente contínua (CC) da bateria, de 12 V, na corrente alternada (CA) de 127 V das tomadas. Escolha um de onda pura: a forma de onda é parecida com a da rede e serve para mais aparelhos. Arraste-o para o piso, perto da bateria. Ele chega desligado.',
+      dica: 'Inversor de onda modificada é mais barato, mas pode dar problema em aparelhos com motor ou eletrônica sensível.',
+      itemId: 'inv-aiker-500-12v-110',
+      feito: (p, _d, c) => dispositivosQue(p, c, inversor12DeOndaPura).length > 0,
+    },
+    passoCaboPositivo(PECAS_12V),
+    passoFusivel('prot-fusivel-anl-100'),
+    passoCaboNegativo(PECAS_12V),
+    passoControlador(PECAS_12V, 'uma parede do quartinho', 'parede-quartinho-fundo'),
+    {
+      id: 'placa',
+      parte: MONTAR,
+      titulo: 'Ponha a placa no telhado da varanda',
+      texto:
+        'A placa transforma a luz do sol em corrente contínua. Uma placa pequena de 12 V, de 100 ou 155 W, combina com o controlador PWM. Arraste-a para o telhado da varanda. Por enquanto ela só fica no lugar: os cabos dela são os últimos a entrar, depois de a bateria chegar ao controlador.',
+      dica: 'A placa gera tensão sempre que há luz, mesmo sem nada ligado. Por isso, na vida real, ela é ligada por último e fica coberta enquanto se mexe nos cabos.',
+      itemId: 'placa-resun-100',
+      feito: (p, _d, c) => dispositivosQue(p, c, placaPequena).length > 0,
+    },
+    {
+      id: 'aparelho',
+      parte: MONTAR,
+      titulo: 'Ligue um aparelho na saída do inversor',
+      texto:
+        'A saída do inversor (127 V) é onde entram os aparelhos. Comece com algo pequeno, como uma lâmpada. Arraste o aparelho para a casa e ligue o plugue dele em "Saída para os aparelhos" do inversor. Deixe-o desligado por enquanto: os aparelhos são os últimos a ligar.',
+      dica: 'A soma da potência dos aparelhos precisa caber na potência do inversor.',
+      itemId: 'ap-lampada',
+      feito: (p, _d, c) => aparelhosNaSaida(p, c).length > 0,
+    },
+    PASSO_CONFERIR,
+    passoFecharFusivel(PECAS_12V, {
+      dica: comAtalho(
+        'Na vida real, ao fechar o circuito da bateria pode saltar uma faísca pequena no último contato: é o inversor se carregando por dentro, e é normal. Faísca grande, estalo forte ou cheiro de queimado não são: desligue e confira a polaridade.',
+      ),
+    }),
+    passoFecharControlador({ dica: comAtalho('O manual do controlador manda nesta ordem: primeiro a bateria, conferir que ele acendeu, e só depois a placa.') }),
+    passoCabosDaPlaca(),
+    passoLigarInversor(PECAS_12V, {
+      dica: comAtalho('O inversor só liga com a bateria ligada a ele: sem ela, o visor fica apagado. Ele entra depois da bateria e da placa, e antes dos aparelhos.'),
+    }),
+    passoLigarAparelho(
+      {
+        titulo: 'Ligue o aparelho',
+        texto:
+          'Por último, os aparelhos, um de cada vez. Clique no botão redondo de ligar, ao lado do aparelho (ou clique nele e use "Ligar"). No visor do inversor, o consumo sobe; nos mostradores à direita, a energia vem da placa ou da bateria.',
+        dica: 'A soma da potência dos aparelhos ligados ao mesmo tempo precisa caber na potência do inversor. "Ligar o sistema" não liga os aparelhos: eles se ligam sempre com a mão.',
+      },
+      'ligado, ele só consome dentro desse horário. Pode seguir.',
+    ),
+  ],
+};
+
+// ---------------------------------------------------------------- O plano da casa (24 V)
+// Inversor híbrido com a entrada das placas embutida: não há controlador. Ordem de ligar da seção 6 de operar.md, a
+// mesma de "Ligar o sistema": bateria, disjuntor das placas, inversor, disjuntores da saída, entrada da rede e, por
+// último, os aparelhos.
+
+export const ROTEIRO_24V: Roteiro = {
+  id: 'plano-da-casa-24v',
+  titulo: 'O plano da casa (24 V)',
+  paraQuem:
+    'Para o sistema do sobrado do Gustavo no Rio: bateria de lítio de 24 V, inversor híbrido de 3.000 W e duas placas de 585 W, com as proteções que o consultor pede. Primeiro você monta, com tudo desligado; depois liga, uma chave de cada vez.',
+  passos: [
+    {
+      id: 'bateria',
+      parte: MONTAR,
+      titulo: 'Escolha a bateria de lítio de 24 V',
+      texto:
+        'A bateria guarda a energia para a noite e para a queda de luz. A de lítio (LiFePO4) de 24 V e 100 Ah guarda cerca de 2,4 kWh, é mais leve e aguenta muito mais ciclos de carga e descarga do que a de chumbo. Arraste-a para o piso do quartinho.',
+      dica: 'kWh é a unidade de energia da conta de luz. Quanto mais kWh na bateria, mais tempo a casa aguenta sem sol e sem rede.',
+      itemId: 'bat-alfx-24v-100',
+      feito: (p, _d, c) => dispositivosQue(p, c, bateriaDeLitio24).length > 0,
+    },
+    {
+      id: 'inversor',
+      parte: MONTAR,
+      titulo: 'Instale o inversor híbrido de 3.000 W',
+      texto:
+        'O inversor híbrido faz três trabalhos em um aparelho: transforma a CC da bateria em CA de 127 V, carrega a bateria com as placas e pode usar a rede da rua. Este é de 24 V e 3.000 W, o que o plano pede. Arraste-o para a parede do quartinho. Ele chega desligado.',
+      dica: 'Ele precisa ser da mesma tensão da bateria (24 V) e da mesma tensão das tomadas da casa (127 V).',
+      itemId: 'inv-anenji-3kw-24v-127',
+      feito: (p, _d, c) => dispositivosQue(p, c, inversorHibrido3kw).length > 0,
+    },
+    passoCaboPositivo(PECAS_24V, {
+      texto:
+        'Puxe um cabo do positivo (+) da bateria até o BAT+ do inversor: clique em um terminal e arraste até o outro. O simulador põe cabo de bateria de 35 mm², o que o plano pede (a seção é a "grossura" do cobre: quanto mais grosso, mais corrente o cabo aguenta). É o primeiro dos dois cabos da bateria: o fusível entra nele antes de o cabo negativo ser ligado. Positivo com positivo; invertido, o inversor queima.',
+    }),
+    passoFusivel('prot-fusivel-anl-150', {
+      texto:
+        'O fusível é o ponto fraco de propósito: ele queima quando passa corrente demais, antes de o cabo esquentar e pegar fogo. Arraste o fusível de 150 A do catálogo e solte em cima do cabo positivo, o mais perto possível da bateria. Ele entra fora do porta-fusível (a base em que o fusível encaixa): assim a corrente ainda não passa. Ele vai para o lugar só na hora de ligar, com o inversor desligado.',
+      dica: 'Tudo o que fica entre a bateria e o fusível está sem proteção: deixe esse trecho o mais curto possível. Na vida real, o fusível vai no cabo antes de o cabo ser apertado no inversor; aqui o cabo vem antes porque o fusível é solto em cima dele. Ele precisa ser menor do que o cabo aguenta; se não for, o consultor avisa.',
+    }),
+    passoCaboNegativo(
+      PECAS_24V,
+      {
+        texto:
+          'Agora puxe o segundo cabo, do negativo (−) da bateria até o BAT− do inversor. Negativo com negativo. Com o fusível fora do lugar, a corrente ainda não passa: o circuito da bateria só fecha na parte de ligar. Os dois cabos da bateria precisam ser de 35 mm²: se um estiver mais fino, clique nele e troque o tipo de cabo.',
+      },
+      'cabo-bat-35',
+    ),
+    {
+      id: 'placas',
+      parte: MONTAR,
+      titulo: 'Duas placas de 585 W em série no telhado da varanda',
+      texto:
+        'Arraste duas placas para o telhado da varanda e ligue uma na outra: o − da primeira no + da segunda. Isso é ligar em série. Por que duas? A entrada das placas deste inversor só trabalha a partir de 60 V, e uma placa sozinha entrega cerca de 38 V no calor. Em série as tensões se somam, e as duas juntas passam dos 60 V. Os cabos até o inversor vêm nos próximos passos.',
+      dica: 'Em série, as tensões se somam e a corrente continua a mesma. Em paralelo, as correntes se somam e a tensão continua a mesma. Na vida real, duas placas em série passam de 100 V com luz: faça as emendas com as placas cobertas.',
+      itemId: 'placa-renepv-585',
+      feito: (p, _d, c) => {
+        const placas = dispositivosQue(p, c, placaGrande);
+        return placas.some((a) => placas.some((b) => a !== b && caboEntre(p, a.uid, 'neg', b.uid, 'pos') !== undefined));
+      },
+    },
+    {
+      id: 'cabo-positivo-das-placas',
+      parte: MONTAR,
+      titulo: 'Ligue o + das placas ao PV+ do inversor',
+      texto:
+        'Puxe um cabo do + da primeira placa até o PV+ do inversor, a entrada das placas. É o primeiro dos dois cabos das placas: o disjuntor entra nele antes de o cabo negativo ser ligado, como foi com o fusível da bateria.',
+      dica: 'No simulador, o cabo também sai com dois cliques: clique no terminal da placa, gire a câmera até ver o inversor pela porta do quartinho e clique no terminal dele.',
+      categoria: 'cabo',
+      feito: (p, _d, c) => {
+        const inversores = dispositivosQue(p, c, inversorHibrido3kw);
+        return dispositivosQue(p, c, placaGrande).some((placa) => inversores.some((i) => caboEntre(p, placa.uid, 'pos', i.uid, 'pvPos') !== undefined));
+      },
+    },
+    {
+      id: 'protecoes-das-placas',
+      parte: MONTAR,
+      titulo: 'Disjuntor CC e DPS nas placas, em um quadro',
+      texto:
+        'Arraste um quadro de sobrepor para uma parede do quartinho. Depois arraste o disjuntor CC de 32 A e o DPS para o cabo positivo das placas: eles vão para dentro do quadro. O disjuntor CC é a chave das placas: ele entra aberto e só fecha na hora de ligar. O DPS (protetor contra surtos) ajuda a limitar picos de tensão.',
+      dica: 'Use sempre um disjuntor feito para corrente contínua nas placas: o disjuntor comum da casa é para CA. O DPS não garante proteção contra um raio direto.',
+      itemId: 'prot-disjuntor-cc-32',
+      feito: (p, _d, c) => {
+        // Vale qualquer cabo do circuito das placas: o que chega em PV+ ou PV−, ou o que sai de uma placa.
+        const noQuadro = (tipo: 'disjuntorCC' | 'dps'): boolean =>
+          cabosDasPlacas(p, c).some((cabo) => {
+            const quadro = cabo.quadro === null ? undefined : p.dispositivos.find((x) => x.uid === cabo.quadro);
+            return temProtecao(cabo, c, tipo) && quadro !== undefined;
+          });
+        return noQuadro('disjuntorCC') && noQuadro('dps');
+      },
+    },
+    {
+      id: 'cabo-negativo-das-placas',
+      parte: MONTAR,
+      titulo: 'Ligue o − das placas ao PV− do inversor',
+      texto:
+        'Agora puxe o cabo do − da segunda placa até o PV− do inversor. Com o disjuntor aberto, a corrente das placas ainda não chega ao inversor: ela só passa na parte de ligar.',
+      dica: 'Na vida real, com luz há tensão nos fios das placas mesmo com tudo desligado: faça esta ligação com as placas cobertas e confira a polaridade com o multímetro antes de fechar o disjuntor.',
+      categoria: 'cabo',
+      feito: (p, d, c) => {
+        const s = d.analise.sistema;
+        if (!s) return false;
+        const placas = new Set(dispositivosQue(p, c, placaGrande).map((x) => x.uid));
+        return s.fileiras.some((fila) => fila.length >= 2 && fila.every((uid) => placas.has(uid)));
+      },
+    },
+    {
+      id: 'aparelhos-na-saida',
+      parte: MONTAR,
+      titulo: 'Os aparelhos na saída, com disjuntor',
+      texto:
+        'Arraste os aparelhos da casa e ligue o plugue de cada um em "Saída para os aparelhos" do inversor. Em cada cabo de saída, coloque um disjuntor de 16 A: ele desarma se o circuito esquentar ou entrar em curto, antes que o fio da casa sofra. Os aparelhos entram desligados e o disjuntor entra aberto: tudo isso liga no fim.',
+      dica: 'A soma da potência dos aparelhos precisa caber nos 3.000 W do inversor. Aparelhos com motor, como a geladeira, puxam mais na partida.',
+      itemId: 'prot-disjuntor-ca-16',
+      feito: (p, d, c) => {
+        const saidas = cabosDosAparelhos(p, c);
+        return d.analise.sistema !== null && saidas.length > 0 && saidas.every((cabo) => temProtecao(cabo, c, 'disjuntorCA'));
+      },
+    },
+    PASSO_CONFERIR,
+    passoFecharFusivel(PECAS_24V, {
+      texto:
+        'Agora é ligar, sempre nesta ordem: bateria primeiro, depois as placas, o inversor, a saída, a rede e, por último, os aparelhos. O inversor está desligado, e é assim que o fusível vai para o lugar: ele só se põe e só se tira sem corrente passando. Clique no fusível, no cabo positivo entre a bateria e o inversor, para pô-lo no porta-fusível (ou clique no cabo e use "Pôr o fusível"). O inversor continua apagado: o botão dele ainda está desligado.',
+      dica: comAtalho(
+        'Na vida real, ao fechar o circuito da bateria pode saltar uma faísca pequena no último contato: é o inversor se carregando por dentro, e é normal. Faísca grande, estalo forte ou cheiro de queimado não são: desligue e confira a polaridade.',
+      ),
+    }),
+    {
+      id: 'fechar-placas',
+      parte: LIGAR,
+      titulo: 'Feche o disjuntor das placas',
+      texto:
+        'Clique no disjuntor CC das placas, no quadro, para fechá-lo (ou clique no cabo positivo das placas e use "Fechar"). Com o inversor ainda desligado, nada muda no visor: no simulador, este inversor só carrega a bateria com as placas quando está ligado. Simplificação do simulador: alguns inversores híbridos carregam a bateria mesmo desligados.',
+      dica: comAtalho('A bateria vem primeiro e as placas depois, como mandam os manuais. Para desligar, é o contrário: abra este disjuntor antes de tirar o fusível da bateria.'),
+      feito: (p, _d, c) => {
+        const cabos = chavesDasPlacas(p, c);
+        return cabos.length > 0 && cabos.every((cabo) => protegidoEFechado(cabo, c));
+      },
+      onde: (p, c) => chavesDasPlacas(p, c).filter((cabo) => !protegidoEFechado(cabo, c)).map((cabo) => realceDoCabo(cabo.uid)),
+    },
+    passoLigarInversor(
+      PECAS_24V,
+      {
+        texto:
+          'Clique no botão redondo de ligar, ao lado do inversor (ou clique no inversor e use "Ligar o inversor"). O visor do inversor acende e mostra a situação, de onde vem a energia e o consumo, que ainda é zero. A última linha mostra a tensão das placas, em volts (V), e a corrente de carga, em ampères (A): a corrente que entra na bateria.',
+        dica: comAtalho('O inversor só liga com a bateria ligada a ele: sem ela, o visor fica apagado. Ele entra depois da bateria e das placas, e antes da saída e dos aparelhos.'),
+      },
+      true,
+    ),
+    {
+      id: 'fechar-saida',
+      parte: LIGAR,
+      titulo: 'Feche os disjuntores da saída',
+      texto:
+        'Clique em cada disjuntor de 16 A, nos cabos dos aparelhos, para fechá-lo (ou clique no cabo e use "Fechar"). Eles levam os 127 V do inversor até os aparelhos. Os aparelhos continuam desligados: eles são os últimos.',
+      dica: comAtalho(
+        'Na vida real, depois do inversor a tensão é a mesma da tomada da rua e o choque pode matar: antes de mexer nas tomadas do sistema, abra este disjuntor e desligue o inversor.',
+      ),
+      feito: (p, _d, c) => {
+        const cabos = cabosDosAparelhos(p, c);
+        return cabos.length > 0 && cabos.every((cabo) => disjuntoresCaFechados(cabo, c));
+      },
+      onde: (p, c) => cabosDosAparelhos(p, c).filter((cabo) => !disjuntoresCaFechados(cabo, c)).map((cabo) => realceDoCabo(cabo.uid)),
+    },
+    {
+      id: 'tomada-da-rede',
+      parte: LIGAR,
+      titulo: 'Ligue a tomada da rede na entrada CA',
+      texto:
+        'Ligue a "Entrada da rede" do inversor a uma tomada da rede da casa. Com a rede ligada, o inversor pode carregar a bateria e alimentar a casa quando as placas e a bateria não bastam. A rede é mais uma fonte de energia: ela entra depois que o resto está ligado e é a primeira a sair quando o sistema é desligado. Se a tomada não estiver na cena, arraste-a da aba Aparelhos.',
+      dica: 'Na queda de luz o inversor para de usar a rede e vive só da bateria e das placas. É só entrada: a saída do inversor nunca vai na rede da casa.',
+      itemId: 'rede-tomada',
+      feito: (p, _d, c) => {
+        const inversores = dispositivosQue(p, c, ehInversor);
+        const tomadas = dispositivosQue(p, c, (i) => i.categoria === 'rede');
+        return inversores.some((i) => tomadas.some((t) => caboEntre(p, i.uid, 'caEntrada', t.uid, 'tomada') !== undefined));
+      },
+    },
+    {
+      id: 'ligar-aparelhos',
+      parte: LIGAR,
+      titulo: 'Ligue os aparelhos, um de cada vez',
+      texto:
+        'Por último, os aparelhos, um de cada vez. Clique no botão redondo de ligar, ao lado de cada um (ou clique no aparelho e use "Ligar"). No visor do inversor, o consumo sobe; nos mostradores à direita, a energia vem da rede, das placas ou da bateria.',
+      dica: 'A soma da potência dos aparelhos ligados ao mesmo tempo precisa caber nos 3.000 W do inversor. "Ligar o sistema" não liga os aparelhos: eles se ligam sempre com a mão.',
+      feito: (p, _d, c) => {
+        const aparelhos = aparelhosNaSaida(p, c);
+        return aparelhos.length > 0 && aparelhos.every((d) => d.ligado);
+      },
+      onde: (p, c) => aparelhosNaSaida(p, c).filter((d) => !d.ligado).slice(0, 1).map((d) => terminal(d.uid, 'plug')),
+    },
+  ],
+};
+
+// ---------------------------------------------------------------- Tutorial: só o quartinho (docs/especificacao/tutorial.md)
+// Duas partes (docs/especificacao/operar.md, seção 9). "Montar": as peças nascem desligadas (fusível fora do
+// porta-fusível, disjuntor aberto, inversor e aparelho desligados). "Ligar": uma manobra por passo, na ordem da
+// seção 6: bateria, placa, inversor, aparelho. A placa só é ligada ao controlador depois de a bateria chegar a ele:
+// de dia, placa ligada a controlador sem bateria queima o controlador.
 
 export const ROTEIRO_TUTORIAL: Roteiro = {
   id: 'tutorial-quartinho',
@@ -444,69 +792,10 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
       feito: (p, _d, c) => dispositivosQue(p, c, inversor12DeOndaPura).length > 0,
       onde: () => [superficie('piso-quartinho')],
     },
-    {
-      id: 'cabo-positivo',
-      parte: MONTAR,
-      titulo: 'Ligue o cabo positivo da bateria ao inversor',
-      texto:
-        'Puxe um cabo do positivo (+) da bateria até o BAT+ do inversor: clique em um terminal e arraste até o outro. É o primeiro dos dois cabos da bateria: o fusível entra nele antes de o cabo negativo ser ligado. Positivo com positivo; invertido, o inversor queima.',
-      dica: 'Na vida real, use ferramenta isolada, aperte um terminal de cada vez e nunca deixe metal encostar nos dois polos da bateria: ela entrega centenas de ampères em um curto.',
-      categoria: 'cabo',
-      feito: (p, _d, c) => cabosPositivosAoInversor(p, c).length > 0,
-      onde: (p, c) => {
-        const b = primeiro(p, c, bateriaDeChumbo12);
-        const i = primeiro(p, c, inversor12DeOndaPura);
-        return b && i ? ligacoesQueFaltam(p, [[b.uid, 'pos', i.uid, 'batPos']]) : [];
-      },
-    },
-    {
-      id: 'fusivel',
-      parte: MONTAR,
-      titulo: 'Ponha o fusível no cabo positivo, ainda fora do lugar',
-      texto:
-        'O fusível é o ponto fraco de propósito: ele queima quando passa corrente demais, antes de o cabo esquentar e pegar fogo. Fica no cabo positivo, o mais perto possível da bateria. Arraste o fusível do catálogo e solte em cima do cabo positivo. Ele entra fora do porta-fusível (a base em que o fusível encaixa): assim a corrente ainda não passa. Ele vai para o lugar só na hora de ligar, com o inversor desligado.',
-      dica: 'Na vida real, o fusível vai no cabo antes de o cabo ser apertado no inversor. Aqui o cabo vem antes porque o fusível é solto em cima dele; fora do porta-fusível, é como se o cabo ainda não chegasse ao inversor. O manual do controlador manda não pôr o fusível no lugar enquanto se faz a fiação. Ele precisa ser menor do que o cabo aguenta; se não for, o consultor avisa. Este anúncio vem sem o porta-fusível, que é comprado à parte.',
-      itemId: 'prot-fusivel-anl-100',
-      feito: (p, _d, c) => cabosPositivosAoInversor(p, c).some((cabo) => temProtecao(cabo, c, 'fusivel') || temProtecao(cabo, c, 'disjuntorCC')),
-      onde: (p, c) => cabosPositivosAoInversor(p, c).map((cabo) => realceDoCabo(cabo.uid)),
-    },
-    {
-      id: 'cabo-negativo',
-      parte: MONTAR,
-      titulo: 'Ligue o cabo negativo da bateria ao inversor',
-      texto:
-        'Agora puxe o segundo cabo, do negativo (−) da bateria até o BAT− do inversor. Negativo com negativo. Com o fusível fora do lugar, a corrente ainda não passa: o circuito da bateria só fecha na parte de ligar.',
-      dica: 'Na vida real, este é o último terminal: antes de apertá-lo, confira a polaridade com o multímetro. A cor do cabo ajuda, mas não garante. Ferramenta isolada e um polo de cada vez.',
-      categoria: 'cabo',
-      feito: (p, _d, c) => cabosDoBanco(p, c, ehInversorDeVerdade, BAT).length > 0,
-      onde: (p, c) => {
-        const b = primeiro(p, c, bateriaDeChumbo12);
-        const i = primeiro(p, c, inversor12DeOndaPura);
-        return b && i ? ligacoesQueFaltam(p, [[b.uid, 'neg', i.uid, 'batNeg']]) : [];
-      },
-    },
-    {
-      id: 'controlador',
-      parte: MONTAR,
-      titulo: 'Instale o controlador de carga e ligue na bateria',
-      texto:
-        'A placa não pode ser ligada direto na bateria: sem controle, ela sobrecarrega a bateria e a estraga. O controlador de carga fica entre as duas e corta a carga na hora certa. Arraste-o para a parede do fundo e ligue o BAT+ dele no + da bateria. Proteja esse cabo positivo antes de ligar o segundo: arraste o disjuntor CC de 80 A, da aba Proteções, para cima dele. Só então ligue o BAT− no −. O disjuntor é uma chave que desliga sozinha com corrente demais e se liga de novo pela alavanca; ele entra aberto, sem deixar a corrente passar.',
-      dica: 'O controlador é ligado primeiro na bateria e só depois na placa: é pela bateria que ele descobre se o sistema é de 12 ou de 24 V. Todo cabo que sai do polo positivo da bateria precisa de proteção própria, perto dela. O controlador carrega com até 30 A, e a proteção fica acima disso com folga: no catálogo, a menor que serve é a de 80 A, que ainda protege este cabo de 35 mm² (ele aguenta 155 A). Na compra, um disjuntor CC de 40 A, se o manual do controlador indicar, faz o mesmo papel.',
-      itemId: 'ctl-pwm-30a',
-      feito: (p, _d, c) =>
-        cabosDoBanco(p, c, controladorPwm, BAT).some((par) => temProtecao(par.pos, c, 'fusivel') || temProtecao(par.pos, c, 'disjuntorCC')),
-      onde: (p, c) => {
-        const ctl = primeiro(p, c, controladorPwm);
-        const b = primeiro(p, c, bateriaDeChumbo12);
-        if (!ctl) return [superficie('parede-quartinho-fundo')];
-        if (!b) return [];
-        // Na ordem: cabo positivo, disjuntor nele, cabo negativo.
-        const positivo = caboEntre(p, b.uid, 'pos', ctl.uid, 'batPos');
-        if (!positivo) return ligacoesQueFaltam(p, [[b.uid, 'pos', ctl.uid, 'batPos']]);
-        if (chavesDeCorrente(positivo, c).length === 0) return [realceDoCabo(positivo.uid)];
-        return ligacoesQueFaltam(p, [[b.uid, 'neg', ctl.uid, 'batNeg']]);
-      },
-    },
+    passoCaboPositivo(PECAS_12V),
+    passoFusivel('prot-fusivel-anl-100'),
+    passoCaboNegativo(PECAS_12V),
+    passoControlador(PECAS_12V, 'a parede do fundo', 'parede-quartinho-fundo'),
     {
       id: 'aparelho',
       parte: MONTAR,
@@ -523,104 +812,20 @@ export const ROTEIRO_TUTORIAL: Roteiro = {
         return inv ? ligacoesQueFaltam(p, [[aparelho.uid, 'plug', inv.uid, 'caSaida']]) : [];
       },
     },
-    {
-      id: 'sem-erros',
-      parte: MONTAR,
-      titulo: 'Confira a montagem antes de ligar',
-      texto:
-        'Antes de ligar qualquer coisa, confira a montagem. Abra a aba Consultor, à direita. Os erros (em vermelho) precisam sumir, como positivo e negativo trocados; os alertas e as dicas são conselhos para melhorar. Sem erro, começa a parte de ligar.',
-      dica: 'Na vida real, esta conferência é feita com o multímetro, antes de pôr o fusível no lugar. O simulador ajuda a aprender e a planejar, mas não substitui um eletricista habilitado: mostre o plano a um antes de comprar e instalar.',
-      feito: semErrosNoConsultor,
-    },
-    {
-      id: 'fechar-fusivel',
-      parte: LIGAR,
-      titulo: 'Ponha o fusível da bateria no lugar',
-      texto:
-        'Agora é ligar, sempre nesta ordem: bateria primeiro, depois a placa, o inversor e, por último, o aparelho. O inversor está desligado, e é assim que o fusível vai para o lugar: ele só se põe e só se tira sem corrente passando. Clique no fusível, no cabo positivo entre a bateria e o inversor, para pô-lo no porta-fusível (ou clique no cabo e use "Pôr o fusível"). O inversor continua apagado: o botão dele ainda está desligado.',
-      dica: 'Na vida real, ao fechar o circuito da bateria pode saltar uma faísca pequena no último contato: é o inversor se carregando por dentro, e é normal. Faísca grande, estalo forte ou cheiro de queimado não são: desligue e confira a polaridade.',
-      feito: (p, _d, c) => positivosDoInversor(p, c).some((cabo) => protegidoEFechado(cabo, c)),
-      onde: (p, c) => positivosDoInversor(p, c).map((cabo) => realceDoCabo(cabo.uid)),
-      agora: (p, c) => {
-        if (positivosDoInversor(p, c).some((cabo) => algumaQueimada(cabo, c)))
-          return 'O fusível está queimado. Desligue o inversor, clique no cabo e use "Trocar o fusível": o novo entra fora do porta-fusível, e aí você o põe no lugar.';
-        if (dispositivosQue(p, c, inversor12DeOndaPura).some((d) => d.ligado)) return 'O inversor está ligado: desligue-o pelo botão de ligar antes de pôr o fusível.';
-        return null;
+    PASSO_CONFERIR,
+    passoFecharFusivel(PECAS_12V),
+    passoFecharControlador(),
+    passoCabosDaPlaca(),
+    passoLigarInversor(PECAS_12V),
+    passoLigarAparelho(
+      {
+        titulo: 'Ligue o ventilador',
+        texto:
+          'Por último, os aparelhos, um de cada vez. Clique no botão redondo de ligar, ao lado do ventilador (ou clique no ventilador e use "Ligar"). No visor do inversor, o consumo sobe; nos mostradores à direita, a energia vem da placa ou da bateria.',
+        dica: 'A soma da potência dos aparelhos ligados ao mesmo tempo precisa caber nos 500 W do inversor.',
       },
-    },
-    {
-      id: 'fechar-controlador',
-      parte: LIGAR,
-      titulo: 'Feche o disjuntor do controlador',
-      texto:
-        'Clique no disjuntor do cabo positivo entre a bateria e o controlador para fechá-lo (ou clique no cabo e use "Fechar"). O visor do controlador, a telinha com números, acende: é o sinal de que ele achou a bateria. Ainda sem a placa, ele mostra "sem placas ligadas".',
-      dica: 'O manual do controlador manda nesta ordem: primeiro a bateria, conferir que ele acendeu, e só depois a placa.',
-      feito: (p, _d, c) => positivosDoControlador(p, c).some((cabo) => protegidoEFechado(cabo, c)),
-      onde: (p, c) => positivosDoControlador(p, c).map((cabo) => realceDoCabo(cabo.uid)),
-    },
-    {
-      id: 'cabos-da-placa',
-      parte: LIGAR,
-      titulo: 'Ligue a placa ao controlador, por último',
-      texto:
-        'Com a bateria já ligada ao controlador, a placa pode entrar. Puxe um cabo do + da placa, no telhado, até o PV+ do controlador, e outro do − até o PV−. Olhe o visor do controlador: ele mostra a tensão da placa, em volts (V), e a corrente de carga, em ampères (A), que é a corrente entrando na bateria.',
-      dica: 'No simulador, o cabo também sai com dois cliques: clique no terminal da placa, gire a câmera até ver o controlador pela porta e clique no terminal dele. Na vida real, cubra a placa com um pano escuro ou trabalhe sem sol ao fazer esta ligação, e nunca solte um conector da placa com o sistema funcionando.',
-      categoria: 'cabo',
-      feito: (p, _d, c) => {
-        const controladores = dispositivosQue(p, c, controladorPwm);
-        return dispositivosQue(p, c, placaPequena).some((placa) =>
-          controladores.some((ctl) => caboEntre(p, placa.uid, 'pos', ctl.uid, 'pvPos') && caboEntre(p, placa.uid, 'neg', ctl.uid, 'pvNeg')),
-        );
-      },
-      onde: (p, c) => {
-        const placa = primeiro(p, c, placaPequena);
-        const ctl = primeiro(p, c, controladorPwm);
-        return placa && ctl ? ligacoesQueFaltam(p, [[placa.uid, 'pos', ctl.uid, 'pvPos'], [placa.uid, 'neg', ctl.uid, 'pvNeg']]) : [];
-      },
-      agora: (_p, _c, m) => {
-        if (!m.solNoCeu) return 'Agora é noite no relógio do simulador: o visor mostra "sem sol", e a corrente de carga aparece quando o sol nascer. Pode seguir.';
-        if (m.bateriaCheia) return 'A bateria está cheia: o visor mostra "bateria cheia" e a corrente de carga fica em zero, porque não há para onde mandar a energia. Ela aparece quando a bateria gastar um pouco. Pode seguir.';
-        return null;
-      },
-    },
-    {
-      id: 'ligar-inversor',
-      parte: LIGAR,
-      titulo: 'Ligue o inversor',
-      texto:
-        'Clique no botão redondo de ligar, ao lado do inversor (ou clique no inversor e use "Ligar o inversor"). O visor do inversor acende e mostra a situação, de onde vem a energia e o consumo, que ainda é zero.',
-      dica: 'O inversor só liga com a bateria ligada a ele: sem ela, o visor fica apagado. Ele entra depois da bateria e da placa, e antes dos aparelhos.',
-      feito: (p, _d, c) => dispositivosQue(p, c, inversor12DeOndaPura).some(inversorFuncionando),
-      // Não há realce de peça: o terminal da saída marca o inversor.
-      onde: (p, c) => {
-        const inv = primeiro(p, c, inversor12DeOndaPura);
-        return inv ? [terminal(inv.uid, 'caSaida')] : [];
-      },
-      agora: (p, c) => {
-        const inv = primeiro(p, c, inversor12DeOndaPura);
-        if (inv?.queimado !== undefined) return 'O inversor está queimado. Confira a ligação da bateria no consultor, clique no inversor e use "Consertar".';
-        if (inv?.falha !== undefined) return 'O inversor está em falha por sobrecarga (os aparelhos pediram mais do que ele aguenta). Desligue algum aparelho e use "Religar o inversor".';
-        return null;
-      },
-    },
-    {
-      id: 'ligar-aparelho',
-      parte: LIGAR,
-      titulo: 'Ligue o ventilador',
-      texto:
-        'Por último, os aparelhos, um de cada vez. Clique no botão redondo de ligar, ao lado do ventilador (ou clique no ventilador e use "Ligar"). No visor do inversor, o consumo sobe; nos mostradores à direita, a energia vem da placa ou da bateria.',
-      dica: 'A soma da potência dos aparelhos ligados ao mesmo tempo precisa caber nos 500 W do inversor.',
-      feito: (p, _d, c) => aparelhosNaSaida(p, c).some((d) => d.ligado),
-      onde: (p, c) => aparelhosNaSaida(p, c).slice(0, 1).map((d) => terminal(d.uid, 'plug')),
-      agora: (p, c, m) => {
-        const d = aparelhosNaSaida(p, c)[0];
-        const item = d ? c.get(d.itemId) : undefined;
-        if (!d || item?.categoria !== 'aparelho') return null;
-        const uso = usoDe(d, item);
-        if (emUso(uso, m.horaLocal)) return null;
-        return `O relógio está fora do horário de uso deste aparelho (das ${uso.inicio} às ${uso.fim} h): ligado, ele só consome dentro desse horário. No teste da bateria, a seguir, ele funciona o tempo todo.`;
-      },
-    },
+      'ligado, ele só consome dentro desse horário. No teste da bateria, a seguir, ele funciona o tempo todo.',
+    ),
   ],
 };
 

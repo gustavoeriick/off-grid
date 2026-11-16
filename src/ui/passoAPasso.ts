@@ -5,7 +5,7 @@
 
 import { CATALOGO } from '../catalogo';
 import {
-  ERROS_GUIADOS, EXPERIMENTE_ERRAR, ROTEIRO_TUTORIAL, roteiroPorId, ROTEIROS,
+  ERROS_GUIADOS, EXPERIMENTE_ERRAR, PARTES, ROTEIRO_TUTORIAL, roteiroPorId, ROTEIROS,
   type ErroGuiado, type Momento, type Passo, type Roteiro,
 } from '../conteudo/roteiros';
 import { acoes, assinar, emTutorial, estado, horaLocalDe, recalcularAgora, type EventoDeOperacao } from '../estado';
@@ -603,6 +603,8 @@ function resumo(r: Roteiro): Node[] {
   const e = estado.derivados.estimativas;
   const f = feitos();
   const puladosAgora = r.passos.filter((p, i) => pulados.has(p.id) && !f[i]).length;
+  // Passo de ligar pulado: o sistema pode estar desligado, e o resumo não diz "concluída".
+  const ligarPulados = r.passos.filter((p, i) => pulados.has(p.id) && !f[i] && p.parte === PARTES.ligar).length;
   const autonomia =
     e.autonomiaHoras === null
       ? 'A autonomia ainda não pôde ser calculada: falta bateria ou aparelho ligado na saída.'
@@ -615,17 +617,20 @@ function resumo(r: Roteiro): Node[] {
   botaoSair.addEventListener('click', sair);
   return semNulos([
     h('p', { class: 'passo-contagem' }, r.titulo),
-    h('h4', { class: 'passo-titulo' }, 'Montagem concluída'),
+    h('h4', { class: 'passo-titulo' }, puladosAgora === 0 ? 'Montagem concluída' : 'Fim do roteiro'),
     h('p', { class: 'passo-texto' }, autonomia),
     h('p', { class: 'passo-texto' }, `Orçamento total: ${brl(estado.derivados.orcamento.total)}. Os preços mudam: confira os anúncios antes de comprar.`),
     puladosAgora > 0 ? h('p', { class: 'passo-dica' }, `Você pulou ${puladosAgora} ${puladosAgora === 1 ? 'passo' : 'passos'}: eles não foram conferidos.`) : null,
+    ligarPulados > 0
+      ? h('p', { class: 'passo-dica', 'data-resumo': 'ligar-pulado' }, 'Passos de ligar foram pulados: o sistema pode estar desligado. "Ligar o sistema", no menu Projeto, fecha as proteções e liga o inversor; os aparelhos se ligam com a mão.')
+      : null,
     h('p', { class: 'passo-texto' }, 'Que tal simular uma queda de luz? Ela mostra se a bateria aguenta a casa sem a rede.'),
     h('p', { class: 'passo-dica' }, 'O simulador ajuda a aprender e a planejar. Antes de comprar e instalar de verdade, mostre o plano a um eletricista habilitado.'),
     h('div', { class: 'passo-botoes' }, botaoQueda, botaoSair),
   ]);
 }
 
-/** A frase de "agora" do passo (noite, aparelho fora do horário, peça queimada), só no tutorial. */
+/** A frase de "agora" do passo (noite, aparelho fora do horário, peça queimada), em qualquer roteiro. */
 function notaDoMomento(passo: Passo): HTMLElement | null {
   const texto = passo.agora?.(estado.projeto, CATALOGO, momento()) ?? null;
   return texto === null ? null : h('p', { class: 'passo-dica passo-agora', role: 'status', 'data-agora': passo.id }, texto);
@@ -812,7 +817,7 @@ export function montarPassoAPasso(): void {
   assinar('simulacao', acompanharTeste);
   // O relógio andou: as frases que dependem da hora (noite, horário de uso) e a oferta de sol podem mudar.
   assinar('simulacao', () => {
-    if (roteiro && noTutorial() && teste?.fase !== 'rodando' && chaveDoMomentoAgora() !== chaveDoMomento) desenhar();
+    if (roteiro && teste?.fase !== 'rodando' && chaveDoMomentoAgora() !== chaveDoMomento) desenhar();
   });
   // Um dano do "Experimente errar" pode chegar com o relógio, antes da análise nova.
   assinar('operacao', () => {

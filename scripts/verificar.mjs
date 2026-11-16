@@ -1543,20 +1543,146 @@ async function principal() {
     await pagina.locator('[data-roteiro="primeiro-sistema-12v"]').click();
     await pagina.locator('#passo-a-passo').waitFor({ state: 'visible' });
     conferir(mensagemDoDialogo.includes('casa vazia') && mensagemDoDialogo.includes('desfazer'), `a pergunta antes de começar: "${mensagemDoDialogo}"`);
-    conferir((await contagem()).startsWith('Passo 1 de 8'), `o roteiro de 12 V deveria começar no passo 1 de 8: ${await contagem()}`);
+    conferir((await contagem()).startsWith('Passo 1 de 14') && (await contagem()).includes('Parte 1: montar'), `o roteiro de 12 V deveria começar no passo 1 de 14, na parte de montar: ${await contagem()}`);
     let p = (await estado()).projeto;
     conferir(p.dispositivos.length === 0 && p.cabos.length === 0, 'o roteiro de 12 V deveria começar com a casa vazia');
     await captura('75-passo-a-passo-12v-passo-1');
+
+    // ---- Parte de ligar do roteiro de 12 V, com o mouse e ao meio-dia (de dia, a ordem errada queimaria o controlador).
+    // A montagem entra pronta, como o usuário a deixaria: fusível e disjuntor no cabo positivo, abertos; inversor e
+    // lâmpada desligados; a placa no telhado, ainda sem cabo. A cena encaixa as peças nos lugares da tabela.
+    const tempoAntesDosRoteiros = (await estado()).tempo.msUtc;
+    const MEIO_DIA_21_JUN = Date.UTC(2026, 5, 21, 15);
+    const noPassoDaCasa = async (n) => {
+      try {
+        await pagina.waitForFunction((x) => document.querySelector('#passo-a-passo')?.dataset.passo === String(x), n, { timeout: 8000 });
+      } catch {
+        const sug = ((await estado()).derivados?.sugestoes ?? []).filter((x) => x.nivel === 'erro').map((x) => x.titulo);
+        throw new Error(`Conferência falhou: o painel deveria estar no passo ${n}; está no ${await pagina.locator('#passo-a-passo').getAttribute('data-passo')}. Erros do consultor: ${JSON.stringify(sug)}`);
+      }
+      await esperar(200);
+    };
+    const chaveDaCasa = async (caboUid, i) => ((await estado()).projeto.cabos.find((c) => c.uid === caboUid)?.estados ?? [])[i] ?? 'fechada';
+    const visorDaCasa = (uid) => og((u) => window.__offgrid.textoDoVisor(u), uid);
+    const fecharAvisosDaCasa = async () => {
+      for (let i = 0; i < 20 && (await pagina.locator('#avisos-seguranca .entendi').count()); i++) await pagina.locator('#avisos-seguranca .entendi').click();
+    };
+    /** Clica na proteção desenhada no cabo, na cena: abre ou fecha a chave dela. */
+    const clicarProtecaoNaCasa = async (caboUid, indice, nome) => {
+      await fecharAvisosDaCasa();
+      const antes = await chaveDaCasa(caboUid, indice);
+      const pt = await og(([u, i]) => window.__offgrid.telaDaProtecao(u, i), [caboUid, indice]);
+      if (!pt) await pagina.screenshot({ path: join(pasta, 'zz-falha-protecao-casa.png') });
+      conferir(pt, `${nome}: a proteção deveria estar à vista na cena`);
+      await pagina.mouse.click(pt[0], pt[1]);
+      await esperar(350);
+      const depois = await chaveDaCasa(caboUid, indice);
+      if (depois === antes) await pagina.screenshot({ path: join(pasta, 'zz-falha-protecao-casa.png') });
+      conferir(depois === 'fechada', `${nome}: o clique na proteção deveria fechá-la (está ${depois})`);
+      await fecharAvisosDaCasa();
+    };
+    /** Clica no botão ⏻ do inversor na cena. */
+    const clicarBotaoNaCasa = async (uid, nome) => {
+      await fecharAvisosDaCasa();
+      const pt = await og((u) => window.__offgrid.telaDoBotao(u), uid);
+      if (!pt) await pagina.screenshot({ path: join(pasta, 'zz-falha-botao-casa.png') });
+      conferir(pt, `${nome}: o botão ⏻ deveria estar à vista na cena`);
+      await pagina.mouse.click(pt[0], pt[1]);
+      await esperar(350);
+      conferir((await estado()).projeto.dispositivos.find((x) => x.uid === uid).ligado === true, `${nome}: o clique no botão ⏻ deveria ligar`);
+      await fecharAvisosDaCasa();
+    };
+    /** Liga o aparelho pelo painel do item selecionado. */
+    const ligarPeloPainel = async (uid) => {
+      await og((u) => window.__offgrid.acoes.selecionar({ tipo: 'dispositivo', uid: u }), uid);
+      await pagina.locator('#item-selecionado [data-acao="ligar"]').click();
+      await esperar(250);
+      conferir((await estado()).projeto.dispositivos.find((x) => x.uid === uid).ligado === true, `o botão "Ligar" do painel deveria ligar ${uid}`);
+    };
+    /** Câmera sobre o quartinho da casa, sem o telhado: na casa, o fundo dele fica em z = −2,95 e a porta do lado de z positivo. */
+    const dentroDoQuartinho = async () => {
+      await pagina.getByRole('button', { name: 'Sem telhado', exact: true }).click();
+      // A câmera é posta em coordenadas do mundo: com a casa na orientação 0, o mundo é a casa girada meia volta.
+      await mudarCamera([-5.0, 3.8, -2.2], [-5.3, 0.9, 2.3]);
+      await esperar(400);
+      await fecharAvisosDaCasa();
+    };
+    const semEventos = async (quando) => {
+      const e = await estado();
+      conferir(e.simulacao.eventos.length === 0 && !e.projeto.dispositivos.some((x) => x.queimado || x.falha), `${quando}: nada deveria queimar: ${JSON.stringify(e.simulacao.eventos)}`);
+    };
+
+    await og((ms) => window.__offgrid.acoes.definirTempo(ms), MEIO_DIA_21_JUN);
+    await og(() => {
+      const a = window.__offgrid.acoes;
+      const proj = JSON.parse(JSON.stringify(window.__offgrid.estado().projeto));
+      const disp = (uid, itemId, ligado = true) => ({ uid, itemId, pos: [0, 0, 0], quat: [0, 0, 0, 1], superficie: null, giro: 0, ligado, uso: null });
+      const cabo = (uid, de, para, caboId, protecoes = []) => {
+        const [dd, td] = de.split('.');
+        const [dp, tp] = para.split('.');
+        return { uid, de: { disp: dd, terminal: td }, para: { disp: dp, terminal: tp }, caboId, comprimento: 1, protecoes, estados: protecoes.map(() => 'aberta'), quadro: null };
+      };
+      proj.dispositivos = [
+        disp('bateria', 'bat-moura-12mn105'), disp('inversor', 'inv-aiker-500-12v-110', false), disp('ctl', 'ctl-pwm-30a'),
+        disp('placa', 'placa-resun-100'), disp('lampada', 'ap-lampada', false),
+      ];
+      proj.cabos = [
+        cabo('c1', 'bateria.pos', 'inversor.batPos', 'cabo-bat-35', ['prot-fusivel-anl-100']),
+        cabo('c2', 'bateria.neg', 'inversor.batNeg', 'cabo-bat-35'),
+        cabo('c3', 'bateria.pos', 'ctl.batPos', 'cabo-bat-35', ['prot-disjuntor-cc-80']),
+        cabo('c4', 'bateria.neg', 'ctl.batNeg', 'cabo-bat-35'),
+        cabo('c5', 'inversor.caSaida', 'lampada.plug', 'cabo-ca-2p5'),
+      ];
+      a.carregarProjeto(proj);
+      window.__offgrid.recalcular();
+    });
+    await noPassoDaCasa(10);
+    conferir((await contagem()).startsWith('Passo 10 de 14') && (await contagem()).includes('Parte 2: ligar'), `montado com tudo desligado, o roteiro de 12 V deveria ir ao passo 10, o primeiro de ligar: ${await contagem()}`);
+    let textoDoPasso = await pagina.locator('#passo-a-passo').textContent();
+    conferir(textoDoPasso.includes('O inversor está desligado, e é assim que o fusível vai para o lugar') && textoDoPasso.includes('"Ligar o sistema"'), `o passo 10 deveria dizer que o fusível vai para o lugar com o inversor desligado e citar o atalho: "${textoDoPasso}"`);
+    conferir(await pagina.locator('#m-ligar-sistema').isVisible(), 'na casa, com o fusível aberto, os mostradores deveriam oferecer "Ligar o sistema"');
+    await dentroDoQuartinho();
+    await captura('75a-passo-a-passo-12v-passo-10-fusivel');
+    await clicarProtecaoNaCasa('c1', 0, 'fusível da bateria (12 V)');
+    await noPassoDaCasa(11);
+    conferir((await visorDaCasa('ctl')) === '', `com o disjuntor do controlador aberto, o visor dele deveria estar apagado: "${await visorDaCasa('ctl')}"`);
+    await clicarProtecaoNaCasa('c3', 0, 'disjuntor do controlador (12 V)');
+    await noPassoDaCasa(12);
+    conferir((await visorDaCasa('ctl')).includes('sem placas ligadas'), `com a bateria, o visor do controlador deveria dizer que faltam as placas: "${await visorDaCasa('ctl')}"`);
+    await captura('75b-passo-a-passo-12v-passo-12-placa');
+    // Os cabos da placa (o cabo com o mouse está conferido no tutorial): ao meio-dia, com a bateria já no controlador, nada queima.
+    await og(() => {
+      const a = window.__offgrid.acoes;
+      a.adicionarCabo({ disp: 'placa', terminal: 'pos' }, { disp: 'ctl', terminal: 'pvPos' }, 12);
+      a.adicionarCabo({ disp: 'placa', terminal: 'neg' }, { disp: 'ctl', terminal: 'pvNeg' }, 12);
+      window.__offgrid.recalcular();
+    });
+    await noPassoDaCasa(13);
+    await semEventos('a placa ligada por último, ao meio-dia');
+    const visorCtl12 = await visorDaCasa('ctl');
+    console.log(`roteiro de 12 V: visor do controlador com a placa: "${visorCtl12}"`);
+    conferir(/^PV \d+,\d V \| carga \d+,\d A \| /.test(visorCtl12), `com a placa, o visor do controlador deveria mostrar a tensão e a corrente de carga: "${visorCtl12}"`);
+    await clicarBotaoNaCasa('inversor', 'inversor (12 V)');
+    await noPassoDaCasa(14);
+    conferir((await visorDaCasa('inversor')).startsWith('ligado'), `o visor do inversor deveria acender: "${await visorDaCasa('inversor')}"`);
+    await ligarPeloPainel('lampada');
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo')?.dataset.situacao === 'resumo', null, { timeout: 8000 });
+    await semEventos('o roteiro de 12 V feito na ordem');
+    textoDoPasso = await pagina.locator('#passo-a-passo').textContent();
+    conferir(textoDoPasso.includes('Montagem concluída') && !textoDoPasso.includes('pulou'), `o resumo do roteiro de 12 V: "${textoDoPasso}"`);
+    await captura('75c-passo-a-passo-12v-resumo');
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
     await pagina.getByRole('button', { name: 'Sair do passo a passo' }).click();
     conferir(!(await painelVisivel()), 'sair deveria esconder o painel');
 
-    // 24 V: mantém a tomada da rede; o painel diz "Passo 1 de 8".
+    // 24 V: mantém a tomada da rede; o painel diz "Passo 1 de 17".
     await og(() => window.__offgrid.acoes.novoProjeto());
     await pagina.locator('#botao-passo-a-passo').click();
     pagina.once('dialog', (d) => d.accept());
     await pagina.locator('[data-roteiro="plano-da-casa-24v"]').click();
     await pagina.locator('#passo-a-passo').waitFor({ state: 'visible' });
-    conferir((await contagem()).startsWith('Passo 1 de 8'), `o roteiro de 24 V deveria começar no passo 1 de 8: ${await contagem()}`);
+    conferir((await contagem()).startsWith('Passo 1 de 17'), `o roteiro de 24 V deveria começar no passo 1 de 17: ${await contagem()}`);
     p = (await estado()).projeto;
     conferir(p.cabos.length === 0 && p.dispositivos.length === 1 && p.dispositivos[0].itemId === 'rede-tomada', `o roteiro de 24 V deveria manter só a tomada da rede: ${JSON.stringify(p.dispositivos.map((d) => d.itemId))}`);
     const sessao = await og(() => sessionStorage.getItem('offgrid.passoapasso'));
@@ -1588,18 +1714,18 @@ async function principal() {
     const noPiso = await encaixe('bat-alfx-24v-100', { id: 'piso-quartinho', tipo: 'piso' }, [6.5, 0.05, -2.0], [0, 1, 0]);
     await og((enc) => window.__offgrid.acoes.adicionarDispositivo('bat-alfx-24v-100', enc), noPiso);
     await og(() => window.__offgrid.recalcular());
-    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo .passo-contagem')?.textContent.startsWith('Passo 2 de 8'), null, { timeout: 5000 });
+    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo .passo-contagem')?.textContent.startsWith('Passo 2 de 17'), null, { timeout: 5000 });
     conferir((await pagina.locator('#passo-a-passo .passo-feito').count()) === 1, 'ao cumprir o passo 1 deveria aparecer o "Feito!"');
     await captura('78-passo-a-passo-feito-e-passo-2');
     const naParede = await encaixe('inv-anenji-3kw-24v-127', { id: 'parede-quartinho-fundo', tipo: 'parede' }, [6.5, 1.3, -2.95], [0, 0, 1]);
     await og((enc) => window.__offgrid.acoes.adicionarDispositivo('inv-anenji-3kw-24v-127', enc), naParede);
     await og(() => window.__offgrid.recalcular());
-    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo .passo-contagem')?.textContent.startsWith('Passo 3 de 8'), null, { timeout: 5000 });
+    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo .passo-contagem')?.textContent.startsWith('Passo 3 de 17'), null, { timeout: 5000 });
     await captura('79-passo-a-passo-passo-3');
 
     // Pular: o passo 3 sai da frente.
     await pagina.getByRole('button', { name: 'Pular' }).click();
-    conferir((await contagem()).startsWith('Passo 4 de 8'), `pular deveria ir para o passo 4: ${await contagem()}`);
+    conferir((await contagem()).startsWith('Passo 4 de 17'), `pular deveria ir para o passo 4: ${await contagem()}`);
     conferir((await pagina.locator('#passo-a-passo .passo-item.pulado').count()) === 1, 'o passo pulado deveria aparecer marcado na lista');
 
     // Recarregar a página: o andamento volta da sessão (o projeto volta da gravação do navegador).
@@ -1607,7 +1733,7 @@ async function principal() {
     await pagina.reload();
     await pagina.waitForFunction(() => window.__offgrid && window.__offgrid.pronto === true, null, { timeout: 30000 });
     await pagina.locator('#passo-a-passo').waitFor({ state: 'visible' });
-    conferir((await contagem()).startsWith('Passo 4 de 8'), `depois de recarregar o painel deveria continuar no passo 4: ${await contagem()}`);
+    conferir((await contagem()).startsWith('Passo 4 de 17'), `depois de recarregar o painel deveria continuar no passo 4: ${await contagem()}`);
 
     // O plano corrigido inteiro (convertido para a cena): todos os passos ficam feitos e vem o resumo.
     await og(() => {
@@ -1639,6 +1765,47 @@ async function principal() {
     conferir(resumo.includes('Montagem concluída') && /autonomia|sustenta/.test(resumo) && resumo.includes('Orçamento total: R$') && resumo.includes('queda de luz'), `o resumo deveria trazer autonomia, orçamento e a sugestão da queda de luz: "${resumo}"`);
     await mudarCamera(CAMERA_INICIAL.pos, CAMERA_INICIAL.alvo);
     await captura('80-passo-a-passo-resumo');
+
+    // ---- Parte de ligar do roteiro de 24 V, com o mouse, ao meio-dia. "Desligar o sistema" e os aparelhos desligados
+    // deixam a casa como a montagem nasce: o painel volta ao primeiro passo de ligar.
+    await og((ms) => window.__offgrid.acoes.definirTempo(ms), MEIO_DIA_21_JUN);
+    await og(() => {
+      const a = window.__offgrid.acoes;
+      a.desenergizar();
+      for (const d of window.__offgrid.estado().projeto.dispositivos) if (d.itemId.startsWith('ap-')) a.definirLigado(d.uid, false);
+      window.__offgrid.recalcular();
+    });
+    await noPassoDaCasa(12);
+    conferir((await contagem()).startsWith('Passo 12 de 17') && (await contagem()).includes('Parte 2: ligar'), `desligado, o roteiro de 24 V deveria voltar ao passo 12, o primeiro de ligar: ${await contagem()}`);
+    textoDoPasso = await pagina.locator('#passo-a-passo').textContent();
+    conferir(textoDoPasso.includes('depois as placas, o inversor, a saída, a rede') && textoDoPasso.includes('"Ligar o sistema"'), `o passo 12 do roteiro de 24 V deveria dizer a ordem de ligar e citar o atalho: "${textoDoPasso}"`);
+    await dentroDoQuartinho();
+    await captura('80a-passo-a-passo-24v-passo-12-fusivel');
+    await clicarProtecaoNaCasa('c3', 0, 'fusível da bateria (24 V)');
+    await noPassoDaCasa(13);
+    conferir((await visorDaCasa('inversor')) === '', 'com o inversor desligado, o visor dele deveria continuar apagado');
+    await captura('80b-passo-a-passo-24v-passo-13-disjuntor-das-placas');
+    await clicarProtecaoNaCasa('c1', 0, 'disjuntor CC das placas');
+    await noPassoDaCasa(14);
+    await clicarBotaoNaCasa('inversor', 'inversor híbrido');
+    await noPassoDaCasa(15);
+    const visorHibrido = await visorDaCasa('inversor');
+    console.log(`roteiro de 24 V: visor do inversor ligado, ao meio-dia: "${visorHibrido}"`);
+    conferir(visorHibrido.startsWith('ligado') && /PV \d+,\d V/.test(visorHibrido), `ligado ao meio-dia, o visor do inversor híbrido deveria mostrar a tensão das placas: "${visorHibrido}"`);
+    await captura('80c-passo-a-passo-24v-passo-15-saida');
+    // Os disjuntores da saída pelo atalho dos mostradores: o passo fica feito do mesmo jeito. A tomada da rede já está ligada.
+    conferir(await pagina.locator('#m-ligar-sistema').isVisible(), 'com a saída aberta, os mostradores deveriam oferecer "Ligar o sistema"');
+    await pagina.locator('#m-ligar-sistema').click();
+    await noPassoDaCasa(17);
+    const aparelhosDaCasa = (await estado()).projeto.dispositivos.filter((x) => x.itemId.startsWith('ap-')).map((x) => x.uid);
+    conferir(aparelhosDaCasa.length === 6 && (await estado()).projeto.dispositivos.filter((x) => aparelhosDaCasa.includes(x.uid)).every((x) => !x.ligado), '"Ligar o sistema" não deveria ligar os aparelhos');
+    for (const uid of aparelhosDaCasa) await ligarPeloPainel(uid);
+    await og(() => window.__offgrid.acoes.selecionar(null));
+    await pagina.waitForFunction(() => document.querySelector('#passo-a-passo')?.dataset.situacao === 'resumo', null, { timeout: 8000 });
+    await semEventos('o roteiro de 24 V ligado na ordem');
+    conferir((await pagina.locator('#passo-a-passo').textContent()).includes('Montagem concluída'), 'ligado tudo, o roteiro de 24 V deveria voltar ao resumo');
+    await pagina.getByRole('button', { name: 'Completa', exact: true }).click();
+    await og((ms) => window.__offgrid.acoes.definirTempo(ms), tempoAntesDosRoteiros);
 
     // A sugestão da queda de luz liga a simulação; sair apaga o painel e o andamento.
     await pagina.getByRole('button', { name: 'Simular queda de luz' }).click();

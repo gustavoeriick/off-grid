@@ -189,3 +189,70 @@ Capturas: tutorial aberto (83), realce de superfície (84), de terminal (85), o 
 - `sairDoTutorial` grava a casa na chave normal antes de apagar a chave de guarda, para a casa não se perder se a página fechar logo depois.
 - `entrarNoTutorial` para o relógio.
 - Lacuna conhecida do consultor: o cabo positivo da bateria ao controlador de carga não é cobrado de ter fusível próprio. O passo 7 avisa disso em texto.
+
+## 8. Roteiros da casa
+
+Os dois roteiros da janela "Passo a passo" que montam na casa, `ROTEIRO_12V` (`primeiro-sistema-12v`, "Meu primeiro sistema (12 V)") e `ROTEIRO_24V` (`plano-da-casa-24v`, "O plano da casa (24 V)"), em `src/conteudo/roteiros.ts`. Eram da fase 4 (tarefa 4.1) e foram postos em acordo com a fase 8 em 16/11/2026, a pedido do Gustavo ("Sobre o passo a passo, corrige"): o de 12 V mandava ligar os dois cabos da bateria e só depois pôr o fusível, contra o aviso `bateria-fusivel-no-positivo`, e ligava a placa ao controlador com as proteções da bateria ainda abertas, o que de dia queima o controlador (`controlador-sem-bateria`). Os dois terminavam com o sistema montado e desligado.
+
+Agora seguem o modelo do tutorial: duas partes, "Montar" com tudo desligado e "Ligar" com uma manobra por passo, na ordem da seção 6 de [operar.md](operar.md); os cabos da bateria na ordem cabo positivo, proteção (nasce aberta), cabo negativo. Os passos comuns com o tutorial vêm das mesmas funções (`passoCaboPositivo`, `passoFusivel`, `passoCaboNegativo`, `passoControlador`, `PASSO_CONFERIR`, `passoFecharFusivel`, `passoFecharControlador`, `passoCabosDaPlaca`, `passoLigarInversor`, `passoLigarAparelho`), com os mesmos "feito quando" das linhas 4 a 7 e 9 a 14 da tabela da seção 4. O realce na cena (`onde`) continua só no tutorial.
+
+Como a casa serve também a quem só quer dimensionar, os passos de ligar que "Ligar o sistema" faz (proteções e inversor) citam o atalho na dica. O passo é conferido pelo estado: tanto faz ligar com a mão ou pelo botão. "Ligar o sistema" não liga o cabo das placas sem disjuntor, não liga a tomada da rede e não liga aparelhos: esses passos são sempre com a mão. Os roteiros da casa continuam com "Pular".
+
+### 8.1 Meu primeiro sistema (12 V)
+
+| # | Passo | Parte | Peça em destaque | Feito quando |
+|---|---|---|---|---|
+| 1 | `bateria` | Montar | `bat-moura-12mn105` | Há bateria de chumbo de 12 V |
+| 2 | `inversor` | Montar | `inv-aiker-500-12v-110` | Há inversor de 12 V de onda pura |
+| 3 | `cabo-positivo` | Montar | categoria cabo | Cabo do `pos` da bateria ao `batPos` do inversor |
+| 4 | `fusivel` | Montar | `prot-fusivel-anl-100` | Fusível ou disjuntor CC nesse cabo, em qualquer estado |
+| 5 | `cabo-negativo` | Montar | categoria cabo | Par de cabos bateria–inversor |
+| 6 | `controlador` | Montar | `ctl-pwm-30a` | Controlador PWM com o par de cabos até a bateria e fusível ou disjuntor CC no positivo, em qualquer estado |
+| 7 | `placa` | Montar | `placa-resun-100` | Há placa de até 160 W (o texto pede o telhado da varanda; os cabos dela entram no passo 12) |
+| 8 | `aparelho` | Montar | `ap-lampada` | Há aparelho com o plugue em `caSaida` do inversor (ligado ou não) |
+| 9 | `sem-erros` | Montar | nenhuma | Sem problema de ligação e sem sugestão de nível erro |
+| 10 | `fechar-fusivel` | Ligar | nenhuma | A proteção do cabo positivo bateria–inversor está fechada |
+| 11 | `fechar-controlador` | Ligar | nenhuma | A proteção do cabo positivo bateria–controlador está fechada |
+| 12 | `cabos-da-placa` | Ligar | categoria cabo | `pos` da placa em `pvPos` e `neg` em `pvNeg` do controlador |
+| 13 | `ligar-inversor` | Ligar | nenhuma | O inversor está ligado, sem falha e sem estar queimado |
+| 14 | `ligar-aparelho` | Ligar | nenhuma | Há aparelho na saída do inversor e ligado |
+
+A placa vai para o telhado depois do controlador, e não no começo como no tutorial, porque na casa a montagem começa pelo quartinho; o que importa é que os cabos dela só entram no passo 12, depois de a bateria chegar ao controlador (passo 11).
+
+### 8.2 O plano da casa (24 V)
+
+Inversor híbrido com a entrada das placas embutida: não há controlador. A ordem de ligar é a de `sequenciaDeEnergizar` e de `acoes.energizar` (bateria, placas, inversor, saída, entrada da rede), com os aparelhos por último.
+
+| # | Passo | Parte | Peça em destaque | Feito quando |
+|---|---|---|---|---|
+| 1 | `bateria` | Montar | `bat-alfx-24v-100` | Há bateria de lítio de 24 V |
+| 2 | `inversor` | Montar | `inv-anenji-3kw-24v-127` | Há inversor de 24 V, de 3.000 W ou mais, com entrada para as placas |
+| 3 | `cabo-positivo` | Montar | categoria cabo | Cabo do `pos` da bateria ao `batPos` do inversor |
+| 4 | `fusivel` | Montar | `prot-fusivel-anl-150` | Fusível ou disjuntor CC nesse cabo, em qualquer estado |
+| 5 | `cabo-negativo` | Montar | categoria cabo | Par de cabos bateria–inversor, os dois `cabo-bat-35` |
+| 6 | `placas` | Montar | `placa-renepv-585` | Duas placas de 500 W ou mais, o `neg` de uma no `pos` da outra |
+| 7 | `cabo-positivo-das-placas` | Montar | categoria cabo | Cabo do `pos` de uma dessas placas ao `pvPos` do inversor |
+| 8 | `protecoes-das-placas` | Montar | `prot-disjuntor-cc-32` | Disjuntor CC e DPS em cabos do circuito das placas que passam por um quadro (o texto pede o quadro primeiro e o cabo positivo), em qualquer estado |
+| 9 | `cabo-negativo-das-placas` | Montar | categoria cabo | Fileira completa de duas ou mais dessas placas |
+| 10 | `aparelhos-na-saida` | Montar | `prot-disjuntor-ca-16` | Aparelho na saída e disjuntor CA em todo cabo de saída que vai a aparelho, em qualquer estado (aparelho ligado ou não) |
+| 11 | `sem-erros` | Montar | nenhuma | Sem problema de ligação e sem sugestão de nível erro |
+| 12 | `fechar-fusivel` | Ligar | nenhuma | A proteção do cabo positivo bateria–inversor está fechada |
+| 13 | `fechar-placas` | Ligar | nenhuma | Há cabo das placas com fusível ou disjuntor CC, e todos estão fechados |
+| 14 | `ligar-inversor` | Ligar | nenhuma | O inversor está ligado, sem falha e sem estar queimado |
+| 15 | `fechar-saida` | Ligar | nenhuma | Há cabo de saída até aparelho, e os disjuntores CA deles estão todos fechados |
+| 16 | `tomada-da-rede` | Ligar | `rede-tomada` | Cabo da `caEntrada` do inversor à `tomada` da rede |
+| 17 | `ligar-aparelhos` | Ligar | nenhuma | Há aparelho na saída, e todos os aparelhos da saída estão ligados |
+
+A tomada da rede passou da montagem para a parte de ligar: ela é uma fonte de 127 V, entra depois da saída (como no "Ligar o sistema", que fecha a entrada da rede por último) e é a primeira a sair ao desligar (`acoes.desenergizar` e o aviso `geral-desligar-antes-de-mexer`). O cabo dela não tem chave: ligar a entrada é puxar o cabo.
+
+O passo 13 diz que, com o inversor ainda desligado, as placas não carregam a bateria, e que isso é **simplificação** (seção 4 de operar.md: alguns híbridos carregam em espera). O passo 14 tem frases de `agora` para a noite ("a corrente de carga das placas aparece no visor quando o sol nascer") e para a bateria cheia, além das do tutorial para inversor queimado ou em falha.
+
+### 8.3 Resumo
+
+Quando todos os passos estão feitos, o resumo é o de antes ("Montagem concluída", autonomia, orçamento, queda de luz). Com passo pulado e não feito, o título passa a "Fim do roteiro"; se algum pulado é da parte de ligar, o resumo avisa que o sistema pode estar desligado e aponta "Ligar o sistema" e os aparelhos.
+
+### 8.4 Testes e verificação
+
+`src/conteudo/roteirosDaCasa.test.ts` faz cada roteiro inteiro pelas ações do estado às 0, 6, 7, 9, 12, 15, 17,5, 18 e 21 h e confere, a cada passo, o passo da vez e que nada queimou; confere que "Ligar o sistema" no lugar das manobras deixa os passos feitos; que quem liga os dois cabos da bateria antes do fusível não fica preso; e que a ordem antiga do roteiro de 12 V (placa ligada ao controlador antes de fechar a proteção da bateria) queima o controlador ao meio-dia. `src/conteudo/roteiros.test.ts` confere os "feito quando" sobre projetos montados à mão.
+
+`scripts/verificar.mjs`, no trecho do "Passo a passo": no roteiro de 12 V, ao meio-dia, a montagem entra com tudo desligado e a parte de ligar é feita com o mouse (o fusível e o disjuntor com um clique na cena, o inversor pelo ⏻, a lâmpada pelo painel do item), conferindo o visor do controlador e que nada queima; no de 24 V, depois do resumo do plano corrigido, "Desligar o sistema" e os aparelhos desligados levam o painel ao passo 12, e a parte de ligar é feita com o mouse (fusível, disjuntor CC das placas, ⏻ do inversor com a tensão das placas no visor, os disjuntores da saída pelo "Ligar o sistema" dos mostradores, os seis aparelhos pelo painel). Capturas 75a, 75b, 75c, 80a, 80b e 80c.

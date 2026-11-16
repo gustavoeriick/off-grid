@@ -7,7 +7,7 @@ import { estimar } from '../nucleo/estimativas';
 import { ambienteSemSombra } from '../nucleo/irradiancia';
 import { normalDoPlano } from '../nucleo/sol';
 import type { Cabo, Projeto } from '../nucleo/tipos';
-import { ROTEIRO_12V, ROTEIRO_24V, ROTEIROS, roteiroPorId, type DerivadosDoPasso } from './roteiros';
+import { ROTEIRO_12V, ROTEIRO_24V, ROTEIROS, roteiroPorId, type DerivadosDoPasso, type Roteiro } from './roteiros';
 
 const AMBIENTE = ambienteSemSombra(normalDoPlano(17, 0));
 const MS_21_JUN = Date.UTC(2026, 5, 21, 15);
@@ -18,10 +18,22 @@ function derivadosDe(projeto: Projeto): DerivadosDoPasso {
   return { analise, sugestoes: analisarConsultor(projeto, CATALOGO, analise, estimativas) };
 }
 
-const feitos = (roteiro: typeof ROTEIRO_12V, projeto: Projeto): boolean[] => {
+const feitos = (roteiro: Roteiro, projeto: Projeto): boolean[] => {
   const d = derivadosDe(projeto);
   return roteiro.passos.map((p) => p.feito(projeto, d, CATALOGO));
 };
+
+const ids = (roteiro: Roteiro): string[] => roteiro.passos.map((p) => p.id);
+
+/** Os passos que não estão feitos, pelo id. */
+const naoFeitos = (roteiro: Roteiro, projeto: Projeto): string[] => {
+  const f = feitos(roteiro, projeto);
+  return roteiro.passos.filter((_, i) => !f[i]).map((p) => p.id);
+};
+
+const feito = (roteiro: Roteiro, projeto: Projeto, id: string): boolean => !naoFeitos(roteiro, projeto).includes(id);
+
+const doMontar = (roteiro: Roteiro): string[] => roteiro.passos.filter((p) => p.parte === 'Parte 1: montar').map((p) => p.id);
 
 function cabo(uid: string, de: string, para: string, caboId: string, protecoes: string[] = [], comprimento = 1): Cabo {
   const [dDe, tDe] = de.split('.');
@@ -29,7 +41,7 @@ function cabo(uid: string, de: string, para: string, caboId: string, protecoes: 
   return { uid, de: { disp: dDe!, terminal: tDe! }, para: { disp: dPara!, terminal: tPara! }, caboId, comprimento, protecoes, quadro: null };
 }
 
-/** O sistema mínimo de 12 V que o roteiro pede, passo a passo. */
+/** O sistema mínimo de 12 V que o roteiro pede, passo a passo, com tudo fechado e ligado. */
 function projeto12V(): Projeto {
   const pecas: Record<string, string> = {
     bateria: 'bat-moura-12mn105',
@@ -61,13 +73,31 @@ function projeto12V(): Projeto {
   };
 }
 
+/** Como a peça posta pelo usuário nasce: proteções abertas (o DPS não tem chave), inversor e aparelhos desligados. */
+function tudoDesligado(p: Projeto): Projeto {
+  for (const c of p.cabos) c.estados = c.protecoes.map((id) => (id === 'prot-dps-cc-600' ? 'fechada' : 'aberta'));
+  for (const d of p.dispositivos) {
+    const categoria = CATALOGO.get(d.itemId)?.categoria;
+    if (categoria === 'inversor' || categoria === 'aparelho') d.ligado = false;
+  }
+  return p;
+}
+
 describe('roteiros: dados', () => {
   it('há os dois roteiros, com ids diferentes e passos com texto', () => {
     expect(ROTEIROS.map((r) => r.id)).toEqual(['primeiro-sistema-12v', 'plano-da-casa-24v']);
     expect(roteiroPorId('plano-da-casa-24v')).toBe(ROTEIRO_24V);
     expect(roteiroPorId('nada')).toBeUndefined();
+    expect(ids(ROTEIRO_12V)).toEqual([
+      'bateria', 'inversor', 'cabo-positivo', 'fusivel', 'cabo-negativo', 'controlador', 'placa', 'aparelho', 'sem-erros',
+      'fechar-fusivel', 'fechar-controlador', 'cabos-da-placa', 'ligar-inversor', 'ligar-aparelho',
+    ]);
+    expect(ids(ROTEIRO_24V)).toEqual([
+      'bateria', 'inversor', 'cabo-positivo', 'fusivel', 'cabo-negativo', 'placas', 'cabo-positivo-das-placas', 'protecoes-das-placas',
+      'cabo-negativo-das-placas', 'aparelhos-na-saida', 'sem-erros',
+      'fechar-fusivel', 'fechar-placas', 'ligar-inversor', 'fechar-saida', 'tomada-da-rede', 'ligar-aparelhos',
+    ]);
     for (const r of ROTEIROS) {
-      expect(r.passos.length).toBe(8);
       expect(new Set(r.passos.map((p) => p.id)).size).toBe(r.passos.length);
       for (const p of r.passos) {
         expect(p.titulo.length).toBeGreaterThan(5);
@@ -76,72 +106,83 @@ describe('roteiros: dados', () => {
     }
   });
 
-  it('todo itemId existe no catálogo, e o item é da linha do roteiro', () => {
+  it('todo itemId existe no catálogo', () => {
     for (const r of ROTEIROS) {
       for (const p of r.passos) {
         if (p.itemId === undefined) continue;
-        const item = CATALOGO.get(p.itemId);
-        expect(item, `${r.id}/${p.id}: ${p.itemId}`).toBeDefined();
+        expect(CATALOGO.get(p.itemId), `${r.id}/${p.id}: ${p.itemId}`).toBeDefined();
       }
     }
   });
 });
 
 describe('roteiro de 24 V', () => {
-  it('no cenário "plano corrigido" todos os passos estão feitos', () => {
-    expect(feitos(ROTEIRO_24V, cenarioPlanoCorrigido())).toEqual(Array(8).fill(true));
+  it('no cenário "plano corrigido" (tudo fechado e ligado, como os cenários prontos) todos os passos estão feitos', () => {
+    expect(naoFeitos(ROTEIRO_24V, cenarioPlanoCorrigido())).toEqual([]);
   });
 
   it('sem dispositivos nenhum passo está feito', () => {
     const vazio = cenarioPlanoCorrigido();
     vazio.dispositivos = [];
     vazio.cabos = [];
-    expect(feitos(ROTEIRO_24V, vazio)).toEqual(Array(8).fill(false));
+    expect(naoFeitos(ROTEIRO_24V, vazio)).toEqual(ids(ROTEIRO_24V));
   });
 
-  it('tirar o fusível, o DPS ou a segunda placa desfaz o passo certo', () => {
+  it('tirar o fusível, o DPS, a segunda placa, a tomada ou um disjuntor desfaz o passo certo', () => {
     const semFusivel = cenarioPlanoCorrigido();
     semFusivel.cabos.find((c) => c.uid === 'c3')!.protecoes = [];
-    expect(feitos(ROTEIRO_24V, semFusivel)[2]).toBe(false);
+    expect(feito(ROTEIRO_24V, semFusivel, 'fusivel')).toBe(false);
 
     const semDps = cenarioPlanoCorrigido();
     semDps.cabos.find((c) => c.uid === 'c1')!.protecoes = ['prot-disjuntor-cc-32'];
-    expect(feitos(ROTEIRO_24V, semDps)[4]).toBe(false);
+    expect(feito(ROTEIRO_24V, semDps, 'protecoes-das-placas')).toBe(false);
 
     const umaPlaca = cenarioPlanoCorrigido();
     umaPlaca.dispositivos = umaPlaca.dispositivos.filter((d) => d.uid !== 'placa2');
     umaPlaca.cabos = umaPlaca.cabos.filter((c) => c.uid !== 'c12').map((c) => (c.uid === 'c2' ? { ...c, de: { disp: 'placa1', terminal: 'neg' } } : c));
-    expect(feitos(ROTEIRO_24V, umaPlaca)[3]).toBe(false);
+    expect(feito(ROTEIRO_24V, umaPlaca, 'placas')).toBe(false);
+    expect(feito(ROTEIRO_24V, umaPlaca, 'cabo-negativo-das-placas')).toBe(false);
 
     const semTomada = cenarioPlanoCorrigido();
     semTomada.cabos = semTomada.cabos.filter((c) => c.uid !== 'c5');
-    expect(feitos(ROTEIRO_24V, semTomada)[5]).toBe(false);
+    expect(naoFeitos(ROTEIRO_24V, semTomada)).toEqual(['tomada-da-rede']);
 
     const semDisjuntor = cenarioPlanoCorrigido();
     semDisjuntor.cabos.find((c) => c.uid === 'c6')!.protecoes = [];
-    expect(feitos(ROTEIRO_24V, semDisjuntor)[6]).toBe(false);
+    expect(feito(ROTEIRO_24V, semDisjuntor, 'aparelhos-na-saida')).toBe(false);
+  });
+
+  it('os cabos da bateria precisam ser de 35 mm²', () => {
+    const fino = cenarioPlanoCorrigido();
+    fino.cabos.find((c) => c.uid === 'c4')!.caboId = 'cabo-bat-25';
+    expect(feito(ROTEIRO_24V, fino, 'cabo-negativo')).toBe(false);
+  });
+
+  it('montado com tudo desligado: a montagem está feita e faltam só os passos de ligar, na ordem', () => {
+    const p = tudoDesligado(cenarioPlanoCorrigido());
+    expect(naoFeitos(ROTEIRO_24V, p).filter((id) => doMontar(ROTEIRO_24V).includes(id))).toEqual([]);
+    // A rede já está ligada no cenário: o passo dela aparece feito.
+    expect(naoFeitos(ROTEIRO_24V, p)).toEqual(['fechar-fusivel', 'fechar-placas', 'ligar-inversor', 'fechar-saida', 'ligar-aparelhos']);
   });
 });
 
 describe('roteiro de 12 V', () => {
-  it('um projeto mínimo cumpre todos os passos', () => {
-    expect(feitos(ROTEIRO_12V, projeto12V())).toEqual(Array(8).fill(true));
+  it('um projeto mínimo, tudo fechado e ligado, cumpre todos os passos', () => {
+    expect(naoFeitos(ROTEIRO_12V, projeto12V())).toEqual([]);
   });
 
   it('sem dispositivos nenhum passo está feito', () => {
     const vazio = projeto12V();
     vazio.dispositivos = [];
     vazio.cabos = [];
-    expect(feitos(ROTEIRO_12V, vazio)).toEqual(Array(8).fill(false));
+    expect(naoFeitos(ROTEIRO_12V, vazio)).toEqual(ids(ROTEIRO_12V));
   });
 
   it('tirar o fusível faz o passo do fusível voltar a falso', () => {
     const p = projeto12V();
     p.cabos.find((c) => c.uid === 'c1')!.protecoes = [];
-    const f = feitos(ROTEIRO_12V, p);
-    expect(f[3]).toBe(false);
-    // Sem fusível o consultor também passa a apontar erro: o último passo volta junto.
-    expect(f.map((x, i) => (x ? -1 : i)).filter((i) => i >= 0)).toEqual([3, 7]);
+    // Sem fusível o consultor também passa a apontar erro, e não há fusível a pôr no lugar: a conferência e o "pôr no lugar" voltam junto.
+    expect(naoFeitos(ROTEIRO_12V, p)).toEqual(['fusivel', 'sem-erros', 'fechar-fusivel']);
   });
 
   it('bateria de carro, onda modificada e placa grande não contam', () => {
@@ -149,16 +190,28 @@ describe('roteiro de 12 V', () => {
     p.dispositivos.find((d) => d.uid === 'bateria')!.itemId = 'bat-automotiva-60';
     p.dispositivos.find((d) => d.uid === 'inversor')!.itemId = 'inv-vedo-1000-mod';
     p.dispositivos.find((d) => d.uid === 'placa')!.itemId = 'placa-renepv-585';
-    const f = feitos(ROTEIRO_12V, p);
-    expect(f[0]).toBe(false);
-    expect(f[1]).toBe(false);
-    expect(f[5]).toBe(false);
+    const nao = naoFeitos(ROTEIRO_12V, p);
+    expect(nao).toContain('bateria');
+    expect(nao).toContain('inversor');
+    expect(nao).toContain('placa');
   });
 
   it('ligar a bateria invertida não conta como cabo', () => {
     const p = projeto12V();
     p.cabos.find((c) => c.uid === 'c1')!.para.terminal = 'batNeg';
     p.cabos.find((c) => c.uid === 'c2')!.para.terminal = 'batPos';
-    expect(feitos(ROTEIRO_12V, p)[2]).toBe(false);
+    expect(feito(ROTEIRO_12V, p, 'cabo-positivo')).toBe(false);
+    expect(feito(ROTEIRO_12V, p, 'cabo-negativo')).toBe(false);
+  });
+
+  it('o passo do aparelho não exige o aparelho ligado; o de ligar, sim', () => {
+    const p = projeto12V();
+    p.dispositivos.find((d) => d.uid === 'lampada')!.ligado = false;
+    expect(naoFeitos(ROTEIRO_12V, p)).toEqual(['ligar-aparelho']);
+  });
+
+  it('montado com tudo desligado: a montagem está feita e faltam só os passos de ligar', () => {
+    const p = tudoDesligado(projeto12V());
+    expect(naoFeitos(ROTEIRO_12V, p)).toEqual(['fechar-fusivel', 'fechar-controlador', 'ligar-inversor', 'ligar-aparelho']);
   });
 });
