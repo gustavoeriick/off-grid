@@ -61,6 +61,10 @@
 
       <aside id="esquerda" aria-label="Catálogo">
         <h2>Catálogo</h2>
+        <div class="busca-catalogo">
+          <input type="search" id="busca-catalogo" aria-label="Buscar no catálogo" placeholder="Buscar: 550 W, 100 Ah, marca…" autocomplete="off" spellcheck="false" />
+          <button type="button" id="busca-limpar" class="busca-limpar" aria-label="Limpar a busca" title="Limpar a busca (Esc)" hidden>×</button>
+        </div>
         <div class="abas abas-catalogo" id="abas-catalogo" role="tablist" aria-label="Tipos de peça"></div>
         <div class="botoes filtro-linha" id="filtro-linha" role="group" aria-label="Filtrar por linha"></div>
         <div id="lista-catalogo"></div>

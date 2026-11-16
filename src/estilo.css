@@ -1969,6 +1969,72 @@ body {
   white-space: nowrap;
 }
 
+/* Busca no catálogo (tarefa 9.1): o campo ocupa a linha inteira, acima das abas. */
+.busca-catalogo {
+  position: relative;
+  margin: 0 0 8px;
+}
+
+.busca-catalogo input[type='search'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 28px 5px 8px;
+  font-size: 13px;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* O "×" é o botão do painel, não o do navegador. */
+.busca-catalogo input[type='search']::-webkit-search-cancel-button {
+  display: none;
+}
+
+.busca-limpar {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--suave);
+  cursor: pointer;
+}
+
+.busca-limpar[hidden] {
+  display: none;
+}
+
+.cartao-titulo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.etiqueta-aba {
+  padding: 0 6px;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--suave);
+}
+
+.modelo-casou {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--suave);
+}
+
+.vazio .ver-todas-linhas {
+  margin-left: 4px;
+}
+
 .cartao-topo + * {
   margin-top: 6px;
 }

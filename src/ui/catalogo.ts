@@ -4,6 +4,7 @@
 import { CATALOGO, grupoDoItem, gruposDoCatalogo, type GrupoDoCatalogo } from '../catalogo';
 import type { Categoria, Item, Linha } from '../catalogo/tipos';
 import { avisosDoItem, blocoDePreco, brl, el, h } from './formato';
+import { casarGrupo, palavrasDaBusca } from './buscaCatalogo';
 
 interface Aba {
   id: string;
@@ -35,6 +36,21 @@ let filtro: Linha | 'todas' = 'todas';
 
 function abaDe(categoria: Categoria): Aba {
   return ABAS.find((a) => a.categorias.includes(categoria)) ?? ABAS[0];
+}
+
+/** Texto da busca. Vazio: o catálogo mostra a aba escolhida. */
+let consulta = '';
+/** Modelo para o qual a busca aponta o cartão do tipo (só enquanto há busca; não é uma escolha do usuário). */
+const apontadosPelaBusca = new Map<string, Item>();
+
+/** Limpa o campo de busca. A aba de antes continua em `aba`, então o catálogo volta a ela. */
+function limparBusca(): void {
+  consulta = '';
+  apontadosPelaBusca.clear();
+  const campo = document.querySelector<HTMLInputElement>('#busca-catalogo');
+  if (campo) campo.value = '';
+  const x = document.querySelector<HTMLElement>('#busca-limpar');
+  if (x) x.hidden = true;
 }
 
 /** Itens que o usuário arrasta do catálogo para a cena. */
@@ -74,6 +90,16 @@ function naLinha(item: Item): boolean {
 
 /** Modelo que o cartão arrasta: o escolhido, se ainda vale no filtro; senão a referência, ou o mais barato da linha. */
 function modeloDoCartao(g: GrupoDoCatalogo): Item {
+  const id = escolhidos.get(g.chave);
+  const escolhido = id ? g.itens.find((i) => i.id === id) : undefined;
+  if (escolhido && naLinha(escolhido)) return escolhido;
+  const apontado = apontadosPelaBusca.get(g.chave);
+  if (apontado && naLinha(apontado)) return apontado;
+  return modeloSemBusca(g);
+}
+
+/** Modelo do cartão sem olhar a busca. */
+function modeloSemBusca(g: GrupoDoCatalogo): Item {
   const id = escolhidos.get(g.chave);
   const escolhido = id ? g.itens.find((i) => i.id === id) : undefined;
   if (escolhido && naLinha(escolhido)) return escolhido;
@@ -132,7 +158,13 @@ function cartao(g: GrupoDoCatalogo): HTMLElement {
       'data-modelos': String(g.itens.length),
       ...(arrasta ? { 'data-arrastavel': '' } : {}),
     },
-    h('div', { class: 'cartao-topo' }, h('h4', null, g.nome), botaoDetalhe),
+    h(
+      'div',
+      { class: 'cartao-topo' },
+      consulta ? h('div', { class: 'cartao-titulo' }, h('h4', null, g.nome), h('span', { class: 'etiqueta-aba' }, abaDe(g.categoria).rotulo)) : h('h4', null, g.nome),
+      botaoDetalhe,
+    ),
+    consulta && varios && atual.id !== g.referencia.id ? h('p', { class: 'modelo-casou' }, `Modelo que casou: ${atual.nome}`) : null,
   );
   botaoDetalhe.addEventListener('click', () => {
     if (abertos.has(g.chave)) abertos.delete(g.chave);
@@ -165,10 +197,54 @@ function cartao(g: GrupoDoCatalogo): HTMLElement {
   return c;
 }
 
+/** Resultados da busca, de todas as abas, na ordem das abas. Guarda em `apontadosPelaBusca` o modelo que casou. */
+function resultadosDaBusca(): GrupoDoCatalogo[] {
+  const palavras = palavrasDaBusca(consulta);
+  apontadosPelaBusca.clear();
+  const achados: GrupoDoCatalogo[] = [];
+  for (const a of ABAS) {
+    const doAba = gruposDoCatalogo(CATALOGO)
+      .filter((g) => a.categorias.includes(g.categoria))
+      .sort((x, y) => a.categorias.indexOf(x.categoria) - a.categorias.indexOf(y.categoria));
+    for (const g of doAba) {
+      const achado = casarGrupo(g, palavras, a.rotulo, naLinha, modeloSemBusca(g));
+      if (!achado) continue;
+      if (achado.modelo) apontadosPelaBusca.set(g.chave, achado.modelo);
+      achados.push(g);
+    }
+  }
+  return achados;
+}
+
+/** Quantos tipos casam com a busca em todas as linhas (para avisar quando o filtro de linha esconde resultados). */
+function quantosEmOutrasLinhas(): number {
+  const palavras = palavrasDaBusca(consulta);
+  return gruposDoCatalogo(CATALOGO).filter((g) => casarGrupo(g, palavras, abaDe(g.categoria).rotulo, () => true, g.referencia) !== null).length;
+}
+
+function mensagemSemResultado(): HTMLElement {
+  const p = h('p', { class: 'vazio' }, 'Nenhum item com esse texto.');
+  const outras = filtro === 'todas' ? 0 : quantosEmOutrasLinhas();
+  if (outras > 0) {
+    const ver = h('button', { type: 'button', class: 'ver-todas-linhas' }, 'Ver todas as linhas');
+    ver.addEventListener('click', () => {
+      filtro = 'todas';
+      desenhar();
+    });
+    p.append(` Há ${outras} em outras linhas. `, ver);
+  }
+  return p;
+}
+
 function desenhar(): void {
   const lista = el<HTMLElement>('#lista-catalogo');
-  document.querySelectorAll<HTMLButtonElement>('#abas-catalogo button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.cat === aba.id)));
+  document.querySelectorAll<HTMLButtonElement>('#abas-catalogo button').forEach((b) => b.setAttribute('aria-selected', String(!consulta && b.dataset.cat === aba.id)));
   document.querySelectorAll<HTMLButtonElement>('#filtro-linha button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.linha === filtro)));
+  if (consulta) {
+    const achados = resultadosDaBusca();
+    lista.replaceChildren(...(achados.length ? achados.map(cartao) : [mensagemSemResultado()]));
+    return;
+  }
   const grupos = gruposDoCatalogo(CATALOGO)
     .filter((g) => aba.categorias.includes(g.categoria) && g.itens.some(naLinha))
     .sort((a, b) => aba.categorias.indexOf(a.categoria) - aba.categorias.indexOf(b.categoria));
@@ -177,6 +253,7 @@ function desenhar(): void {
 
 /** Abre a aba que contém a categoria, mostrando todas as linhas. */
 export function abrirCatalogo(categoria: Categoria): void {
+  limparBusca();
   aba = abaDe(categoria);
   filtro = 'todas';
   desenhar();
@@ -187,6 +264,7 @@ function telaDoCartao(itemId: string): [number, number] | null {
   const item = CATALOGO.get(itemId);
   const g = grupoDoItem(CATALOGO, itemId);
   if (!item || !g) return null;
+  limparBusca();
   if (!naLinha(item)) filtro = 'todas';
   aba = abaDe(item.categoria);
   escolhidos.set(g.chave, itemId);
@@ -245,10 +323,30 @@ export function montarCatalogo(): void {
   ABAS.forEach((a) => {
     const b = h('button', { type: 'button', role: 'tab', 'data-cat': a.id }, a.rotulo);
     b.addEventListener('click', () => {
+      limparBusca();
       aba = a;
       desenhar();
     });
     abas.append(b);
+  });
+  const campo = el<HTMLInputElement>('#busca-catalogo');
+  const limpar = el<HTMLElement>('#busca-limpar');
+  campo.addEventListener('input', () => {
+    consulta = palavrasDaBusca(campo.value).length ? campo.value : '';
+    limpar.hidden = campo.value === '';
+    if (!consulta) apontadosPelaBusca.clear();
+    desenhar();
+  });
+  campo.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    limparBusca();
+    desenhar();
+  });
+  limpar.addEventListener('click', () => {
+    limparBusca();
+    desenhar();
+    campo.focus();
   });
   const filtros = el<HTMLElement>('#filtro-linha');
   FILTROS.forEach((f) => {
