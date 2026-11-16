@@ -177,7 +177,7 @@ Pedido do Gustavo depois de concluir o tutorial: "Eu não tive que ligar nenhum 
 - [x] **8.2 Estado e núcleo:** as chaves no projeto e na simulação. Coordenador e `nucleo` (Sonnet).
 - [x] **8.3 Cena:** alavanca que se move ao clique, visores com números ao vivo no controlador, no inversor e na bateria, e o efeito visível de cada evento (fumaça, faísca, peça marcada como queimada). `cena3d` (Fable).
 - [x] **8.4 Painéis:** o que houve, por quê e o botão de consertar. `interface` (Sonnet).
-- [ ] **8.5 Tutorial em duas partes:** montar e energizar na ordem certa, com uma parte opcional "experimente errar". Texto por Opus, revisão de segurança por Fable.
+- [x] **8.5 Tutorial em duas partes:** montar e energizar na ordem certa, com uma parte opcional "experimente errar". Texto por Opus, revisão de segurança por Fable.
 - [ ] **8.6 Verificação com mouse e revisão.** `verificador` (Haiku) e `revisor` (Fable).
 
 Decisões do Gustavo em 15/11/2026: (1) o erro estraga a peça, que fica marcada como queimada, com a explicação do que houve e conserto em um clique; (2) as chaves e os visores valem na casa inteira, em qualquer projeto, e o tutorial é o lugar onde isso é ensinado.
