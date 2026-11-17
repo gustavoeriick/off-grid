@@ -5,6 +5,8 @@
 //   comando de deploy: npx wrangler deploy
 {
   "name": "gus-off-grid",
+  // Conta Cloudflare do Gustavo. Não é segredo; fixa a conta na publicação pelo GitHub Actions (que só tem o token).
+  "account_id": "4ff10b191d39f43259ed595b9bc2e551",
   "compatibility_date": "2026-11-16",
   "workers_dev": true,
   "assets": {
