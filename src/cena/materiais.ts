@@ -245,6 +245,8 @@ export const mat = {
   teto: fosco('#f6f4ee', null),
   /** A cor de cada telha vai por instância; a base fica branca. */
   telha: fosco('#ffffff', null, { side: THREE.DoubleSide }),
+  /** Telhas cortadas no espigão, juntas em uma malha só: a cor de cada uma vai nos vértices. */
+  telhaCortada: fosco('#ffffff', null, { side: THREE.DoubleSide, vertexColors: true }),
   argamassa: fosco('#d9d2c3', texReboco),
   madeiramento: fosco('#7b5433', null),
   madeira: fosco('#84593a', texMadeira),

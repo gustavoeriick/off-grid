@@ -12,9 +12,13 @@ import { construirParedesInternas, criarNomeDoComodo } from './comodos';
 import { Construtor, esconder, liberar, type Marca, marcarSolido } from './malha';
 import { cor, mat } from './materiais';
 import { type Abertura, criarParede } from './paredes';
+import { type CantoDeVarandas, cantosDasVarandas } from './regrasDaCasa';
 import { CAIBRO, criarAgua, criarCumeeira, FUNDO_RIPA } from './telhado';
 import { MARCA_DO_TERRENO, MEIO_TERRENO } from './terreno';
-import { construirVaranda, cortarAgua, cumeeiraSemPonta, GIRO_DA_FACHADA, type MedidaVaranda, medirVarandas, type Planta } from './varanda';
+import {
+  construirCantoDaVaranda, construirVaranda, cortarAgua, cumeeiraSemPonta, GIRO_DA_FACHADA, type JuncoesDaVaranda, type MedidaVaranda, medirVarandas,
+  type Planta,
+} from './varanda';
 
 const ESPESSURA_PAREDE = 0.15;
 const PISO = 0.05;
@@ -249,13 +253,14 @@ function construirQuartinho(casa: CasaConfig): THREE.Group {
 
 // ---------------------------------------------------------------- Calçada e caminho
 
-function construirCalcada(casa: CasaConfig, varandas: readonly MedidaVaranda[]): THREE.Group {
+function construirCalcada(casa: CasaConfig, varandas: readonly MedidaVaranda[], cantos: readonly CantoDeVarandas[]): THREE.Group {
   const g = new THREE.Group();
   g.name = 'calcada';
-  // A calçada contorna a casa e cada varanda: é o que está a até 0,8 m delas e fora delas.
+  // A calçada contorna a casa, cada varanda e o canto entre duas varandas: é o que está a até 0,8 m deles e fora deles.
   const cheios: Planta[] = [
     { x0: -casa.largura / 2, x1: casa.largura / 2, z0: -casa.profundidade / 2, z1: casa.profundidade / 2 },
     ...varandas.map((v) => v.planta),
+    ...cantos.map((c) => c.planta),
   ];
   const largos = cheios.map((r) => ({ x0: r.x0 - CALCADA, x1: r.x1 + CALCADA, z0: r.z0 - CALCADA, z1: r.z1 + CALCADA }));
   const dentro = (lista: Planta[], x: number, z: number): boolean => lista.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
@@ -584,11 +589,32 @@ export function criarCasa(): CasaCena {
     superior.add(telhado);
     estrutura.add(superior);
 
-    for (const v of varandas) estrutura.add(construirVaranda(casa, v));
+    // Duas varandas vizinhas que chegam à mesma quina se juntam: o canto entre elas ganha piso, pilar e, se forem iguais, espigão.
+    const cantos = cantosDasVarandas(casa);
+    const daVaranda = (lado: LadoCasa): MedidaVaranda | undefined => varandas.find((v) => v.lado === lado);
+    for (const v of varandas) {
+      const juncoes: JuncoesDaVaranda = {};
+      for (const c of cantos) {
+        const espigao = c.fechamento === 'espigao';
+        if (c.lados[0] === v.lado) {
+          const vizinha = daVaranda(c.lados[1]);
+          if (vizinha) juncoes.mais = { alcance: vizinha.profundidade, espigao, vigaInteira: true };
+        } else if (c.lados[1] === v.lado) {
+          const vizinha = daVaranda(c.lados[0]);
+          if (vizinha) juncoes.menos = { alcance: vizinha.profundidade, espigao, vigaInteira: false };
+        }
+      }
+      estrutura.add(construirVaranda(casa, v, juncoes));
+    }
+    for (const c of cantos) {
+      const a = daVaranda(c.lados[0]);
+      const b = daVaranda(c.lados[1]);
+      if (a && b) estrutura.add(construirCantoDaVaranda(c, a, b));
+    }
     const quartinho = construirQuartinho(casa);
     telhadoQuartinho = quartinho.getObjectByName('telhado-quartinho') ?? null;
     estrutura.add(quartinho);
-    estrutura.add(construirCalcada(casa, varandas));
+    estrutura.add(construirCalcada(casa, varandas, cantos));
     estrutura.add(criarTerreno());
   }
 

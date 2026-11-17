@@ -7,7 +7,8 @@ import * as THREE from 'three';
 import type { CasaConfig, LadoCasa } from '../nucleo/tipos';
 import { Construtor, type Marca, marcarSolido } from './malha';
 import { mat } from './materiais';
-import { CAIBRO, criarAgua, FUNDO_RIPA, type Recorte } from './telhado';
+import type { CantoDeVarandas } from './regrasDaCasa';
+import { CAIBRO, criarAgua, criarAguaDeCanto, criarEspigao, FUNDO_RIPA, type Recorte } from './telhado';
 
 /** Altura mínima da beira do telhado de uma varanda, no plano da crista das telhas. */
 export const BEIRA_MINIMA = 2.0;
@@ -111,7 +112,40 @@ function solido(c: Construtor, material: THREE.Material | THREE.Material[], nome
   return m;
 }
 
-export function construirVaranda(casa: CasaConfig, v: MedidaVaranda): THREE.Group {
+/** Junção de uma ponta da varanda com a varanda do lado vizinho (o canto entre as duas). */
+export interface JuncaoDaPonta {
+  /** Profundidade da vizinha: é quanto o canto passa da ponta desta varanda. */
+  alcance: number;
+  /** As duas são iguais e o telhado fecha em espigão: esta varanda leva o triângulo de água do lado dela. */
+  espigao: boolean;
+  /** A viga desta varanda vai até a quina de fora; a da vizinha para na face dela. */
+  vigaInteira: boolean;
+}
+
+/** Junções das duas pontas: `menos` é a ponta x0 e `mais` é a ponta x1, no quadro da fachada. */
+export interface JuncoesDaVaranda {
+  menos?: JuncaoDaPonta;
+  mais?: JuncaoDaPonta;
+}
+
+const ALTURA_DA_VIGA = 0.14;
+
+/** Altura do topo da viga da borda de fora. Nulo quando não sobra altura para viga e pilar. */
+function topoDaViga(v: MedidaVaranda): number | null {
+  const pilha = (FUNDO_RIPA + CAIBRO) * Math.hypot(1, v.inclinacao);
+  const yViga = v.yParede - (v.profundidade - 0.06) * v.inclinacao - pilha - 0.004;
+  // Nada abaixo do chão: sem altura para o pilar, a varanda fica sem viga e sem pilar.
+  return yViga - ALTURA_DA_VIGA - PISO > 0.3 ? yViga : null;
+}
+
+/** Um pilar de 0,12 × 0,12 do piso até `topo`, com sapata e capitel discretos. */
+function pilar(c: Construtor, x: number, z: number, topo: number): void {
+  c.caixa(x - 0.06, PISO, z - 0.06, x + 0.06, topo, z + 0.06, 0);
+  c.caixa(x - 0.09, PISO, z - 0.09, x + 0.09, PISO + 0.1, z + 0.09, 0);
+  c.caixa(x - 0.08, topo - 0.05, z - 0.08, x + 0.08, topo, z + 0.08, 0);
+}
+
+export function construirVaranda(casa: CasaConfig, v: MedidaVaranda, juncoes: JuncoesDaVaranda = {}): THREE.Group {
   const lado = v.lado;
   const ehLateral = lado === 'esquerda' || lado === 'direita';
   const g = new THREE.Group();
@@ -141,6 +175,23 @@ export function construirVaranda(casa: CasaConfig, v: MedidaVaranda): THREE.Grou
   agua.rotation.x = Math.atan(s);
   g.add(agua);
 
+  // Canto com a varanda vizinha, quando as duas são iguais: o triângulo de água deste lado do espigão.
+  for (const [juncao, ponta] of [[juncoes.menos, -1], [juncoes.mais, 1]] as const) {
+    if (!juncao?.espigao) continue;
+    const canto = criarAguaDeCanto({
+      nome: `telhado-canto-${lado}-${ponta === 1 ? 'mais' : 'menos'}`,
+      largura: juncao.alcance,
+      comprimento: prof * k,
+      inclinacao: s,
+      lado: ponta,
+      caibro: CAIBRO,
+      semente: 707 + 2 * LADOS.indexOf(lado) + (ponta === 1 ? 1 : 0),
+    });
+    canto.position.set(ponta === 1 ? x1 : x0, yParede, 0);
+    canto.rotation.x = Math.atan(s);
+    g.add(canto);
+  }
+
   if (sobAAgua) {
     // Rufo de argamassa que fecha o degrau entre as duas águas: embute a ponta das telhas de cima
     // e entra nas telhas da varanda, de modo que a parede não aparece entre elas.
@@ -156,22 +207,69 @@ export function construirVaranda(casa: CasaConfig, v: MedidaVaranda): THREE.Grou
   // Madeiramento de apoio: uma viga sobre os pilares, na borda de fora, e uma peça presa à parede.
   const pilha = (FUNDO_RIPA + CAIBRO) * k;
   const zPilar = prof - 0.06;
-  const yViga = yParede - zPilar * s - pilha - 0.004;
-  const alturaViga = 0.14;
+  const yViga = topoDaViga(v);
   const apoio = new Construtor();
   if (yParede - pilha - 0.1 > PISO) apoio.caixa(x0, yParede - pilha - 0.1, 0, x1, yParede - pilha, 0.045, 1);
-  // Nada abaixo do chão: sem altura para o pilar, a varanda fica sem viga e sem pilar.
-  if (yViga - alturaViga - PISO > 0.3) {
-    apoio.caixa(x0, yViga - alturaViga, zPilar - 0.04, x1, yViga, zPilar + 0.04, 1);
-    const pontas = x1 - x0 > 0.3 ? pilaresEntre(x0 + 0.06, x1 - 0.06) : [(x0 + x1) / 2];
-    for (const xp of pontas) {
-      apoio.caixa(xp - 0.06, PISO, zPilar - 0.06, xp + 0.06, yViga - alturaViga, zPilar + 0.06, 0);
-      // Sapata e capitel discretos.
-      apoio.caixa(xp - 0.09, PISO, zPilar - 0.09, xp + 0.09, PISO + 0.1, zPilar + 0.09, 0);
-      apoio.caixa(xp - 0.08, yViga - alturaViga - 0.05, zPilar - 0.08, xp + 0.08, yViga - alturaViga, zPilar + 0.08, 0);
-    }
+  if (yViga !== null) {
+    // Na ponta que se junta à vizinha, a viga segue até o pilar da quina de fora, que é do canto, e esta ponta fica sem pilar.
+    const ate = (j: JuncaoDaPonta | undefined): number => (j ? j.alcance - (j.vigaInteira ? 0.02 : 0.1) : 0);
+    apoio.caixa(x0 - ate(juncoes.menos), yViga - ALTURA_DA_VIGA, zPilar - 0.04, x1 + ate(juncoes.mais), yViga, zPilar + 0.04, 1);
+    const xa = x0 - (juncoes.menos?.alcance ?? 0);
+    const xb = x1 + (juncoes.mais?.alcance ?? 0);
+    let pontas = xb - xa > 0.3 ? pilaresEntre(xa + 0.06, xb - 0.06) : [(xa + xb) / 2];
+    if (juncoes.menos) pontas = pontas.slice(1);
+    if (juncoes.mais) pontas = pontas.slice(0, -1);
+    for (const xp of pontas) pilar(apoio, xp, zPilar, yViga - ALTURA_DA_VIGA);
   }
   if (!apoio.vazio) g.add(solido(apoio, [mat.pilar, mat.madeira], 'apoio-varanda'));
+  return g;
+}
+
+/**
+ * Canto entre duas varandas vizinhas, em coordenadas da casa: piso no nível e no material das duas, um pilar na quina
+ * de fora e, com as duas iguais, as telhas do espigão e a peça de madeira debaixo dele. `a` e `b` são as duas varandas
+ * do canto. Os triângulos de água são de cada varanda (`construirVaranda`). Nada aqui é superfície de encaixe.
+ */
+export function construirCantoDaVaranda(canto: CantoDeVarandas, a: MedidaVaranda, b: MedidaVaranda): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `canto-varanda-${canto.lados[0]}-${canto.lados[1]}`;
+  const p = canto.planta;
+  const sx = p.x0 + p.x1 > 0 ? 1 : -1;
+  const sz = p.z0 + p.z1 > 0 ? 1 : -1;
+
+  // As faces coladas nos pisos das duas varandas não aparecem.
+  const piso = new Construtor();
+  piso.caixa(p.x0, 0, p.z0, p.x1, PISO, p.z1, 1, { py: 0, [sx === 1 ? 'nx' : 'px']: null, [sz === 1 ? 'nz' : 'pz']: null });
+  g.add(solido(piso, [mat.pisoVaranda, mat.cimento], 'piso-canto-varanda'));
+
+  const xFora = sx === 1 ? p.x1 : p.x0;
+  const zFora = sz === 1 ? p.z1 : p.z0;
+  const vigas = [topoDaViga(a), topoDaViga(b)].filter((y): y is number => y !== null);
+  if (vigas.length > 0) {
+    // O pilar sobe até a viga mais alta; a mais baixa morre na lateral dele.
+    const apoio = new Construtor();
+    pilar(apoio, xFora - sx * 0.06, zFora - sz * 0.06, Math.max(...vigas) - ALTURA_DA_VIGA);
+    g.add(solido(apoio, [mat.pilar, mat.madeira], 'pilar-canto-varanda'));
+  }
+
+  if (canto.fechamento === 'espigao') {
+    const alto = new THREE.Vector3(sx === 1 ? p.x0 : p.x1, a.yParede, sz === 1 ? p.z0 : p.z1);
+    const baixo = new THREE.Vector3(xFora, a.yParede - a.profundidade * a.inclinacao, zFora);
+    const espigao = criarEspigao(alto, baixo, 909 + LADOS.indexOf(canto.lados[0]));
+    g.add(espigao);
+
+    // Peça de madeira debaixo do espigão, da quina da casa ao pilar: é nela que os caibros do canto se apoiam.
+    const k = Math.hypot(1, a.inclinacao);
+    const comprimento = alto.distanceTo(baixo) * (1 - 0.06 / a.profundidade);
+    const geo = new THREE.BoxGeometry(comprimento, 0.1, 0.06);
+    geo.translate(comprimento / 2, -0.05, 0);
+    const peca = marcarSolido(new THREE.Mesh(geo, mat.madeira));
+    peca.name = 'madeira-do-espigao';
+    peca.quaternion.copy(espigao.quaternion);
+    peca.position.copy(alto);
+    peca.position.y -= FUNDO_RIPA * k + 0.005;
+    g.add(peca);
+  }
   return g;
 }
 

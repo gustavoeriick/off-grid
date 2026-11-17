@@ -3,7 +3,7 @@
 // Tarefas 5.2 e 5.3 do plano.
 
 import type { CasaConfig, Obstaculo, Projeto, TipoObstaculo } from '../nucleo/tipos';
-import { plantaDaVaranda } from './regrasDaCasa';
+import { cantosDasVarandas, plantaDaVaranda } from './regrasDaCasa';
 
 /** Limites dos campos do painel e do arraste. */
 export const LIMITES_OBSTACULO = {
@@ -65,7 +65,7 @@ export function pegadaDoObstaculo(o: Omit<Obstaculo, 'uid'>, soTronco = false): 
   return { x: o.x, z: o.z, largura: o.largura, profundidade: o.profundidade, giro: o.giro };
 }
 
-/** Chão ocupado pela casa: a planta, cada varanda e o quartinho. */
+/** Chão ocupado pela casa: a planta, cada varanda, o canto entre duas varandas vizinhas e o quartinho. */
 export function pegadasDaCasa(casa: CasaConfig): Pegada[] {
   const lista: Pegada[] = [];
   // No tutorial (`soQuartinho`) o corpo da casa e as varandas não existem: só o quartinho ocupa chão.
@@ -73,6 +73,9 @@ export function pegadasDaCasa(casa: CasaConfig): Pegada[] {
     lista.push({ x: 0, z: 0, largura: casa.largura, profundidade: casa.profundidade, giro: 0 });
     for (const v of casa.varandas) {
       const r = plantaDaVaranda(v, casa);
+      lista.push({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, largura: r.x1 - r.x0, profundidade: r.z1 - r.z0, giro: 0 });
+    }
+    for (const { planta: r } of cantosDasVarandas(casa)) {
       lista.push({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, largura: r.x1 - r.x0, profundidade: r.z1 - r.z0, giro: 0 });
     }
   }

@@ -6,7 +6,7 @@
 // (0,085 a 0,11) e os caibros. As placas da fase 2 encaixam na malha plana de y = 0.
 
 import * as THREE from 'three';
-import { CAMADA_SO_SOMBRA, Construtor, type Marca, sorteio } from './malha';
+import { CAMADA_SO_SOMBRA, Construtor, type Marca, type P3, sorteio } from './malha';
 import { COR, mat } from './materiais';
 
 /** Do plano da crista até a face de baixo das ripas, medido na normal. */
@@ -141,6 +141,36 @@ function instanciar(
   return m;
 }
 
+/** Capa e canal de uma água com colunas de `passoX` e peças de `comp` de comprimento (já com o traspasse). */
+function geometriasDaFiada(passoX: number, comp: number): { capa: THREE.BufferGeometry; canal: THREE.BufferGeometry } {
+  const capa = geometriaTelha({
+    meiaAlto: passoX * 0.29,
+    meiaBaixo: passoX * 0.37,
+    arcoAlto: 0.05,
+    arcoBaixo: 0.062,
+    yAlto: -0.02,
+    yBaixo: 0,
+    comp,
+    convexa: true,
+    gomos: 4,
+    borda: true,
+  });
+  const canal = geometriaTelha({
+    meiaAlto: passoX / 2 - 0.003,
+    meiaBaixo: passoX / 2 - 0.02,
+    arcoAlto: 0.058,
+    arcoBaixo: 0.048,
+    yAlto: -TOPO_RIPA,
+    yBaixo: -0.07,
+    comp,
+    convexa: false,
+    gomos: 2,
+    // No canal a borda fica debaixo da fiada de baixo e quase não aparece.
+    borda: false,
+  });
+  return { capa, canal };
+}
+
 /** Retângulo no quadro da água: X ao longo da largura (zero no meio), Z descendo a partir da borda de cima. */
 export interface Recorte {
   x0: number;
@@ -271,31 +301,7 @@ export function criarAgua(o: OpcoesAgua): THREE.Group {
   // Telhas: fiadas de canal lado a lado e capas sobre as juntas.
   const comp = passoZ + TRASPASSE;
 
-  const geoCapa = geometriaTelha({
-    meiaAlto: passoX * 0.29,
-    meiaBaixo: passoX * 0.37,
-    arcoAlto: 0.05,
-    arcoBaixo: 0.062,
-    yAlto: -0.02,
-    yBaixo: 0,
-    comp,
-    convexa: true,
-    gomos: 4,
-    borda: true,
-  });
-  const geoCanal = geometriaTelha({
-    meiaAlto: passoX / 2 - 0.003,
-    meiaBaixo: passoX / 2 - 0.02,
-    arcoAlto: 0.058,
-    arcoBaixo: 0.048,
-    yAlto: -TOPO_RIPA,
-    yBaixo: -0.07,
-    comp,
-    convexa: false,
-    gomos: 2,
-    // No canal a borda fica debaixo da fiada de baixo e quase não aparece.
-    borda: false,
-  });
+  const { capa: geoCapa, canal: geoCanal } = geometriasDaFiada(passoX, comp);
 
   const mCapas: THREE.Matrix4[] = [];
   const cCapas: THREE.Color[] = [];
@@ -421,5 +427,205 @@ export function criarCumeeira(largura: number, semente: number): THREE.Group {
   massa.name = 'argamassa-cumeeira';
   massa.receiveShadow = true;
   g.add(massa);
+  return g;
+}
+
+// ---------------------------------------------------------------- Água de canto (espigão)
+
+export interface OpcoesAguaDeCanto {
+  nome: string;
+  /** Medida do canto ao longo da beira, a partir da ponta da água vizinha. */
+  largura: number;
+  /** Medida ao longo da descida, no plano da água: a mesma da água vizinha, para as fiadas baterem. */
+  comprimento: number;
+  /** Inclinação da água, como fração. */
+  inclinacao: number;
+  /** +1: o canto continua a água vizinha para +X; −1: para −X. */
+  lado: 1 | -1;
+  caibro: number;
+  semente: number;
+}
+
+/** Vértice de uma telha cortada: posição e normal. */
+type Vertice = [x: number, y: number, z: number, nx: number, ny: number, nz: number];
+
+/**
+ * Triângulo de água que fecha, com a água do lado vizinho, o canto entre dois telhados iguais. O quadro é o de
+ * `criarAgua`, com a origem na ponta de cima do espigão (a quina da casa): X ao longo da beira, Z descendo, Y a normal.
+ * As telhas são cortadas no plano vertical do espigão, como o telhadista corta as de verdade. Não tem malha de
+ * encaixe (não recebe placa); a laje só de sombra tapa o sol como a das outras águas.
+ */
+export function criarAguaDeCanto(o: OpcoesAguaDeCanto): THREE.Group {
+  const g = new THREE.Group();
+  g.name = o.nome;
+  const L = o.largura;
+  const C = o.comprimento;
+  const lado = o.lado;
+  const r = sorteio(o.semente);
+  const k = Math.hypot(1, o.inclinacao);
+  const cosA = 1 / k;
+  const sinA = o.inclinacao / k;
+  /** Positivo do lado que fica: a distância horizontal até a parede é maior que a distância até a ponta da água vizinha. */
+  const dentro = (x: number, y: number, z: number): number => z * cosA + y * sinA - lado * x;
+
+  const us = juntas(0, L, [], 0.235);
+  const zs = juntas(0, C, [], 0.42);
+  const colunas = us.length - 1;
+  const fiadas = zs.length - 1;
+  const passoX = L / colunas;
+  const passoZ = C / fiadas;
+
+  // Laje só de sombra: um prisma de base triangular (quina, ponta de fora, pé da água vizinha).
+  const sombra = new Construtor();
+  const pontos = (y: number): [P3, P3, P3] => [
+    [0, y, 0],
+    [lado * L, y, C],
+    [0, y, C],
+  ];
+  const alto = pontos(-TOPO_RIPA);
+  const baixo = pontos(-FUNDO_RIPA);
+  if (lado === 1) {
+    sombra.tri(alto[0], alto[2], alto[1]);
+    sombra.tri(baixo[0], baixo[1], baixo[2]);
+  } else {
+    sombra.tri(alto[0], alto[1], alto[2]);
+    sombra.tri(baixo[0], baixo[2], baixo[1]);
+  }
+  for (let i = 0; i < 3; i++) {
+    const a = i;
+    const b = (i + 1) % 3;
+    if (lado === 1) sombra.quad(baixo[b]!, baixo[a]!, alto[a]!, alto[b]!);
+    else sombra.quad(baixo[a]!, baixo[b]!, alto[b]!, alto[a]!);
+  }
+  const laje = sombra.malha(mat.soSombra);
+  laje.name = `sombra-${o.nome}`;
+  laje.castShadow = true;
+  laje.userData.sombra = true;
+  laje.userData.soSombra = true;
+  laje.layers.set(CAMADA_SO_SOMBRA);
+  g.add(laje);
+
+  // Telhas: as mesmas fiadas da água vizinha, cortadas no plano do espigão e juntas em uma malha só.
+  const comp = passoZ + TRASPASSE;
+  const { capa: geoCapa, canal: geoCanal } = geometriasDaFiada(passoX, comp);
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const cores: number[] = [];
+  const q = new THREE.Quaternion();
+  const eixoY = new THREE.Vector3(0, 1, 0);
+  const m4 = new THREE.Matrix4();
+  const m3 = new THREE.Matrix3();
+  const v = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const corDaPeca = new THREE.Color();
+  const assentar = (geo: THREE.BufferGeometry, x: number, z: number, escurecer: number): void => {
+    q.setFromAxisAngle(eixoY, (r() - 0.5) * 0.022);
+    m4.compose(new THREE.Vector3(x + (r() - 0.5) * 0.006, 0, z + (r() - 0.5) * 0.008), q, new THREE.Vector3(1, 1, 1));
+    m3.getNormalMatrix(m4);
+    corDeTelha(r, escurecer, corDaPeca);
+    const p = geo.getAttribute('position');
+    const nn = geo.getAttribute('normal');
+    const vertices: Vertice[] = [];
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m4);
+      n.fromBufferAttribute(nn, i).applyMatrix3(m3).normalize();
+      vertices.push([v.x, v.y, v.z, n.x, n.y, n.z]);
+    }
+    const indice = geo.getIndex()!;
+    for (let t = 0; t < indice.count; t += 3) {
+      const tri = [vertices[indice.getX(t)]!, vertices[indice.getX(t + 1)]!, vertices[indice.getX(t + 2)]!];
+      const d = tri.map((p3) => dentro(p3[0], p3[1], p3[2]));
+      if (d.every((valor) => valor <= 0)) continue;
+      // Corte do triângulo pelo plano do espigão: sobra um triângulo ou um quadrilátero.
+      const sobra: Vertice[] = [];
+      for (let i = 0; i < 3; i++) {
+        const a = tri[i]!;
+        const b = tri[(i + 1) % 3]!;
+        const da = d[i]!;
+        const db = d[(i + 1) % 3]!;
+        if (da >= 0) sobra.push(a);
+        if (da >= 0 !== db >= 0) {
+          const f = da / (da - db);
+          sobra.push(a.map((valor, c) => valor + (b[c]! - valor) * f) as Vertice);
+        }
+      }
+      for (let i = 1; i + 1 < sobra.length; i++) {
+        for (const p3 of [sobra[0]!, sobra[i]!, sobra[i + 1]!]) {
+          pos.push(p3[0], p3[1], p3[2]);
+          nor.push(p3[3], p3[4], p3[5]);
+          cores.push(corDaPeca.r, corDaPeca.g, corDaPeca.b);
+        }
+      }
+    }
+  };
+  for (let j = 0; j < fiadas; j++) {
+    const z = zs[j]! - TRASPASSE;
+    // Até onde a fiada alcança o lado que fica, medido ao longo da beira.
+    const alcance = zs[j + 1]! * cosA;
+    // A capa da junta com a água vizinha (u = 0) é dela.
+    for (let i = 1; i <= colunas; i++) {
+      if (us[i]! - passoX * 0.37 < alcance) assentar(geoCapa, lado * us[i]!, z, 1);
+    }
+    for (let i = 0; i < colunas; i++) {
+      if (us[i]! < alcance) assentar(geoCanal, (lado * (us[i]! + us[i + 1]!)) / 2, z, 0.8);
+    }
+  }
+  geoCapa.dispose();
+  geoCanal.dispose();
+  const geoTelhas = new THREE.BufferGeometry();
+  geoTelhas.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geoTelhas.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geoTelhas.setAttribute('color', new THREE.Float32BufferAttribute(cores, 3));
+  const telhas = new THREE.Mesh(geoTelhas, mat.telhaCortada);
+  telhas.name = 'telhas';
+  telhas.castShadow = false;
+  telhas.receiveShadow = true;
+  g.add(telhas);
+
+  // Madeiramento: as ripas vão da água vizinha até o espigão; os caibros, do espigão até a beira.
+  const mMadeira: THREE.Matrix4[] = [];
+  const cMadeira: THREE.Color[] = [];
+  const semGiro = new THREE.Quaternion();
+  const peca = (u0: number, u1: number, cy: number, cz: number, sy: number, sz: number): void => {
+    if (u1 - u0 < 0.02 || sz < 0.02) return;
+    mMadeira.push(new THREE.Matrix4().compose(new THREE.Vector3((lado * (u0 + u1)) / 2, cy, cz), semGiro, new THREE.Vector3(u1 - u0, sy, sz)));
+    cMadeira.push(new THREE.Color().setScalar(0.85 + r() * 0.3));
+  };
+  const hRipa = FUNDO_RIPA - TOPO_RIPA;
+  for (let j = 1; j <= fiadas; j++) {
+    const beira = j === fiadas;
+    const z = zs[j]! - (beira ? 0.025 : 0);
+    peca(0, (z - 0.025) * cosA, -(FUNDO_RIPA + TOPO_RIPA) / 2, z, hRipa, 0.05);
+    // Ripa dobrada na beira, que levanta a primeira fiada e serve de testeira.
+    if (beira) peca(0, (zs[j]! - 0.025) * cosA, -FUNDO_RIPA - 0.02, zs[j]! - 0.0125, 0.04, 0.025);
+  }
+  const nCaibros = Math.max(2, Math.round(L / 0.5) + 1);
+  for (let i = 1; i < nCaibros; i++) {
+    const u = 0.045 + (i * (L - 0.09)) / (nCaibros - 1);
+    const z0 = (u + 0.025) * k + 0.03;
+    peca(u - 0.025, u + 0.025, -FUNDO_RIPA - o.caibro / 2, (z0 + C) / 2 - 0.01, o.caibro, C - z0 - 0.02);
+  }
+  if (mMadeira.length > 0) {
+    const madeira = instanciar(new THREE.BoxGeometry(1, 1, 1), mat.madeiramento, mMadeira, cMadeira);
+    madeira.name = 'madeiramento';
+    g.add(madeira);
+  }
+  return g;
+}
+
+/**
+ * Fiada de telhas de espigão, da ponta de cima (`alto`) à de baixo (`baixo`), nas coordenadas de quem a recebe.
+ * São as telhas da cumeeira, deitadas na aresta em que duas águas de canto se encontram.
+ */
+export function criarEspigao(alto: THREE.Vector3, baixo: THREE.Vector3, semente: number): THREE.Group {
+  const eixo = baixo.clone().sub(alto);
+  const g = criarCumeeira(eixo.length(), semente);
+  g.name = 'espigao';
+  const x = eixo.clone().normalize();
+  const z = x.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+  const y = z.clone().cross(x);
+  g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+  // Um pouco acima da aresta, para a boca da telha passar por cima das capas das duas águas.
+  g.position.copy(alto).add(baixo).multiplyScalar(0.5).addScaledVector(y, 0.03);
   return g;
 }

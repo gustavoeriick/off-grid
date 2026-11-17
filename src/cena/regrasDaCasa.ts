@@ -117,6 +117,77 @@ export function plantaDaVaranda(v: Varanda, casa: Pick<CasaConfig, 'largura' | '
   }
 }
 
+// ---------------------------------------------------------------- Canto entre duas varandas
+
+/** Folga, em metros, para dizer que a ponta de uma varanda encosta na quina da casa. */
+const FOLGA_DA_QUINA = 0.02;
+
+/** Lado vizinho de cada lado, na ponta positiva da fachada (à direita de quem a olha de fora). */
+const LADO_SEGUINTE: Record<LadoCasa, LadoCasa> = { frente: 'direita', direita: 'fundos', fundos: 'esquerda', esquerda: 'frente' };
+
+/**
+ * Canto entre duas varandas de lados vizinhos que chegam, as duas, até a mesma quina da casa.
+ * Não está no projeto salvo: é derivado das duas varandas. É desenho e sombra, não superfície de encaixe.
+ */
+export interface CantoDeVarandas {
+  /** As duas varandas, na ordem em que se dá a volta na casa: a ponta positiva da primeira encontra a ponta negativa da segunda. */
+  lados: [LadoCasa, LadoCasa];
+  /** Retângulo do canto, em coordenadas da casa: da quina da casa até a quina de fora. */
+  planta: Retangulo;
+  /**
+   * `espigao`: as duas têm a mesma profundidade e a mesma inclinação, e os dois telhados se encontram na diagonal.
+   * `aberto`: são diferentes, e o canto leva só piso e pilar, sem telhado.
+   */
+  fechamento: 'espigao' | 'aberto';
+}
+
+/** A varanda como a cena a desenha: pontas cortadas para caber na fachada e inclinação cortada pela beira de 2,0 m. */
+function varandaDesenhada(casa: Pick<CasaConfig, 'largura' | 'profundidade' | 'andares' | 'peDireito' | 'varandas'>, lado: LadoCasa): { a0: number; a1: number; meia: number; profundidade: number; inclinacao: number } | null {
+  // Vale a primeira da lista em cada lado, como no desenho.
+  const v = casa.varandas.find((item) => item.lado === lado);
+  if (!v || !(v.profundidade > 0.05)) return null;
+  const fachada = medidaDaFachada(casa, lado);
+  const largura = v.largura === null ? fachada : entre(v.largura, 0, fachada);
+  if (!(largura > 0.05)) return null;
+  const folga = (fachada - largura) / 2;
+  const centro = v.largura === null ? 0 : entre(v.deslocamento, -folga, folga);
+  const teto = Math.max(0, (alturaDaParede(casa) - LIMITES_VARANDA.alturaMinBeira) / v.profundidade);
+  return { a0: centro - largura / 2, a1: centro + largura / 2, meia: fachada / 2, profundidade: v.profundidade, inclinacao: entre(v.inclinacaoPct / 100, 0, teto) };
+}
+
+/**
+ * Cantos entre varandas vizinhas. Há canto quando a ponta de cada uma das duas encosta na quina da casa que elas
+ * dividem (a varanda nunca passa da ponta da fachada, então encostar é chegar a ela). O retângulo vai da quina da
+ * casa até a profundidade de cada uma. O telhado só fecha em espigão com profundidades e inclinações iguais.
+ */
+export function cantosDasVarandas(casa: Pick<CasaConfig, 'largura' | 'profundidade' | 'andares' | 'peDireito' | 'varandas' | 'soQuartinho'>): CantoDeVarandas[] {
+  if (casa.soQuartinho) return [];
+  const W = casa.largura / 2;
+  const D = casa.profundidade / 2;
+  const lista: CantoDeVarandas[] = [];
+  for (const primeiro of ['frente', 'direita', 'fundos', 'esquerda'] as const) {
+    const segundo = LADO_SEGUINTE[primeiro];
+    const a = varandaDesenhada(casa, primeiro);
+    const b = varandaDesenhada(casa, segundo);
+    if (!a || !b) continue;
+    if (a.a1 < a.meia - FOLGA_DA_QUINA || b.a0 > -b.meia + FOLGA_DA_QUINA) continue;
+    // A quina fica em x = ±W e z = ±D; a varanda da frente ou dos fundos dá a medida em Z, a lateral dá a medida em X.
+    const lateral = primeiro === 'direita' || primeiro === 'esquerda' ? a : b;
+    const frontal = lateral === a ? b : a;
+    const sx = primeiro === 'frente' || primeiro === 'direita' ? 1 : -1;
+    const sz = primeiro === 'frente' || primeiro === 'esquerda' ? 1 : -1;
+    const xFora = sx * (W + lateral.profundidade);
+    const zFora = sz * (D + frontal.profundidade);
+    const iguais = Math.abs(a.profundidade - b.profundidade) < 1e-6 && Math.abs(a.inclinacao - b.inclinacao) < 1e-6;
+    lista.push({
+      lados: [primeiro, segundo],
+      planta: { x0: Math.min(sx * W, xFora), x1: Math.max(sx * W, xFora), z0: Math.min(sz * D, zFora), z1: Math.max(sz * D, zFora) },
+      fechamento: iguais ? 'espigao' : 'aberto',
+    });
+  }
+  return lista;
+}
+
 /** Verdadeiro quando o retângulo girado do quartinho invade (área maior que zero) o retângulo `r`. */
 function quartinhoCruza(q: CasaConfig['quartinho'], r: Retangulo): boolean {
   const th = (q.giro * Math.PI) / 180;
@@ -144,7 +215,10 @@ function quartinhoCruza(q: CasaConfig['quartinho'], r: Retangulo): boolean {
 export function varandaSobreOQuartinho(casa: CasaConfig, v: Varanda): boolean {
   // No tutorial só existe o quartinho: não há varanda para ficar em cima dele.
   if (casa.soQuartinho) return false;
-  return quartinhoCruza(casa.quartinho, plantaDaVaranda(v, casa));
+  if (quartinhoCruza(casa.quartinho, plantaDaVaranda(v, casa))) return true;
+  // O canto que ela forma com uma varanda vizinha também é chão da varanda.
+  const com = { ...casa, varandas: [v, ...casa.varandas.filter((item) => item.lado !== v.lado)] };
+  return cantosDasVarandas(com).some((c) => c.lados.includes(v.lado) && quartinhoCruza(casa.quartinho, c.planta));
 }
 
 /** Limites da posição do quartinho no terreno (seção 12 de cena-e-interface.md) e passo do arraste. */
@@ -155,7 +229,7 @@ export function avisoDoQuartinho(casa: CasaConfig): string | null {
   // No tutorial o corpo da casa não existe: as medidas dele continuam no projeto, mas não valem nada.
   if (casa.soQuartinho) return null;
   const planta: Retangulo = { x0: -casa.largura / 2, x1: casa.largura / 2, z0: -casa.profundidade / 2, z1: casa.profundidade / 2 };
-  const retangulos = [planta, ...casa.varandas.map((v) => plantaDaVaranda(v, casa))];
+  const retangulos = [planta, ...casa.varandas.map((v) => plantaDaVaranda(v, casa)), ...cantosDasVarandas(casa).map((c) => c.planta)];
   return retangulos.some((r) => quartinhoCruza(casa.quartinho, r)) ? 'O quartinho está em cima da casa ou da varanda.' : null;
 }
 
