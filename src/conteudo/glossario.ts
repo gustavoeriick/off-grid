@@ -457,6 +457,14 @@ export const GLOSSARIO: TermoGlossario[] = [
     veja: ['aterramento', 'disjuntor-ca'],
   },
   {
+    id: 'filtro-de-linha',
+    termo: 'Filtro de linha',
+    curto: 'Régua de tomadas com uma corrente máxima: vários aparelhos ligam nela e um cabo só sai dela.',
+    texto:
+      'O filtro de linha reparte uma tomada em várias, mas toda a corrente passa por um cabo só, e ele tem um limite escrito na etiqueta, como 10 A. Em 127 V, 10 A são 1.270 W somados. Aparelho forte, como o ar-condicionado, não deve dividir filtro com outros.',
+    veja: ['corrente', 'sobrecarga'],
+  },
+  {
     id: 'quadro-de-energia',
     termo: 'Quadro de energia',
     curto: 'Caixa fechada onde ficam os disjuntores e o DPS, presos em um trilho.',

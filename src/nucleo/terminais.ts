@@ -13,8 +13,10 @@ const CA_ENTRADA: DefTerminal = { id: 'caEntrada', tipo: 'ca', rotulo: 'Entrada 
 const CA_SAIDA: DefTerminal = { id: 'caSaida', tipo: 'ca', rotulo: 'Saída para os aparelhos' };
 const PLUG: DefTerminal = { id: 'plug', tipo: 'ca', rotulo: 'Plugue' };
 const TOMADA: DefTerminal = { id: 'tomada', tipo: 'ca', rotulo: 'Tomada da rede' };
+/** O filtro de linha tem um terminal só: aparelhos e o cabo de saída ficam na mesma rede elétrica. */
+const TOMADAS_DO_FILTRO: DefTerminal = { id: 'tomadas', tipo: 'ca', rotulo: 'Tomadas do filtro' };
 
-/** Terminais de um item, na ordem em que aparecem na peça. Proteções, cabos e acessórios não têm terminais. */
+/** Terminais de um item, na ordem em que aparecem na peça. Proteções e cabos não têm terminais; entre os acessórios, só o filtro de linha tem. */
 export function terminaisDe(item: Item): DefTerminal[] {
   switch (item.categoria) {
     case 'placa':
@@ -35,9 +37,10 @@ export function terminaisDe(item: Item): DefTerminal[] {
       return [PLUG];
     case 'rede':
       return [TOMADA];
+    case 'acessorio':
+      return item.tipo === 'filtro' ? [TOMADAS_DO_FILTRO] : [];
     case 'protecao':
     case 'cabo':
-    case 'acessorio':
       return [];
   }
 }

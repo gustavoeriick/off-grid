@@ -167,6 +167,8 @@ export function analisarConsultor(
       sugerir({ regra: codigo, nivel, titulo, texto: TEXTO_INVERTIDA_NO_CONTROLADOR, alvos: [d.uid, ...ramo] });
     }
   }
+  // Filtro de linha: vale com ou sem inversor (ele também liga na tomada da rede).
+  regrasDoFiltro(projeto, catalogo, sugerir);
   if (sistema === null) return lista;
 
   const dispositivo = (uid: string) => projeto.dispositivos.find((d) => d.uid === uid);
@@ -1131,6 +1133,65 @@ export function modulosDaProtecao(protecao: Protecao): number | null {
     case 'fusivel':
       // O fusível ANL ou Mega da bateria tem porta-fusível próprio, desenhado no cabo. Só o de trilho ocupa módulos.
       return /anl|mega/i.test(protecao.id) ? null : 2;
+  }
+}
+
+/** filtro-sobrecarregado e filtro-sem-tomada. Contam os aparelhos com cabo direto no terminal `tomadas` do filtro. */
+function regrasDoFiltro(projeto: Projeto, catalogo: Catalogo, sugerir: (s: Sugestao) => void): void {
+  for (const filtro of projeto.dispositivos) {
+    const item = catalogo.get(filtro.itemId);
+    if (item?.categoria !== 'acessorio' || item.tipo !== 'filtro') continue;
+
+    // Cada aparelho com cabo direto no filtro, uma vez só, na ordem dos cabos.
+    const ligados: { uid: string; item: Aparelho; ligado: boolean }[] = [];
+    const cabos: string[] = [];
+    for (const c of projeto.cabos) {
+      const ponta = c.de.disp === filtro.uid && c.de.terminal === 'tomadas' ? c.para : c.para.disp === filtro.uid && c.para.terminal === 'tomadas' ? c.de : null;
+      if (ponta === null || ponta.terminal !== 'plug') continue;
+      const d = projeto.dispositivos.find((x) => x.uid === ponta.disp);
+      const ap = d ? catalogo.get(d.itemId) : undefined;
+      if (!d || ap?.categoria !== 'aparelho') continue;
+      cabos.push(c.uid);
+      if (!ligados.some((l) => l.uid === d.uid)) ligados.push({ uid: d.uid, item: ap, ligado: d.ligado });
+    }
+    if (ligados.length === 0) continue;
+
+    const nomeDe = (uid: string, nome: string): string => {
+      const d = projeto.dispositivos.find((x) => x.uid === uid);
+      const comodo = d ? comodoDe(projeto.casa, d) : null;
+      return comodo && comodo.nome !== 'Sem nome' ? `${nome} (${comodo.nome})` : nome;
+    };
+
+    // Só o que está ligado puxa corrente.
+    const emUso = ligados.filter((l) => l.ligado);
+    const amperes = emUso.reduce((soma, l) => soma + l.item.potenciaW, 0) / projeto.tensaoRede;
+    const limite = item.correnteMaxA ?? 0;
+    if (limite > 0 && amperes > limite) {
+      const maior = emUso.reduce((a, b) => (b.item.potenciaW > a.item.potenciaW ? b : a));
+      sugerir({
+        regra: 'filtro-sobrecarregado',
+        nivel: 'erro',
+        titulo: 'O filtro de linha está sobrecarregado',
+        texto:
+          `Os aparelhos ligados nele puxam ${um(amperes)} A e o filtro aguenta ${um(limite)} A. ` +
+          `Ele esquenta e o fusível dele queima. Passe ${nomeDe(maior.uid, minuscula(maior.item.nome))} para uma tomada só dele.`,
+        alvos: [filtro.uid, ...emUso.map((l) => l.uid), ...cabos],
+      });
+    }
+
+    const tomadas = item.tomadas ?? 0;
+    if (tomadas > 0 && ligados.length > tomadas) {
+      const sobram = ligados.length - tomadas;
+      sugerir({
+        regra: 'filtro-sem-tomada',
+        nivel: 'alerta',
+        titulo: 'Aparelhos demais para o filtro de linha',
+        texto:
+          `Este filtro tem ${inteiro(tomadas)} tomadas e há ${inteiro(ligados.length)} aparelhos ligados nele. ` +
+          `Tire ${sobram === 1 ? 'um' : inteiro(sobram)} ou use outro filtro.`,
+        alvos: [filtro.uid, ...ligados.map((l) => l.uid), ...cabos],
+      });
+    }
   }
 }
 

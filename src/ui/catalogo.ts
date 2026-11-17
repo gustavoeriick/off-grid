@@ -64,7 +64,7 @@ function arrastavelParaACena(item: Item): boolean {
     case 'rede':
       return true;
     case 'acessorio':
-      return item.id === ID_QUADRO || item.tipo === 'grampo';
+      return item.id === ID_QUADRO || item.tipo === 'grampo' || item.tipo === 'filtro';
     default:
       return false;
   }

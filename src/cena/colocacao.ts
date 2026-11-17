@@ -20,9 +20,19 @@ const LUGAR_DO_APARELHO: Record<string, [andar: 0 | 1, fx: number, fz: number, g
   'ap-tv': [0, 0.25, 0.3, 180],
   'ap-ventilador': [0, 0.05, 0.2, 0],
   'ap-rede': [1, -0.3, -0.3, 0],
+  // Os três da rede, separados, ficam lado a lado no lugar do conjunto, cada um na sua mesinha.
+  'ap-modem': [1, -0.4, -0.3, 0],
+  'ap-roteador': [1, -0.32, -0.3, 0],
+  'ap-mini-pc': [1, -0.24, -0.3, 0],
+  // O ar portátil fica no chão do andar de cima, de costas para a fachada: o duto sai para a janela.
+  'ap-ar-portatil': [1, 0.2, 0.36, 180],
   'ap-pc-24h': [1, -0.1, -0.3, 0],
   'ap-pc-trabalho': [1, 0.25, -0.25, 0],
 };
+
+/** Onde fica o primeiro filtro de linha: no chão do andar de cima, atrás das mesinhas da rede. Os demais seguem para a direita. */
+const LUGAR_DO_FILTRO: [andar: 0 | 1, fx: number, fz: number] = [1, -0.32, -0.38];
+const PASSO_DOS_FILTROS = 0.5;
 
 /** Lugares de sobra no térreo, para aparelhos fora da tabela ou repetidos. */
 const LUGARES_DE_SOBRA: [fx: number, fz: number][] = [
@@ -116,7 +126,7 @@ export function colocarIniciais(projeto: Projeto, catalogo: Catalogo): Map<strin
   pendentes.filter(([, i]) => i.categoria === 'rede').forEach(([d, item], i) => naParede(d, item, 0.6 + i * 0.2, PISO + 1.2));
   // Quadros à esquerda do inversor.
   let xQuadro = -larguraDoInversor / 2 - 0.12;
-  for (const [d, item] of pendentes.filter(([, i]) => i.categoria === 'acessorio')) {
+  for (const [d, item] of pendentes.filter(([, i]) => i.categoria === 'acessorio' && superficieAceita(i) === 'parede')) {
     const l = dimensoesDe(item)![0];
     naParede(d, item, xQuadro - l / 2, PISO + 1.35);
     xQuadro -= l + 0.06;
@@ -213,5 +223,13 @@ export function colocarIniciais(projeto: Projeto, catalogo: Catalogo): Map<strin
     const marca = { id: emCima ? 'piso-superior' : 'piso-terreo', tipo: 'piso' } as const;
     mapa.set(d.uid, encaixar(item, marca, [fx * casa.largura, emCima ? casa.peDireito : PISO, fz * casa.profundidade], [0, 1, 0], giroDaPeca));
   }
+
+  // ---- Filtros de linha: no chão, atrás das mesinhas da rede.
+  pendentes.filter(([, i]) => i.categoria === 'acessorio' && superficieAceita(i) === 'piso').forEach(([d, item], i) => {
+    const [andar, fx, fz] = LUGAR_DO_FILTRO;
+    const emCima = andar === 1 && casa.andares === 2;
+    const marca = { id: emCima ? 'piso-superior' : 'piso-terreo', tipo: 'piso' } as const;
+    mapa.set(d.uid, encaixar(item, marca, [fx * casa.largura + i * PASSO_DOS_FILTROS, emCima ? casa.peDireito : PISO, fz * casa.profundidade], [0, 1, 0], 0));
+  });
   return mapa;
 }

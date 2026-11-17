@@ -10,7 +10,7 @@ import type { Acessorio, Bateria, Controlador, Dimensoes, Inversor, Item, Placa 
 import { terminaisDe } from '../nucleo/terminais';
 import type { DefTerminal } from '../nucleo/tipos';
 import { construirAparelho, FORA_DO_VOLUME } from './aparelhos';
-import { borneDeBaixo, borneDeTopo, type Marcar, mc4, poloDeChumbo } from './conectores';
+import { borneDeBaixo, borneDeTopo, type Marcar, mc4, plugue, poloDeChumbo, type PontasDoTerminal, TOPO_DO_PLUGUE } from './conectores';
 import { dimensoesDe } from './encaixe';
 import { estampa, logotipo, retangulo, texto, tomadaBR, visorApagado } from './estampas';
 import { Molde, type V3 } from './molde';
@@ -22,6 +22,8 @@ export interface TerminalDoModelo extends DefTerminal {
   saida: V3;
   /** Raio do anel colorido. */
   raio: number;
+  /** Só no terminal que recebe vários cabos (as tomadas do filtro de linha): onde cada cabo chega. */
+  pontas?: PontasDoTerminal;
 }
 
 export interface Modelo {
@@ -634,6 +636,88 @@ function grampoDeParede(dim: Dimensoes, m: Molde): void {
   }
 }
 
+// ---------------------------------------------------------------- Filtro de linha
+
+/** Tomada de três pinos do filtro de linha, vista de cima: módulo preto com o rebaixo sextavado. */
+function tomadaDoFiltro(): THREE.Material {
+  return estampa('tomada-do-filtro', 96, 96, (g, w, h) => {
+    retangulo(g, 2, 2, w - 4, h - 4, 12, '#26282c');
+    g.save();
+    g.translate(w / 2, h / 2);
+    const r = w * 0.36;
+    g.fillStyle = '#3d4046';
+    g.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i;
+      if (i === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r * 0.78);
+      else g.lineTo(Math.cos(a) * r, Math.sin(a) * r * 0.78);
+    }
+    g.closePath();
+    g.fill();
+    g.strokeStyle = '#6a6f77';
+    g.lineWidth = 2;
+    g.stroke();
+    g.fillStyle = '#020202';
+    for (const [fx, fy] of [[-0.48, 0], [0.48, 0], [0, 0.14]] as const) {
+      g.beginPath();
+      g.arc(fx * r, fy * r, r * 0.13, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+  }, { rugosidade: 0.5 });
+}
+
+/**
+ * Régua preta deitada no chão: a chave vermelha com luz em uma ponta, as tomadas de três pinos em fila e o rabicho
+ * curto, com o plugue em pé ao lado. Tem um terminal só (`tomadas`); o anel fica sobre o meio da régua, cada cabo de
+ * aparelho chega em uma tomada e o cabo que vai para a saída do inversor ou para a tomada da rede sai do plugue do rabicho.
+ * A chave tem as partes `aceso` e `apagado`: a camada de dispositivos acende a do filtro que está entregando energia.
+ */
+function filtroDeLinha(item: Acessorio, dim: Dimensoes, m: Molde, T: Marcar): void {
+  const [W, H, D] = dim;
+  const preto = '#1b1c1f';
+  const y0 = -H / 2;
+  const relevo = 0.004;
+  const yTopo = H / 2 - relevo;
+  m.bloco('plastico', preto, 0, (y0 + yTopo) / 2, 0, W, yTopo - y0, D, 0.007);
+  // Chave de tecla na ponta esquerda: moldura, e a tecla vermelha, que brilha com energia.
+  const lChave = 0.05;
+  const xChave = -W / 2 + 0.008 + lChave / 2 - 0.006;
+  m.bloco('plastico', '#0b0c0d', xChave, yTopo + 0.001, 0, 0.032, 0.002, 0.024, 0.001);
+  m.filho('apagado').bloco('plastico', '#8a1c15', xChave, yTopo + 0.0035, 0, 0.026, 0.006, 0.018, 0.0015, ['z', -0.14]);
+  m.filho('aceso').bloco('luz', '#ff4a36', xChave, yTopo + 0.0035, 0, 0.026, 0.006, 0.018, 0.0015, ['z', 0.14]);
+  // Tomadas em fila, cada uma em um módulo com um pouco de relevo.
+  const n = Math.max(1, item.tomadas ?? 5);
+  const x0 = -W / 2 + lChave;
+  const passo = (W / 2 - 0.008 - x0) / n;
+  const lado = Math.min(passo - 0.004, D - 0.012);
+  const cargas: V3[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = x0 + passo * (i + 0.5);
+    m.bloco('plastico', '#232528', x, yTopo + relevo / 2 - 0.0005, 0, lado, relevo - 0.001, lado, 0.0015);
+    m.estampa(tomadaDoFiltro(), x, yTopo + relevo - 0.0008, 0, lado - 0.002, lado - 0.002, 'py');
+    cargas.push([x, yTopo + relevo + 0.004, 0]);
+  }
+  // Etiqueta na frente, com o limite de corrente do catálogo.
+  if (item.correnteMaxA !== undefined) {
+    const rotulo = `${numero(item.correnteMaxA)} A · ${n} tomadas`;
+    m.estampa(
+      estampa(`etiqueta-${item.id}`, 256, 40, (g, w, h) => {
+        retangulo(g, 0, 0, w, h, 6, '#d9dcdf');
+        texto(g, rotulo, w / 2, h / 2 + 1, h * 0.62, '#1c2630', 'center', 'bold', w - 16);
+      }),
+      W * 0.18, (y0 + yTopo) / 2, D / 2 + 0.0006, 0.09, 0.014, 'pz',
+    );
+  }
+  // Rabicho: sai da ponta da chave, dá uma volta no chão e termina no plugue, em pé.
+  const xPlugue = -W / 2 - 0.1;
+  const zPlugue = D * 0.2;
+  m.cilindro('plastico', preto, -W / 2 - 0.006, y0 + 0.014, 0, 0.0065, 0.014, 'x', 8, 0.0045);
+  plugue(m, xPlugue, y0, zPlugue);
+  m.tubo('plastico', '#2b2d30', [[-W / 2 - 0.01, y0 + 0.014, 0], [-W / 2 - 0.045, y0 + 0.005, -D * 0.45], [xPlugue - 0.035, y0 + 0.004, -D * 0.1], [xPlugue - 0.012, y0 + 0.004, zPlugue + 0.004], [xPlugue, y0 + 0.004, zPlugue]], 0.0035, 5, 16);
+  T('tomadas', [0, yTopo + relevo + 0.01, 0], [0, 1, 0], 0.026, { cargas, alimentacao: [xPlugue, y0 + TOPO_DO_PLUGUE, zPlugue] });
+}
+
 // ---------------------------------------------------------------- Catálogo de modelos
 
 function construir(item: Item, dim: Dimensoes, m: Molde, T: Marcar, V: MarcarVisor): void {
@@ -652,6 +736,7 @@ function construir(item: Item, dim: Dimensoes, m: Molde, T: Marcar, V: MarcarVis
     case 'aparelho':
       return construirAparelho(item, m, T);
     case 'acessorio':
+      if (item.tipo === 'filtro') return filtroDeLinha(item, dim, m, T);
       return item.tipo === 'grampo' ? grampoDeParede(dim, m) : quadroDeEnergia(item, dim, m);
     case 'protecao':
     case 'cabo':
@@ -672,11 +757,11 @@ export function modeloDe(item: Item): Modelo | null {
   const terminais: TerminalDoModelo[] = [];
   const molde = new Molde();
   let visor: LugarDoVisor | null = null;
-  construir(item, dim, molde, (id, pos, saida, raio = 0.028) => {
+  construir(item, dim, molde, (id, pos, saida, raio = 0.028, pontas) => {
     const def = defs.find((d) => d.id === id);
     if (!def) throw new Error(`O modelo de "${item.id}" marcou o terminal "${id}", que o item não tem.`);
     const s = new THREE.Vector3(saida[0], saida[1], saida[2]).normalize();
-    terminais.push({ ...def, pos, saida: [s.x, s.y, s.z], raio });
+    terminais.push({ ...def, pos, saida: [s.x, s.y, s.z], raio, ...(pontas ? { pontas } : {}) });
   }, (centro, largura, altura) => {
     visor = { centro, largura, altura };
   });

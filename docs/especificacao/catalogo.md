@@ -276,7 +276,7 @@ As potências são valores típicos de cada tipo de aparelho, não medições. O
 
 | `id` | Nome | `potenciaW` | `mediaW` | `picoW` | `usoPadrao` | `tensao` | Motor | Eletrônico | `forma` | `dimensoes` |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `ap-rede` | Modem, roteador e mini PC | 40 | 40 | 60 | 0 às 24 | bivolt | não | sim | `roteador` | 0,35 × 0,20 × 0,20 |
+| `ap-rede` | Modem, roteador e mini PC juntos | 40 | 40 | 60 | 0 às 24 | bivolt | não | sim | `roteador` | 0,35 × 0,20 × 0,20 |
 | `ap-pc-24h` | PC ligado 24 h | 70 | 70 | 150 | 0 às 24 | bivolt | não | sim | `pc` | 0,20 × 0,45 × 0,45 |
 | `ap-pc-trabalho` | PC de trabalho do plano (RX 580) | 135 | 135 | 300 | 8 às 18 | bivolt | não | sim | `pc` | 0,20 × 0,45 × 0,45 |
 | `ap-geladeira` | Geladeira grande | 150 | 90 | 900 | 0 às 24 | 127 | sim | não | `geladeira` | 0,75 × 1,80 × 0,75 |
@@ -317,5 +317,33 @@ Todas de 127 V, com motor, `forma` `geladeira`. A geladeira grande é `ap-gelade
 
 O micro-ondas, a bomba e o chuveiro estão no catálogo para o usuário ver o inversor recusar a carga.
 
+### Rede e internet
 
-O kit de 2 placas de 155 W com PWM (MLBU1718449056) saiu do catálogo em 14/11/2026, a pedido do Gustavo: kits fechados não entram, para não se confundirem com o preço de um equipamento. O catálogo tem 88 itens.
+O `ap-rede` do plano junta os três em um aparelho só. Estes três são o mesmo consumo, separado, para ligar cada um na sua tomada (ou no filtro de linha). Todos bivolt, eletrônicos, sem motor, 0 às 24.
+
+| `id` | Nome | `potenciaW` | `mediaW` | `picoW` | `forma` | `dimensoes` |
+|---|---|---|---|---|---|---|
+| `ap-modem` | Modem de fibra | 10 | 10 | 12 | `modem` | 0,20 × 0,04 × 0,14 |
+| `ap-roteador` | Roteador Wi-Fi | 10 | 10 | 18 | `roteador` | 0,24 × 0,18 × 0,16 |
+| `ap-mini-pc` | Mini PC | 20 | 20 | 30 | `minipc` | 0,13 × 0,05 × 0,13 |
+
+Os três somam os 40 W e os 60 W de pico do `ap-rede` do plano. Modem e roteador: o pico é o teto da fonte (12 V × 1 A = 12 W, ficha da Intelbras; 12 V × 1,5 A = 18 W, ficha do Intelbras W5-2100G). Mini PC: o Intel N100 medido na tomada fica entre 6 e 10 W parado e entre 15 e 30 W em carga (MiniPCLab, Hardware Corner); 20 W de média e 30 W de pico.
+
+### Ar-condicionado portátil
+
+| `id` | Nome | `potenciaW` | `mediaW` | `picoW` | `usoPadrao` | `tensao` | Motor | Eletrônico | `forma` | `dimensoes` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `ap-ar-portatil` | Ar-condicionado portátil de 12.000 BTU | 1.450 | 1.450 | 4.350 | 13 às 17 | 127 | sim | não | `ar-portatil` | 0,45 × 0,75 × 0,38 |
+
+Potência e corrente (1.450 W, 14 A em 127 V) vêm da ficha do KaBuM Smart 700 12.000 BTU 127 V; outros modelos de 12.000 BTU: Hisense 1.100 W e Rheem 1.750 W. A média igual à potência é o pior caso: o compressor não desliga. **O pico de 4.350 W (3 × a potência) é uma ESTIMATIVA, sem fonte medida.** O detalhe do item avisa que ele não cabe em tomada nem em filtro de linha de 10 A.
+
+### Filtro de linha
+
+| `id` | Nome | `tipo` | `correnteMaxA` | `tomadas` | `dimensoes` | Preço |
+|---|---|---|---|---|---|---|
+| `acc-filtro-linha-5` | Filtro de linha de 5 tomadas | `filtro` | 10 | 5 | 0,32 × 0,045 × 0,055 | 0 |
+
+Acessório sem preço e fora do orçamento: é coisa que a casa já tem, e não há coleta. Os limites são os de um filtro comum de 10 A: 1.270 W em 127 V e 2.200 W em 220 V (Intelbras EPE 205, Forceline). Tem um terminal de corrente alternada só, `tomadas`: os aparelhos ligados nele e o cabo que sai dele (para a saída do inversor ou para a tomada da rede) ficam na mesma rede elétrica, e a corrente do cabo de saída é a soma dos aparelhos. As regras `filtro-sobrecarregado` e `filtro-sem-tomada` estão em `consultor.md`, seção 5.
+
+
+O kit de 2 placas de 155 W com PWM (MLBU1718449056) saiu do catálogo em 14/11/2026, a pedido do Gustavo: kits fechados não entram, para não se confundirem com o preço de um equipamento. O catálogo tem 88 itens. Com os aparelhos de rede, o ar-condicionado portátil e o filtro de linha (17/11/2026), o catálogo tem 94 itens e 21 aparelhos.

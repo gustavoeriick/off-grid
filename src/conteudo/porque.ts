@@ -286,6 +286,17 @@ export const PORQUE: Record<string, PorQue> = {
     termos: ['quadro-de-energia', 'disjuntor-cc', 'disjuntor-ca'],
   },
 
+  'filtro-sobrecarregado': {
+    texto:
+      'Todo filtro de linha tem uma corrente máxima, escrita na etiqueta: a de 10 A aguenta 10 × 127 = 1.270 W somados, em todas as tomadas juntas, e não 1.270 W em cada uma. Acima disso os fios e os contatos de dentro esquentam, e o fusível ou o disjuntor do filtro abre para evitar o fogo. Aparelho que esquenta ou tem motor grande, como ar-condicionado, micro-ondas e chuveiro, precisa de uma tomada só dele.',
+    termos: ['filtro-de-linha', 'corrente', 'sobrecarga'],
+  },
+  'filtro-sem-tomada': {
+    texto:
+      'Cada tomada do filtro recebe um plugue só. Ligar mais aparelhos do que há tomadas exige um adaptador "T" ou outro filtro em cima do primeiro, e isso soma tudo na mesma saída do primeiro filtro, que continua com o mesmo limite de corrente. Mais tomadas não são mais potência.',
+    termos: ['filtro-de-linha', 'corrente'],
+  },
+
   // ------------------------------------------------------------ Autonomia e energia
 
   'autonomia-curta': {

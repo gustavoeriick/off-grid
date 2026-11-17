@@ -4,8 +4,18 @@
 import type { TipoTerminal } from '../nucleo/tipos';
 import type { Molde, V3 } from './molde';
 
-/** Registra onde fica um terminal no modelo: posição, direção de saída do cabo e raio do anel colorido. */
-export type Marcar = (id: string, pos: V3, saida: V3, raio?: number) => void;
+/**
+ * Onde cada cabo chega em um terminal que recebe vários (as tomadas do filtro de linha), em coordenadas da peça:
+ * `cargas` são as tomadas, uma por aparelho, na ordem dos cabos; `alimentacao` é o plugue do rabicho, de onde sai o
+ * cabo para a saída do inversor ou para a tomada da rede.
+ */
+export interface PontasDoTerminal {
+  cargas: V3[];
+  alimentacao: V3;
+}
+
+/** Registra onde fica um terminal no modelo: posição, direção de saída do cabo, raio do anel colorido e, se houver, as pontas dos cabos. */
+export type Marcar = (id: string, pos: V3, saida: V3, raio?: number, pontas?: PontasDoTerminal) => void;
 
 export const COR_TERMINAL: Record<TipoTerminal, string> = {
   'cc+': '#e53935',

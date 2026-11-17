@@ -262,8 +262,8 @@ interface PontaMedida {
 export function criarArrumador(casa: THREE.Group, pecas: CamadaDeDispositivos, lugares: Lugares): ArrumadorDeCabos {
   const itemDoGrampo = CATALOGO.get(ID_DO_GRAMPO);
 
-  function pontaDe(disp: string, terminal: string): PontaMedida | null {
-    const t = pecas.terminal(disp, terminal);
+  function pontaDe(disp: string, terminal: string, cabo: string): PontaMedida | null {
+    const t = pecas.terminal(disp, terminal, cabo);
     const d = estado.projeto.dispositivos.find((x) => x.uid === disp);
     if (!t || !d) return null;
     const telhado = pontaNoTelhado(lugares, d, t);
@@ -348,8 +348,8 @@ export function criarArrumador(casa: THREE.Group, pecas: CamadaDeDispositivos, l
 
     let total = 0;
     for (const { c } of ordem) {
-      const a = pontaDe(c.de.disp, c.de.terminal);
-      const b = pontaDe(c.para.disp, c.para.terminal);
+      const a = pontaDe(c.de.disp, c.de.terminal, c.uid);
+      const b = pontaDe(c.para.disp, c.para.terminal, c.uid);
       if (!a || !b) continue;
       const raio = raioDe(c);
       const largura = larguraDoGrampo(raio);

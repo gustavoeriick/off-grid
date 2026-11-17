@@ -10,7 +10,7 @@ import { CATALOGO } from '../catalogo';
 import type { Item } from '../catalogo/tipos';
 import { aparelhosComEnergia, assinar, estado } from '../estado';
 import { estadoDaProtecao } from '../nucleo/operacao';
-import type { Dispositivo, TipoTerminal } from '../nucleo/tipos';
+import type { Cabo, Dispositivo, PontaCabo, TipoTerminal } from '../nucleo/tipos';
 import { COR_TERMINAL } from './conectores';
 import { criarRotulo, estampa, liso } from './estampas';
 import { ehGrampo } from './encaixe';
@@ -71,8 +71,12 @@ export interface CamadaDeDispositivos {
   grupoDe(uid: string): THREE.Group | undefined;
   /** Verdadeiro se a peça está em uma superfície que o modo de visão esconde. */
   escondida(uid: string): boolean;
-  /** Posição e saída de um terminal, em coordenadas da casa, calculadas do estado. Nulo se a peça não está na cena. */
-  terminal(uid: string, terminal: string): TerminalNaCasa | null;
+  /**
+   * Posição e saída de um terminal, em coordenadas da casa, calculadas do estado. Nulo se a peça não está na cena.
+   * Com `cabo` (o `uid` de um cabo ligado ali), a posição é a ponta desse cabo no terminal que recebe vários: nas
+   * tomadas do filtro de linha, cada cabo de aparelho fica com uma tomada e o cabo de alimentação, com o plugue do rabicho.
+   */
+  terminal(uid: string, terminal: string, cabo?: string): TerminalNaCasa | null;
   /** Por onde um cabo entra e sai de um quadro. Nulo se o quadro não está na cena. */
   passagem(uidQuadro: string, uidCabo: string): PassagemPeloQuadro | null;
   /** Verdadeiro se a proteção de índice dado do cabo está desenhada no trilho de um quadro. */
@@ -138,7 +142,10 @@ interface Peca {
   pisca: THREE.Object3D[];
   /** O modelo tem parte que acende. */
   temAceso: boolean;
-  /** Aparelho recebendo energia: o que acende está aceso e a hélice gira. Nas demais peças, sempre falso. */
+  /**
+   * Aparelho recebendo energia: o que acende está aceso e a hélice gira. No filtro de linha, a chave acesa: há
+   * aparelho ligado nele recebendo energia. Nas demais peças, sempre falso.
+   */
   ativo: boolean;
   trilho: THREE.Group | null;
   assinaturaDoTrilho: string;
@@ -154,6 +161,70 @@ interface Peca {
 }
 
 const EIXO_Z = new THREE.Vector3(0, 0, 1);
+
+function ehFiltroDeLinha(item: Item | undefined): boolean {
+  return item?.categoria === 'acessorio' && item.tipo === 'filtro';
+}
+
+/**
+ * Filtros de linha que estão entregando energia: os que têm, ligado nas tomadas (direto ou por outro filtro), um
+ * aparelho que recebe energia agora. A cena não sabe mais que isso sem a análise do circuito: o filtro sem aparelho
+ * funcionando fica com a chave apagada, mesmo ligado a uma tomada com energia.
+ */
+function filtrosComEnergia(aparelhos: ReadonlySet<string>): Set<string> {
+  const vizinhos = new Map<string, string[]>();
+  for (const c of estado.projeto.cabos) {
+    for (const [a, b] of [[c.de.disp, c.para.disp], [c.para.disp, c.de.disp]] as const) {
+      const lista = vizinhos.get(a);
+      if (lista) lista.push(b);
+      else vizinhos.set(a, [b]);
+    }
+  }
+  const filtros = new Set(estado.projeto.dispositivos.filter((d) => ehFiltroDeLinha(CATALOGO.get(d.itemId))).map((d) => d.uid));
+  const acesos = new Set<string>();
+  for (const uid of filtros) {
+    // Anda só de filtro em filtro: o que está depois do inversor ou da tomada da rede é de outro ramo.
+    const vistos = new Set([uid]);
+    const fila = [uid];
+    let achou = false;
+    while (fila.length > 0 && !achou) {
+      for (const v of vizinhos.get(fila.pop()!) ?? []) {
+        if (aparelhos.has(v)) achou = true;
+        else if (filtros.has(v) && !vistos.has(v)) {
+          vistos.add(v);
+          fila.push(v);
+        }
+      }
+    }
+    if (achou) acesos.add(uid);
+  }
+  return acesos;
+}
+
+/**
+ * Ponta de um cabo no terminal que recebe vários (as tomadas do filtro de linha), em coordenadas da peça. O cabo que
+ * vem de um aparelho fica com uma tomada, na ordem dos cabos do projeto (depois da última, volta à primeira); o que vai
+ * para um inversor ou para a tomada da rede sai do plugue do rabicho. Entre dois filtros, o rabicho é o da ponta `de`.
+ */
+function pontaDoCabo(uid: string, t: TerminalDoModelo, caboUid: string): readonly [number, number, number] {
+  const pontas = t.pontas;
+  if (!pontas || pontas.cargas.length === 0) return t.pos;
+  const aqui = (p: PontaCabo): boolean => p.disp === uid && p.terminal === t.id;
+  const deCarga = (c: Cabo): boolean => {
+    const outra = aqui(c.de) ? c.para : c.de;
+    const item = CATALOGO.get(estado.projeto.dispositivos.find((d) => d.uid === outra.disp)?.itemId ?? '');
+    if (item?.categoria === 'aparelho') return true;
+    return ehFiltroDeLinha(item) && !aqui(c.de);
+  };
+  let tomada = 0;
+  for (const c of estado.projeto.cabos) {
+    if (!aqui(c.de) && !aqui(c.para)) continue;
+    const carga = deCarga(c);
+    if (c.uid === caboUid) return carga ? pontas.cargas[tomada % pontas.cargas.length]! : pontas.alimentacao;
+    if (carga) tomada++;
+  }
+  return t.pos;
+}
 
 export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositivos {
   const pecas = new Map<string, Peca>();
@@ -268,11 +339,14 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     vidaSuja = false;
     const comEnergia = aparelhosComEnergia();
     let mudou = false;
+    let filtros: Set<string> | null = null;
     girando = [];
     piscando = [];
     for (const p of pecas.values()) {
-      if (p.item.categoria !== 'aparelho') continue;
-      const ativo = comEnergia.has(p.uid);
+      const filtro = ehFiltroDeLinha(p.item);
+      if (p.item.categoria !== 'aparelho' && !filtro) continue;
+      if (filtro) filtros ??= filtrosComEnergia(comEnergia);
+      const ativo = filtro ? filtros!.has(p.uid) : comEnergia.has(p.uid);
       if (ativo !== p.ativo) {
         p.ativo = ativo;
         aplicarAtivo(p);
@@ -562,13 +636,14 @@ export function criarCamadaDeDispositivos(casa: THREE.Group): CamadaDeDispositiv
     return item && modelo ? { d, modelo, item } : null;
   }
 
-  function terminal(uid: string, id: string): TerminalNaCasa | null {
+  function terminal(uid: string, id: string, cabo?: string): TerminalNaCasa | null {
     const achado = dispositivoNaCena(uid);
     const t = achado?.modelo.terminais.find((x) => x.id === id);
     if (!achado || !t) return null;
     const q = new THREE.Quaternion(...achado.d.quat);
+    const naPeca = cabo !== undefined && t.pontas ? pontaDoCabo(uid, t, cabo) : t.pos;
     return {
-      pos: new THREE.Vector3(...t.pos).applyQuaternion(q).add(new THREE.Vector3(...achado.d.pos)),
+      pos: new THREE.Vector3(...naPeca).applyQuaternion(q).add(new THREE.Vector3(...achado.d.pos)),
       saida: new THREE.Vector3(...t.saida).applyQuaternion(q),
       tipo: t.tipo,
       rotulo: t.rotulo,

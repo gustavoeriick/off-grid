@@ -31,7 +31,7 @@ function aparelho(d: Dados): Aparelho {
 export const APARELHOS: Aparelho[] = [
   // Do plano elétrico do Gustavo.
   aparelho({
-    id: 'ap-rede', nome: 'Modem, roteador e mini PC', detalhe: '40 W o dia inteiro',
+    id: 'ap-rede', nome: 'Modem, roteador e mini PC juntos', detalhe: '40 W o dia inteiro',
     potenciaW: 40, mediaW: 40, picoW: 60, uso: [0, 24], tensao: 'bivolt', motor: false, eletronico: true,
     forma: 'roteador', dimensoes: [0.35, 0.2, 0.2],
   }),
@@ -97,6 +97,22 @@ export const APARELHOS: Aparelho[] = [
     potenciaW: 130, mediaW: 65, picoW: 800, uso: [0, 24], tensao: 127, motor: true, eletronico: false,
     forma: 'geladeira', dimensoes: [0.68, 1.7, 0.7],
   }),
+  // Rede e internet: os três separados. Somam os 40 W e os 60 W de pico de `ap-rede`.
+  aparelho({
+    id: 'ap-modem', nome: 'Modem de fibra', detalhe: '10 W o dia inteiro',
+    potenciaW: 10, mediaW: 10, picoW: 12, uso: [0, 24], tensao: 'bivolt', motor: false, eletronico: true,
+    forma: 'modem', dimensoes: [0.2, 0.04, 0.14],
+  }),
+  aparelho({
+    id: 'ap-roteador', nome: 'Roteador Wi-Fi', detalhe: '10 W o dia inteiro',
+    potenciaW: 10, mediaW: 10, picoW: 18, uso: [0, 24], tensao: 'bivolt', motor: false, eletronico: true,
+    forma: 'roteador', dimensoes: [0.24, 0.18, 0.16],
+  }),
+  aparelho({
+    id: 'ap-mini-pc', nome: 'Mini PC', detalhe: '20 W o dia inteiro',
+    potenciaW: 20, mediaW: 20, picoW: 30, uso: [0, 24], tensao: 'bivolt', motor: false, eletronico: true,
+    forma: 'minipc', dimensoes: [0.13, 0.05, 0.13],
+  }),
   // Outros.
   aparelho({
     id: 'ap-lampada', nome: 'Lâmpada LED', detalhe: '9 W, das 18 às 24 h',
@@ -107,6 +123,12 @@ export const APARELHOS: Aparelho[] = [
     id: 'ap-microondas', nome: 'Micro-ondas', detalhe: '1.300 W, das 12 às 13 h',
     potenciaW: 1300, mediaW: 1300, picoW: 1500, uso: [12, 13], tensao: 127, motor: false, eletronico: false,
     forma: 'microondas', dimensoes: [0.5, 0.3, 0.4],
+  }),
+  aparelho({
+    id: 'ap-ar-portatil', nome: 'Ar-condicionado portátil de 12.000 BTU',
+    detalhe: '1.450 W e 14 A em 127 V, das 13 às 17 h. Não cabe em tomada nem em filtro de linha de 10 A',
+    potenciaW: 1450, mediaW: 1450, picoW: 4350, uso: [13, 17], tensao: 127, motor: true, eletronico: false,
+    forma: 'ar-portatil', dimensoes: [0.45, 0.75, 0.38],
   }),
   aparelho({
     id: 'ap-bomba', nome: "Bomba d'água de 1/2 cv", detalhe: '400 W, pico de partida de 1.500 W, das 7 às 8 h',

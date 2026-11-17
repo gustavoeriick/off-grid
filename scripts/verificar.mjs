@@ -152,7 +152,7 @@ async function principal() {
     conferir((await pagina.locator('#lista-catalogo .cartao .preco').count()) === 0, 'aparelhos não mostram preço');
     await pagina.locator('#abas-catalogo [data-cat="instalacao"]').click();
     const arrastaveis = await pagina.locator('#lista-catalogo .cartao[data-arrastavel]').evaluateAll((lista) => lista.map((c) => c.dataset.itemId).sort());
-    conferir(JSON.stringify(arrastaveis) === JSON.stringify(['acc-grampo', 'acc-quadro-8']), `na aba Instalação só o quadro e o grampo de parede são arrastáveis: ${JSON.stringify(arrastaveis)}`);
+    conferir(JSON.stringify(arrastaveis) === JSON.stringify(['acc-filtro-linha-5', 'acc-grampo', 'acc-quadro-8']), `na aba Instalação só o filtro de linha, o grampo de parede e o quadro são arrastáveis: ${JSON.stringify(arrastaveis)}`);
     await captura('14b-catalogo-instalacao');
     await pagina.locator('#abas-catalogo [data-cat="placas"]').click();
     const todas = await cartoes();

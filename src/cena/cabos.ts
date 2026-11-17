@@ -368,8 +368,8 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
    * O cabo que passa por um quadro entra e sai dele no ponto do caminho que menos o alonga. Nulo se falta uma ponta na cena.
    */
   function percursoDe(c: Cabo): Percurso | null {
-    const a = pecas.terminal(c.de.disp, c.de.terminal);
-    const b = pecas.terminal(c.para.disp, c.para.terminal);
+    const a = pecas.terminal(c.de.disp, c.de.terminal, c.uid);
+    const b = pecas.terminal(c.para.disp, c.para.terminal, c.uid);
     if (!a || !b) return null;
     const raio = raioDe(c);
     const grampos = gramposDe(c, raio);
@@ -705,8 +705,8 @@ export function criarCamadaDeCabos(casa: THREE.Group, pecas: CamadaDeDispositivo
     },
     indiceDoGrampo(uid, ponto) {
       const c = estado.projeto.cabos.find((x) => x.uid === uid);
-      const a = c ? pecas.terminal(c.de.disp, c.de.terminal) : null;
-      const b = c ? pecas.terminal(c.para.disp, c.para.terminal) : null;
+      const a = c ? pecas.terminal(c.de.disp, c.de.terminal, c.uid) : null;
+      const b = c ? pecas.terminal(c.para.disp, c.para.terminal, c.uid) : null;
       if (!c || !a || !b) return 0;
       const grampos = gramposDe(c, raioDe(c)).map((g) => g.pos);
       const passagem = c.quadro ? pecas.passagem(c.quadro, c.uid) : null;

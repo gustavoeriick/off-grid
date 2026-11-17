@@ -192,4 +192,10 @@ export const ACESSORIOS: Acessorio[] = [
     detalhe: 'Prende um cabo na parede, no piso ou no telhado, para o cabo correr organizado. Ainda sem preço: não entra no orçamento',
     preco: 0, tipo: 'grampo', dimensoes: [0.03, 0.03, 0.02],
   },
+  {
+    // Sem preço: é coisa que a casa já tem, e não há coleta. Vários aparelhos ligam nele e um cabo só sai dele.
+    id: 'acc-filtro-linha-5', nome: 'Filtro de linha de 5 tomadas', linha: 'plano', categoria: 'acessorio',
+    detalhe: 'Até 10 A (1.270 W em 127 V) e 5 tomadas. Os aparelhos ligam nele e um cabo só sai dele, para a saída do inversor ou para a tomada da rede. Já existe na casa: não entra no orçamento',
+    preco: 0, tipo: 'filtro', correnteMaxA: 10, tomadas: 5, dimensoes: [0.32, 0.045, 0.055],
+  },
 ];

@@ -141,7 +141,7 @@ export interface Uso {
 
 export type FormaAparelho =
   | 'geladeira' | 'ventilador' | 'tv' | 'pc' | 'notebook'
-  | 'roteador' | 'microondas' | 'lampada' | 'chuveiro' | 'caixa';
+  | 'roteador' | 'modem' | 'minipc' | 'ar-portatil' | 'microondas' | 'lampada' | 'chuveiro' | 'caixa';
 
 export interface Aparelho extends ItemBase {
   categoria: 'aparelho';
@@ -165,7 +165,7 @@ export interface Rede extends ItemBase {
   categoria: 'rede';
 }
 
-export type TipoAcessorio = 'estrutura' | 'conector' | 'aterramento' | 'medicao' | 'kit' | 'quadro' | 'grampo';
+export type TipoAcessorio = 'estrutura' | 'conector' | 'aterramento' | 'medicao' | 'kit' | 'quadro' | 'grampo' | 'filtro';
 
 export interface Acessorio extends ItemBase {
   categoria: 'acessorio';
@@ -173,6 +173,9 @@ export interface Acessorio extends ItemBase {
   /** No quadro de energia e no grampo: medidas para o desenho. `modulos` só no quadro: lugares no trilho, de 18 mm. */
   dimensoes?: Dimensoes;
   modulos?: number;
+  /** Só no filtro de linha: corrente máxima do conjunto, em A, e número de tomadas. */
+  correnteMaxA?: number;
+  tomadas?: number;
 }
 
 export type Item = Placa | Bateria | Inversor | Controlador | Protecao | TipoCabo | Aparelho | Rede | Acessorio;

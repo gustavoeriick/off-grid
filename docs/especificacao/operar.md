@@ -284,3 +284,4 @@ O que o simulador ainda não faz, para não ser lido como regra:
 - **`removerParede` e `removerVaranda` não avaliam arco.** Apagar a parede ou a varanda leva junto as placas encaixadas nela e os cabos delas, sem o `arco-no-conector` que apagar o cabo ou a placa provoca.
 - **O disjuntor CA queimado por arco interrompe o cabo no simulador.** De verdade, o arco que não apaga continua conduzindo (e esquentando) até alguma outra coisa abrir o circuito.
 - **Cada bateria de um banco mostra a potência do banco inteiro** no visor, não a parte dela.
+- **O fusível do filtro de linha não queima na operação.** A sobrecarga do filtro (`filtro-sobrecarregado`) é só aviso do consultor.

@@ -79,6 +79,11 @@ Com placas de modelos diferentes, `vocFrio`, `vmpQuente` e `n × vmp` de uma fil
 
 | `rede-desligada` | dica | Inversor com `carregadorRedeA` e `redeLigada` falso | O inversor não está ligado na rede | Com a entrada CA ligada na rede, o inversor mantém a bateria cheia e passa a energia direto para os aparelhos. Na queda de luz ele assume sozinho. | |
 | `carga-acima-da-bateria` | dica | `correnteCargaA` das placas (se há fileira) mais `mín(carregadorRedeA; 20)` (se a rede está ligada) maior que `cargaMaxA` do banco | Limite a corrente de carga no inversor | As placas e a rede juntas podem carregar a {120} A e esta bateria aceita {50} A. Ajuste o limite de carga no menu do inversor. | |
+| `filtro-sobrecarregado` | erro | Filtro de linha (acessório `tipo` `filtro`) em que a soma de `potenciaW / tensaoRede` dos aparelhos ligados (botão em ligado) com cabo direto no terminal `tomadas` passa de `correnteMaxA`. Vale com ou sem inversor. Pedida pelo Gustavo em 17/11/2026 | O filtro de linha está sobrecarregado | Os aparelhos ligados nele puxam {11,4} A e o filtro aguenta {10} A. Ele esquenta e o fusível dele queima. Passe {ar-condicionado portátil} para uma tomada só dele. | |
+| `filtro-sem-tomada` | alerta | Mais aparelhos com cabo direto no filtro (ligados ou não) que `tomadas` | Aparelhos demais para o filtro de linha | Este filtro tem {5} tomadas e há {6} aparelhos ligados nele. Tire {um} ou use outro filtro. | |
+
+No `filtro-sobrecarregado`, o aparelho citado é o de maior `potenciaW` entre os ligados no filtro. O fusível do filtro não queima na operação: a sobrecarga do filtro é só aviso do consultor (`operar.md`, seção 11).
+
 Em `corrente-da-bateria` e em `autonomia-curta`, quando cada ramo tem mais de uma bateria em série, o texto troca "uma bateria em paralelo" e "mais uma bateria igual em paralelo" por "mais um ramo igual, de {2} baterias em série, em paralelo", e a sugestão sai sem ação: a ação `mais-bateria` só existe para ramos de uma bateria. Com placas de modelos diferentes, `corrente-das-placas` soma a maior `isc` de cada fileira.
 
 No problema `peca-repetida`, as peças que ficaram só no caminho descartado entram nos alvos e não geram `bateria-solta` nem `placa-solta`. Em `tensao-da-protecao` contam todas as proteções instaladas, inclusive o DPS.

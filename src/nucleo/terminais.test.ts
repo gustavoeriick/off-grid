@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Aparelho, Bateria, Controlador, EntradaSolar, Inversor, Placa, Rede } from '../catalogo/tipos';
+import type { Acessorio, Aparelho, Bateria, Controlador, EntradaSolar, Inversor, Placa, Rede } from '../catalogo/tipos';
 import { podeLigar, terminaisDe } from './terminais';
 
 const base = { nome: 'teste', detalhe: '', linha: 'plano', preco: 0 } as const;
@@ -14,6 +14,9 @@ const estacao: Inversor = { ...inversorBase, id: 'e', solar, bateriaInternaWh: 1
 const controlador: Controlador = { ...base, id: 'c', categoria: 'controlador', solar, tensoesBateria: [12, 24], dimensoes: [0.25, 0.18, 0.07] };
 const aparelho: Aparelho = { ...base, id: 'a', categoria: 'aparelho', potenciaW: 150, mediaW: 90, picoW: 900, usoPadrao: { inicio: 0, fim: 24 }, tensao: 127, motor: true, eletronico: false, forma: 'geladeira', dimensoes: [0.7, 1.75, 0.7] };
 const rede: Rede = { ...base, id: 'r', categoria: 'rede' };
+
+const filtro: Acessorio = { ...base, id: 'f', categoria: 'acessorio', tipo: 'filtro', correnteMaxA: 10, tomadas: 5 };
+const quadro: Acessorio = { ...base, id: 'q', categoria: 'acessorio', tipo: 'quadro', modulos: 8 };
 
 const ids = (item: Parameters<typeof terminaisDe>[0]) => terminaisDe(item).map((t) => t.id);
 
@@ -41,6 +44,12 @@ describe('terminaisDe', () => {
     expect(ids(rede)).toEqual(['tomada']);
   });
 
+  it('filtro de linha tem um terminal CA só, o das tomadas; os outros acessórios não têm terminal', () => {
+    expect(ids(filtro)).toEqual(['tomadas']);
+    expect(terminaisDe(filtro)[0]).toMatchObject({ tipo: 'ca', rotulo: 'Tomadas do filtro' });
+    expect(ids(quadro)).toEqual([]);
+  });
+
   it('marca o tipo de cada terminal', () => {
     expect(terminaisDe(hibrido).map((t) => t.tipo)).toEqual(['cc+', 'cc-', 'cc+', 'cc-', 'ca', 'ca']);
   });
@@ -51,6 +60,14 @@ describe('podeLigar', () => {
     expect(podeLigar('ca', 'ca')).toBe(true);
     expect(podeLigar('ca', 'cc+')).toBe(false);
     expect(podeLigar('cc-', 'ca')).toBe(false);
+  });
+
+  it('o filtro liga com aparelho, saída do inversor e tomada da rede, todos em corrente alternada', () => {
+    const tomadas = terminaisDe(filtro)[0].tipo;
+    for (const outro of [terminaisDe(aparelho)[0], terminaisDe(simples).find((t) => t.id === 'caSaida')!, terminaisDe(rede)[0]]) {
+      expect(podeLigar(tomadas, outro.tipo)).toBe(true);
+    }
+    expect(podeLigar(tomadas, 'cc+')).toBe(false);
   });
 
   it('em corrente contínua qualquer combinação é aceita', () => {

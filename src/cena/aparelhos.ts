@@ -412,20 +412,28 @@ function notebook(item: Aparelho, m: Molde, T: Marcar): void {
 
 // ---------------------------------------------------------------- Modem, roteador e mini PC
 
-function roteador(item: Aparelho, m: Molde, T: Marcar): void {
-  const [, H] = item.dimensoes;
-  const yMesa = -H / 2;
+/** Mesinha de madeira com prateleira. O tampo termina em `yMesa`. */
+function mesinha(m: Molde, yMesa: number, lm: number, pm: number): void {
   const chao = yMesa - ALTURA_MESINHA;
-  // Mesinha com prateleira.
-  const lm = 0.56;
-  const pm = 0.36;
   const madeira = '#a98258';
   m.bloco('plastico', madeira, 0, yMesa - 0.0125, 0, lm, 0.025, pm, 0.004);
   m.bloco('plastico', madeira, 0, chao + 0.2, 0, lm - 0.06, 0.02, pm - 0.06);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) m.bloco('plastico', '#8a6845', sx * (lm / 2 - 0.03), (chao + yMesa - 0.025) / 2, sz * (pm / 2 - 0.03), 0.034, yMesa - 0.025 - chao, 0.034);
+}
+
+/** Mesinha dos aparelhos de rede que vêm sozinhos (modem, roteador, mini PC) e o lugar do plugue sobre ela. */
+const MESINHA_PEQUENA = { largura: 0.44, profundidade: 0.32, xPlugue: -0.17, zPlugue: -0.115 };
+
+function roteador(item: Aparelho, m: Molde, T: Marcar): void {
+  const [W, H] = item.dimensoes;
+  // O item largo é o conjunto do plano (modem, roteador e mini PC na mesma mesinha); o estreito é só o roteador.
+  const conjunto = W >= 0.3;
+  const yMesa = -H / 2;
+  if (conjunto) mesinha(m, yMesa, 0.56, 0.36);
+  else mesinha(m, yMesa, MESINHA_PEQUENA.largura, MESINHA_PEQUENA.profundidade);
   const aceso = m.filho('aceso');
   // Roteador, com três antenas.
-  const xr = -0.07;
+  const xr = conjunto ? -0.07 : 0;
   m.bloco('plastico', '#17181a', xr, yMesa + 0.017, 0, 0.2, 0.03, 0.13, 0.008);
   for (let i = -1; i <= 1; i++) {
     m.cilindro('plastico', '#17181a', xr + i * 0.075, yMesa + 0.04, -0.06, 0.006, 0.02, 'y', 8);
@@ -435,6 +443,12 @@ function roteador(item: Aparelho, m: Molde, T: Marcar): void {
   const pisca = aceso.filho('pisca');
   m.bloco('plastico', '#0b0c0d', xr - 0.015, yMesa + 0.02, 0.0652, 0.13, 0.006, 0.0006);
   for (let i = 0; i < 6; i++) (i === 5 ? pisca : aceso).bloco('luz', i === 0 ? '#39d353' : i === 5 ? '#ffb300' : '#6fd3ff', xr - 0.07 + i * 0.022, yMesa + 0.02, 0.0658, 0.008, 0.003, 0.001);
+  if (!conjunto) {
+    // Sozinho: as fendas de ventilação em cima e o plugue sobre a mesinha, atrás, à esquerda.
+    for (let i = 0; i < 5; i++) m.bloco('plastico', '#2c2e32', xr, yMesa + 0.0322, -0.03 + i * 0.014, 0.12, 0.0006, 0.004);
+    plugueComTerminal(m, T, MESINHA_PEQUENA.xPlugue, yMesa, MESINHA_PEQUENA.zPlugue, [xr - 0.09, yMesa + 0.02, -0.065]);
+    return;
+  }
   // Modem em pé e mini PC.
   m.bloco('plastico', '#f1f2f0', 0.105, yMesa + 0.075, -0.06, 0.036, 0.15, 0.075, 0.008);
   // Modem: energia, sinal da fibra, internet e, por último, a de dados, que pisca.
@@ -447,6 +461,168 @@ function roteador(item: Aparelho, m: Molde, T: Marcar): void {
   aceso.esfera('luz', '#6fd3ff', 0.14, yMesa + 0.028, 0.0995, 0.003, [1, 1, 0.4], 6);
   // Plugue sobre a mesinha, atrás, à esquerda.
   plugueComTerminal(m, T, -0.225, yMesa, -0.13, [xr - 0.09, yMesa + 0.02, -0.065]);
+}
+
+/** Modem de fibra (ONT): caixinha branca deitada, com a fileira de luzes na frente e o cordão amarelo da fibra atrás. */
+function modem(item: Aparelho, m: Molde, T: Marcar): void {
+  const [W, H, D] = item.dimensoes;
+  const yMesa = -H / 2;
+  mesinha(m, yMesa, MESINHA_PEQUENA.largura, MESINHA_PEQUENA.profundidade);
+  const pe = 0.004;
+  const hc = H - pe;
+  const yc = yMesa + pe + hc / 2;
+  m.bloco('plastico', '#f3f4f1', 0, yc, 0, W, hc, D, 0.008);
+  pes(m, 0, yMesa, 0, W, D, pe + 0.001, 0.007, '#b9bcb8');
+  // Tampa com as fendas de ventilação e a plaqueta.
+  const yTopo = yMesa + H;
+  for (let i = 0; i < 7; i++) m.bloco('plastico', '#b4b8b4', 0.02, yTopo + 0.0002, -D * 0.34 + i * 0.011, W * 0.62, 0.0006, 0.0035);
+  m.bloco('plastico', '#d9dcd8', -W * 0.3, yTopo + 0.0003, D * 0.3, 0.04, 0.0006, 0.014, 0.0003);
+  // Frente: faixa cinza com as luzes. Energia, sinal da fibra, internet e Wi-Fi ficam acesas; a de falha da fibra
+  // só acende com defeito, e fica apagada; a de dados, por último, pisca.
+  const zf = D / 2;
+  const yl = yc - hc * 0.05;
+  m.bloco('plastico', '#d4d7d3', 0, yl, zf + 0.0003, W * 0.84, 0.011, 0.0006, 0.0003);
+  const aceso = m.filho('aceso');
+  const pisca = aceso.filho('pisca');
+  const passo = (W * 0.72) / 5;
+  for (let i = 0; i < 6; i++) {
+    const x = -W * 0.36 + i * passo;
+    m.bloco('plastico', '#8f9491', x, yl, zf + 0.0007, 0.009, 0.0045, 0.0006);
+    if (i === 2) continue;
+    (i === 5 ? pisca : aceso).bloco('luz', i === 5 ? '#ffb300' : '#39d353', x, yl, zf + 0.0011, 0.0075, 0.0034, 0.0008);
+  }
+  // Atrás: o conector verde da fibra com o cordão amarelo e o cabo de rede azul, que descem pela borda da mesinha.
+  const zt = -D / 2;
+  const xFibra = W * 0.32;
+  const zBorda = -MESINHA_PEQUENA.profundidade / 2;
+  m.bloco('plastico', '#2e9e4f', xFibra, yc - 0.004, zt - 0.011, 0.01, 0.009, 0.024, 0.002);
+  m.tubo('plastico', '#e8c93a', [[xFibra, yc - 0.004, zt - 0.022], [xFibra + 0.012, yMesa + 0.004, zt - 0.05], [xFibra + 0.02, yMesa + 0.003, zBorda - 0.004], [xFibra + 0.02, yMesa - 0.12, zBorda - 0.012]], 0.0016, 4, 12);
+  m.bloco('plastico', '#3d8bd9', 0.01, yc - 0.004, zt - 0.007, 0.013, 0.01, 0.016, 0.002);
+  m.tubo('plastico', '#3d8bd9', [[0.01, yc - 0.004, zt - 0.014], [0, yMesa + 0.005, zt - 0.045], [-0.03, yMesa + 0.004, zBorda - 0.004], [-0.03, yMesa - 0.1, zBorda - 0.012]], 0.0024, 4, 12);
+  plugueComTerminal(m, T, MESINHA_PEQUENA.xPlugue, yMesa, MESINHA_PEQUENA.zPlugue, [-W * 0.34, yc - 0.004, zt - 0.002]);
+}
+
+/** Mini PC: caixinha escura e baixa, com o botão de energia iluminado e as portas na frente. */
+function minipc(item: Aparelho, m: Molde, T: Marcar): void {
+  const [W, H, D] = item.dimensoes;
+  const yMesa = -H / 2;
+  mesinha(m, yMesa, MESINHA_PEQUENA.largura, MESINHA_PEQUENA.profundidade);
+  const pe = 0.004;
+  const hc = H - pe;
+  const yc = yMesa + pe + hc / 2;
+  m.bloco('plastico', '#2b2e33', 0, yc, 0, W, hc, D, 0.009);
+  pes(m, 0, yMesa, 0, W, D, pe + 0.001, 0.008, '#0c0d0e');
+  // Tampa de alumínio, um pouco mais clara, e as fendas de ventilação nas laterais.
+  m.bloco('metal', '#4a5058', 0, yMesa + H - 0.0006, 0, W - 0.012, 0.0016, D - 0.012, 0.0006);
+  for (const sx of [-1, 1]) for (let j = 0; j < 3; j++) m.bloco('plastico', '#0c0d0e', sx * (W / 2 + 0.0002), yc + (j - 1) * 0.009, -0.005, 0.0008, 0.003, D * 0.62);
+  // Frente: duas portas USB azuis, a USB-C, o fone e, à direita, o botão de energia.
+  const zf = D / 2;
+  m.bloco('plastico', '#17191c', 0, yc, zf + 0.0003, W - 0.02, hc * 0.62, 0.0006, 0.0003);
+  for (const x of [-W * 0.32, -W * 0.17]) {
+    m.bloco('metal', '#9aa0a6', x, yc, zf + 0.0008, 0.0145, 0.007, 0.0008);
+    m.bloco('plastico', '#1c5fc4', x, yc, zf + 0.0013, 0.0115, 0.0035, 0.0006);
+  }
+  m.bloco('plastico', '#050506', -W * 0.03, yc, zf + 0.0008, 0.0095, 0.0036, 0.0008, 0.0015);
+  m.cilindro('plastico', '#050506', W * 0.1, yc, zf + 0.0008, 0.0022, 0.0012, 'z', 8);
+  const xb = W * 0.33;
+  m.cilindro('metal', '#6a7078', xb, yc, zf + 0.0012, 0.0062, 0.002, 'z', 14);
+  const aceso = m.filho('aceso');
+  aceso.toro('luz', '#6fd3ff', xb, yc, zf + 0.0022, 0.0052, 0.0009, 'z', 16, 3);
+  m.filho('apagado').toro('plastico', '#2a2d31', xb, yc, zf + 0.0022, 0.0052, 0.0009, 'z', 16, 3);
+  // Luz de atividade do disco, que pisca, ao lado do botão.
+  m.cilindro('plastico', '#0c0d0e', xb - 0.016, yc, zf + 0.0006, 0.002, 0.001, 'z', 8);
+  aceso.filho('pisca').esfera('luz', '#ffb300', xb - 0.016, yc, zf + 0.0012, 0.0017, [1, 1, 0.4], 6);
+  // Fonte externa atrás, na mesinha, com a luz verde, e o fio até o plugue.
+  const xf = 0.11;
+  const zFonte = -D / 2 - 0.05;
+  m.bloco('plastico', '#17181a', xf, yMesa + 0.013, zFonte, 0.085, 0.026, 0.04, 0.005);
+  aceso.bloco('luz', '#39d353', xf + 0.028, yMesa + 0.0263, zFonte, 0.005, 0.0006, 0.003);
+  m.tubo('plastico', '#17181a', [[xf - 0.04, yMesa + 0.012, zFonte], [0.02, yMesa + 0.005, zFonte + 0.012], [0, yc, -D / 2 - 0.002]], 0.002, 4, 8);
+  plugueComTerminal(m, T, MESINHA_PEQUENA.xPlugue, yMesa, MESINHA_PEQUENA.zPlugue, [xf - 0.042, yMesa + 0.013, zFonte - 0.01]);
+}
+
+// ---------------------------------------------------------------- Ar-condicionado portátil
+
+/** Raio do duto sanfonado de ar quente. */
+const RAIO_DO_DUTO = 0.062;
+
+/**
+ * Torre branca sobre rodízios: saída de ar frio no alto da frente, painel com visor logo abaixo, entradas de ar nas
+ * laterais e atrás, e o duto sanfonado de ar quente, que sai por trás e sobe até o bocal da janela.
+ * Com energia, as aletas da saída abrem e o visor mostra a temperatura; sem energia, as aletas ficam fechadas.
+ */
+function arPortatil(item: Aparelho, m: Molde, T: Marcar): void {
+  const [W, H, D] = item.dimensoes;
+  const y0 = -H / 2;
+  const rodizio = 0.05;
+  const branco = '#f2f3f1';
+  const cinza = '#dfe1de';
+  m.bloco('plastico', branco, 0, rodizio / 2, 0, W, H - rodizio, D, 0.04);
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const x = sx * (W / 2 - 0.075);
+      const z = sz * (D / 2 - 0.075);
+      m.bloco('plastico', '#8f9496', x, y0 + 0.041, z, 0.03, 0.02, 0.034);
+      m.cilindro('plastico', '#25272a', x, y0 + 0.021, z + 0.006, 0.021, 0.02, 'x', 12);
+    }
+  }
+  const zf = D / 2;
+  const aceso = m.filho('aceso');
+  const apagado = m.filho('apagado');
+  // Saída de ar: vão escuro com cinco aletas, abertas só com o aparelho funcionando.
+  const la = W * 0.74;
+  const ya = H / 2 - 0.09;
+  m.bloco('plastico', '#141618', 0, ya, zf + 0.0006, la + 0.008, 0.106, 0.0012);
+  for (let i = 0; i < 5; i++) {
+    const y = ya - 0.04 + i * 0.02;
+    aceso.bloco('plastico', '#e9ebe8', 0, y, zf + 0.007, la, 0.003, 0.02, 0, ['x', -0.6]);
+    apagado.bloco('plastico', '#e9ebe8', 0, y, zf + 0.0025, la, 0.0185, 0.003);
+  }
+  // Painel: visor da temperatura, quatro teclas e a luz de ligado.
+  const yp = ya - 0.095;
+  m.bloco('plastico', '#15171a', 0, yp, zf + 0.001, W * 0.6, 0.046, 0.002);
+  aceso.estampa(visorDeNumeros('visor-ar-portatil', '23 °C', '#7fd6ff'), -W * 0.17, yp, zf + 0.0022, 0.074, 0.03, 'pz');
+  for (let i = 0; i < 4; i++) m.cilindro('plastico', '#3c4148', -W * 0.03 + i * 0.03, yp, zf + 0.0024, 0.0075, 0.002, 'z', 12);
+  led(m, aceso, '#39d353', W * 0.25, yp, zf + 0.002, 0.0035);
+  // Plaqueta genérica e o friso que separa a parte de baixo.
+  m.bloco('metal', '#c9cdd1', 0, yp - 0.1, zf + 0.0008, 0.07, 0.014, 0.0016);
+  m.bloco('plastico', cinza, 0, yp - 0.2, zf + 0.0004, W * 0.82, 0.004, 0.0008);
+  // Laterais: pega embutida e grade de entrada de ar.
+  for (const sx of [-1, 1]) {
+    const x = (sx * W) / 2;
+    m.bloco('plastico', '#2a2d31', x + sx * 0.0004, ya - 0.005, 0, 0.0016, 0.03, 0.11);
+    m.bloco('plastico', cinza, x + sx * 0.0004, 0.04, -0.02, 0.0016, 0.25, 0.2);
+    for (let i = 0; i < 8; i++) m.bloco('plastico', '#8f9598', x + sx * 0.0012, -0.065 + i * 0.03, -0.02, 0.0012, 0.008, 0.18);
+  }
+  // Atrás: grade do filtro, dreno e a boca do duto.
+  const zt = -D / 2;
+  m.bloco('plastico', cinza, 0, -0.1, zt - 0.0004, W * 0.7, 0.26, 0.0016);
+  for (let i = 0; i < 7; i++) m.bloco('plastico', '#8f9598', 0, -0.205 + i * 0.035, zt - 0.0012, W * 0.64, 0.008, 0.0012);
+  m.cilindro('plastico', '#3a3d41', W * 0.3, y0 + rodizio + 0.03, zt - 0.006, 0.009, 0.012, 'z', 8);
+  const yd = H / 2 - 0.16;
+  m.cilindro('plastico', cinza, 0, yd, zt - 0.012, RAIO_DO_DUTO + 0.012, 0.028, 'z', 20);
+  // Duto sanfonado: um tubo liso por dentro e os anéis da sanfona por fora, ao longo da curva.
+  const curva = new THREE.CatmullRomCurve3(
+    [[0, yd, zt - 0.01], [0, yd, zt - 0.08], [0, yd + 0.075, zt - 0.155], [0, yd + 0.2, zt - 0.172], [0, yd + 0.29, zt - 0.172]].map(([x, y, z]) => new THREE.Vector3(x, y, z)),
+    false, 'centripetal',
+  );
+  m.geo('plastico', '#d3d6d3', new THREE.TubeGeometry(curva, 18, RAIO_DO_DUTO - 0.005, 8, false));
+  const noAnel = new THREE.Matrix4();
+  const giro = new THREE.Quaternion();
+  const eixoZ = new THREE.Vector3(0, 0, 1);
+  const um = new THREE.Vector3(1, 1, 1);
+  const aneis = 15;
+  for (let i = 0; i < aneis; i++) {
+    const t = 0.03 + (0.94 * i) / (aneis - 1);
+    noAnel.compose(curva.getPointAt(t), giro.setFromUnitVectors(eixoZ, curva.getTangentAt(t)), um);
+    m.geo('plastico', '#eff0ee', new THREE.TorusGeometry(RAIO_DO_DUTO, 0.0075, 3, 10), noAnel);
+  }
+  // Bocal chato da janela, na ponta do duto, com a boca para trás.
+  m.cilindro('plastico', cinza, 0, yd + 0.295, zt - 0.172, RAIO_DO_DUTO + 0.01, 0.024, 'y', 20);
+  m.bloco('plastico', cinza, 0, yd + 0.335, zt - 0.185, 0.3, 0.06, 0.1);
+  m.bloco('plastico', '#2a2d31', 0, yd + 0.335, zt - 0.2355, 0.27, 0.036, 0.0012);
+  // Plugue no topo, atrás, à esquerda; o fio desce por trás do aparelho.
+  plugueComTerminal(m, T, -W / 2 + 0.075, H / 2, zt + 0.06, [-W / 2 + 0.075, H / 2 - 0.03, zt - 0.004]);
 }
 
 // ---------------------------------------------------------------- Micro-ondas
@@ -630,6 +806,12 @@ export function construirAparelho(item: Aparelho, m: Molde, T: Marcar): void {
       return notebook(item, m, T);
     case 'roteador':
       return roteador(item, m, T);
+    case 'modem':
+      return modem(item, m, T);
+    case 'minipc':
+      return minipc(item, m, T);
+    case 'ar-portatil':
+      return arPortatil(item, m, T);
     case 'microondas':
       return microondas(item, m, T);
     case 'lampada':

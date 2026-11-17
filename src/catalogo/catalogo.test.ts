@@ -29,7 +29,7 @@ const centavos = (reais: number) => Math.round(reais * 100);
 
 describe('catálogo: regras gerais', () => {
   it('tem a quantidade de itens da especificação', () => {
-    expect(itens).toHaveLength(89);
+    expect(itens).toHaveLength(94);
   });
 
   it('não repete id', () => {
@@ -84,12 +84,12 @@ describe('catálogo: ligação com a pesquisa', () => {
     }
   });
 
-  it('item sem url tem preço estimado em tipico, exceto o PowMr, a tomada da rede, os aparelhos e o grampo de parede, que não tem preço', () => {
+  it('item sem url tem preço estimado em tipico, exceto o PowMr, a tomada da rede, os aparelhos, o grampo de parede e o filtro de linha, que não têm preço', () => {
     for (const i of itens.filter((x) => !x.url)) {
       if (i.id === 'inv-powmr-ps3k-110') {
         expect(i.coletadoEm, i.id).toBe(PESQUISA.coletadoEm);
         expect(i.tipico ?? [], i.id).not.toContain('preco');
-      } else if (i.categoria === 'aparelho' || i.categoria === 'rede' || i.id === 'acc-grampo') {
+      } else if (i.categoria === 'aparelho' || i.categoria === 'rede' || i.id === 'acc-grampo' || i.id === 'acc-filtro-linha-5') {
         expect(i.preco, i.id).toBe(0);
         expect(i.tipico ?? [], i.id).not.toContain('preco');
       } else {
@@ -174,7 +174,7 @@ describe('catálogo: características físicas', () => {
 
   it('aparelhos: preço zero, horário de uso válido e média não maior que a potência', () => {
     const aparelhos = itens.filter((i): i is Aparelho => i.categoria === 'aparelho');
-    expect(aparelhos).toHaveLength(17);
+    expect(aparelhos).toHaveLength(21);
     for (const a of aparelhos) {
       expect(a.preco, a.id).toBe(0);
       expect(a.usoPadrao.inicio, a.id).toBeGreaterThanOrEqual(0);
@@ -184,6 +184,28 @@ describe('catálogo: características físicas', () => {
       expect(a.mediaW, a.id).toBeLessThanOrEqual(a.potenciaW);
       expect(a.picoW, a.id).toBeGreaterThanOrEqual(a.potenciaW);
     }
+  });
+
+  it('modem, roteador e mini PC somam o ap-rede do plano (40 W e 60 W de pico)', () => {
+    const tres = ['ap-modem', 'ap-roteador', 'ap-mini-pc'].map((id) => itemPorId(id) as Aparelho);
+    const rede = itemPorId('ap-rede') as Aparelho;
+    expect(tres.reduce((s, a) => s + a.potenciaW, 0)).toBe(rede.potenciaW);
+    expect(tres.reduce((s, a) => s + a.mediaW, 0)).toBe(rede.mediaW);
+    expect(tres.reduce((s, a) => s + a.picoW, 0)).toBe(rede.picoW);
+    expect(rede.nome).toBe('Modem, roteador e mini PC juntos');
+  });
+
+  it('ar-condicionado portátil: 1.450 W em 127 V, das 13 às 17 h, com motor', () => {
+    const ar = itemPorId('ap-ar-portatil') as Aparelho;
+    expect([ar.potenciaW, ar.mediaW, ar.picoW, ar.tensao, ar.motor, ar.forma]).toEqual([1450, 1450, 4350, 127, true, 'ar-portatil']);
+    expect(ar.usoPadrao).toEqual({ inicio: 13, fim: 17 });
+  });
+
+  it('filtro de linha: acessório de 10 A e 5 tomadas, sem preço', () => {
+    const f = itemPorId('acc-filtro-linha-5');
+    expect(f?.categoria).toBe('acessorio');
+    if (f?.categoria !== 'acessorio') return;
+    expect([f.tipo, f.correnteMaxA, f.tomadas, f.preco]).toEqual(['filtro', 10, 5, 0]);
   });
 
   it('os seis aparelhos do plano somam 465 W de média', () => {

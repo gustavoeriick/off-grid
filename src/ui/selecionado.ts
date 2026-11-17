@@ -127,6 +127,11 @@ function painelDispositivo(d: Dispositivo, redesenhar: () => void): Node[] | nul
     );
   }
 
+  // Filtro de linha: a corrente máxima e as tomadas, que o consultor confere.
+  if (item.categoria === 'acessorio' && item.tipo === 'filtro') {
+    nos.push(h('p', { class: 'detalhe' }, `Até ${item.correnteMaxA ?? '?'} A · ${item.tomadas ?? '?'} tomadas`));
+  }
+
   // Grampo de parede: não gira (o desenho acompanha o cabo) e, apagado, só solta o cabo naquele ponto.
   const grampo = item.categoria === 'acessorio' && item.tipo === 'grampo';
   if (grampo) {

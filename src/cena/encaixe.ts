@@ -55,7 +55,10 @@ export function superficieAceita(item: Item): TipoSuperficie | null {
     case 'aparelho':
       return item.forma === 'lampada' || item.forma === 'chuveiro' ? 'parede' : 'piso';
     case 'acessorio':
-      return (item.tipo === 'quadro' || item.tipo === 'grampo') && item.dimensoes ? 'parede' : null;
+      if (!item.dimensoes) return null;
+      // O filtro de linha fica no chão, perto dos aparelhos; o quadro e o grampo, na parede.
+      if (item.tipo === 'filtro') return 'piso';
+      return item.tipo === 'quadro' || item.tipo === 'grampo' ? 'parede' : null;
     case 'protecao':
     case 'cabo':
       return null;
@@ -70,7 +73,7 @@ export const ALTURA_BALCAO = 0.85;
 
 /**
  * Altura, acima do piso, da base da caixa de `dimensoes`: a do móvel que acompanha o aparelho
- * (mesa do computador e do notebook, rack da TV, mesinha do modem, balcão do micro-ondas). Zero nas demais peças.
+ * (mesa do computador e do notebook, rack da TV, mesinha do modem, do roteador e do mini PC, balcão do micro-ondas). Zero nas demais peças.
  */
 export function alturaDeApoio(item: Item): number {
   if (item.categoria !== 'aparelho') return 0;
@@ -81,6 +84,8 @@ export function alturaDeApoio(item: Item): number {
     case 'tv':
       return ALTURA_RACK;
     case 'roteador':
+    case 'modem':
+    case 'minipc':
       return ALTURA_MESINHA;
     case 'microondas':
       return ALTURA_BALCAO;
