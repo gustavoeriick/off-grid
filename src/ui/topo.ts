@@ -58,7 +58,7 @@ function montarMenuDoProjeto(): void {
   });
 }
 
-/** Menu "Cabos": "Arrumar os cabos" põe os grampos sozinho e "Soltar os cabos" tira todos (cena-e-interface.md, seção 8). */
+/** Menu "Arrumar" (antes "Cabos"; renomeado a pedido do Gustavo em 17/11/2026): "Arrumar os cabos" põe os grampos sozinho e "Soltar os cabos" tira todos (cena-e-interface.md, seção 8). */
 function montarMenuDosCabos(): void {
   const botao = el<HTMLButtonElement>('#botao-cabos');
   const lista = el<HTMLElement>('#lista-cabos');

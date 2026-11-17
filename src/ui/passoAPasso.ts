@@ -724,9 +724,10 @@ function desenhar(): void {
   delete painel.dataset.passoErro;
   const f = feitos();
   const atual = indiceAtual(f);
-  // O realce na cena: só no tutorial, e só enquanto há um passo da vez (no resumo e durante o teste, nada).
+  // O realce na cena: no tutorial e nos roteiros da casa (pedido do Gustavo em 17/11/2026), e só enquanto há um passo
+  // da vez (no resumo e durante o teste, nada). Passo sem `onde` fica sem realce.
   const passoDaVez = atual >= 0 ? roteiro.passos[atual] : undefined;
-  acoes.definirDestaques(noTutorial() && passoDaVez?.onde ? passoDaVez.onde(estado.projeto, CATALOGO) : []);
+  acoes.definirDestaques(passoDaVez?.onde ? passoDaVez.onde(estado.projeto, CATALOGO) : []);
   painel.hidden = false;
   painel.dataset.roteiro = roteiro.id;
   if (teste) painel.dataset.teste = teste.fase;
